@@ -1,2 +1,5 @@
 # quackframe
-Governed, observable DuckDB workflows for SQL developers—powered by Python and Prefect.
+Governed, observable DuckDB SQL workflows powered by Python.
+
+Quackframe is in its design and bootstrap phase. Start with the
+[documentation index](docs/README.md) or the [basic example](examples/basic/README.md).

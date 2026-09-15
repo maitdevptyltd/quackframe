@@ -1,0 +1,10 @@
+[project]
+name = "quackframe-prefect-example"
+version = "0.0.0"
+dependencies = ["quackframe[prefect]"]
+
+[tool.quackframe]
+runtime = "prefect"
+
+[tool.quackframe.database]
+mode = "memory"

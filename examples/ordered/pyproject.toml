@@ -1,0 +1,10 @@
+[project]
+name = "quackframe-ordered-example"
+version = "0.0.0"
+dependencies = ["quackframe"]
+
+[tool.quackframe]
+runtime = "direct"
+
+[tool.quackframe.database]
+mode = "memory"

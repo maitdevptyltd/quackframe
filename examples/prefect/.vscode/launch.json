@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Quackframe: Run current SQL with Prefect",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "quackframe run \"${file}\"",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
