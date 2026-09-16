@@ -9,9 +9,12 @@ Configure Prefect through its native profile or environment settings, then run:
 quackframe run sql/hello.sql
 ```
 
-The intended result is one Prefect flow run containing one task named from
+The result is one Prefect flow run containing one task named from
 `hello.sql`. The SQL and core execution behaviour remain the same as direct
 execution.
+
+The function allowlist is deliberately empty. Selecting the Prefect runtime
+does not implicitly enable Prefect-backed credentials or another SQL function.
 
 Do not add private API URLs, API keys, or other sensitive integration metadata
 to this example.

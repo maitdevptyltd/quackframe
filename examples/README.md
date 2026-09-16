@@ -1,6 +1,6 @@
 # Quackframe Examples
 
-These neutral examples demonstrate the proposed downstream integration surface.
+These neutral examples demonstrate the downstream integration surface.
 They do not prescribe repository names or organization outside the behaviour
 being illustrated.
 
@@ -8,6 +8,9 @@ being illustrated.
 - [Ordered Files](ordered/README.md): two files sharing one DuckDB session.
 - [Prefect Runtime](prefect/README.md): optional Prefect runtime selection
   without checked-in connection details.
+- [Secret Registration](secrets/README.md): direct execution with the explicitly
+  enabled `register_secret` function for MSSQL and Azure connection strings.
 
-Quackframe has not been implemented yet, so these examples document the target
-contract and will become executable as the corresponding roadmap phases land.
+The basic and ordered examples run without optional integrations. The Prefect
+and secret examples require the `prefect` extra plus environment-appropriate
+native Prefect configuration.

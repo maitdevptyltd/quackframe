@@ -10,17 +10,24 @@ A generic function selects its provider per operation:
 
 ```sql
 SELECT quackframe.register_secret(
-    'prefect',
-    'reporting-reader',
-    'mssql',
-    'reporting_reader'
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'reporting_reader',
+    overrides := MAP {'database': 'Reporting'}
 );
 ```
 
 The arguments are conceptually:
 
 ```text
-register_secret(provider, reference, secret_type, alias := NULL)
+register_secret(
+    provider,
+    reference,
+    secret_type,
+    alias := NULL,
+    overrides := NULL
+)
 ```
 
 This keeps provider choice visible in reviewed SQL and permits one workflow to
@@ -37,6 +44,52 @@ The MVP supports two secret types:
 The public name uses `azure_connection_string` rather than an abbreviated
 `azure_connection_str`. This leaves room for future Azure authentication
 strategies without treating every Azure credential as a connection string.
+
+## Per-call Overrides
+
+`overrides` is an optional `MAP(VARCHAR, VARCHAR)`. The SQL-facing name reflects
+its purpose rather than leaking the Python term `kwargs` into the public API.
+It lets one stored credential supply authentication for multiple databases or
+storage scopes.
+
+This shape follows DuckDB's documented [MAP type and literal syntax](https://duckdb.org/docs/stable/sql/data_types/map)
+and keeps the SQL-to-Python boundary explicit.
+
+For example, the same MSSQL block can register two temporary secrets:
+
+```sql
+SELECT quackframe.register_secret(
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'reporting_reader',
+    overrides := MAP {'database': 'Reporting'}
+);
+
+SELECT quackframe.register_secret(
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'warehouse_reader',
+    overrides := MAP {'database': 'Warehouse'}
+);
+```
+
+Each secret strategy owns an allowlist and typed parser:
+
+| Secret type | Allowed override keys |
+| --- | --- |
+| `mssql` | `database`, `port`, `use_encrypt` |
+| `azure_connection_string` | `scope` |
+
+String values are parsed into the strategy's typed override model before they
+are merged. Precedence is per-call override, then block value, then the
+strategy's documented default. Required fields are validated after the merge.
+Unknown keys and invalid values fail before DuckDB creates a secret.
+
+Overrides are reviewed SQL, not a second credential channel. They must never
+accept usernames, passwords, connection strings, tokens, or other
+secret-bearing fields.
 
 ## Responsibility Boundary
 
@@ -78,15 +131,66 @@ Using Prefect credentials must not require the Prefect runtime, and the Prefect
 runtime must not require credential registration.
 
 For Azure connection-string registration, the Prefect provider resolves a block
-containing the connection string and its scope. It installs and loads DuckDB's
-Azure extension as required, then creates a scoped temporary secret using bound
-values. The connection string must never be interpolated into generated SQL.
+containing the connection string and an optional scope. The scope must be
+present either in the block or in the allowed per-call overrides. The provider
+installs and loads DuckDB's Azure extension as required, then creates a scoped
+temporary secret using bound values. The connection string must never be
+interpolated into generated SQL.
+
+## Prefect Block Ownership
+
+Quackframe owns the Prefect Block classes expected by its provider. They live
+inside the optional `register_secret` Prefect provider package so downstream
+repositories do not have to reproduce Quackframe's credential schemas:
+
+```text
+sql_functions/register_secret/providers/prefect/
+├── provider.py
+└── blocks/
+    ├── mssql.py
+    └── azure_connection_string.py
+```
+
+The MVP block shapes are conceptually:
+
+```python
+class MssqlCredentials(Block):
+    host: str
+    user: SecretStr
+    password: SecretStr
+    database: str | None = None
+    port: int = 1433
+    use_encrypt: bool = True
+
+
+class AzureConnectionStringCredentials(Block):
+    connection_string: SecretStr
+    scope: str | None = None
+```
+
+Quackframe stores no block documents or credential values. Prefect stores the
+registered block types and saved documents; consuming SQL stores only document
+references and non-sensitive overrides. The classes are available only with the
+optional Prefect dependency installed.
+
+Users can register the Quackframe block types so they are available through the
+Prefect UI:
+
+```powershell
+prefect block register --module quackframe.sql_functions.register_secret.providers.prefect.blocks
+```
+
+Prefect distinguishes the local Python class, the server-registered block type,
+and saved block documents. See Prefect's [Blocks](https://docs.prefect.io/v3/concepts/blocks)
+and [custom block registration](https://docs.prefect.io/v3/advanced/custom-blocks)
+documentation.
 
 ## Security Rules
 
 - SQL receives references and aliases, never credential values.
 - Credentials must not appear in checked-in TOML, SQL, process arguments,
   normal logs, exceptions, or persisted Quackframe metadata.
+- Secret-bearing fields are never valid per-call overrides.
 - DuckDB secrets created through this function are temporary unless a separate
   reviewed contract explicitly allows persistence.
 - Provider and database permissions remain the security boundary.
@@ -108,21 +212,17 @@ short-lived duplicate of the active DuckDB connection. This avoids queuing a
 credential-specific request for the runner to process after the current SQL
 statement and keeps the runner function-neutral.
 
-Quackframe should use that approach only after compatibility tests confirm that
-temporary secrets created through the duplicate connection are visible to the
-job connection in every supported database mode and DuckDB version. If the
-mechanism changes, the alternative must remain owned by `register_secret` and
+The MVP implements that approach inside `register_secret`. Tests cover the
+duplicate-connection boundary and parameter-bound strategy calls. Live
+credential and extension smoke tests remain environment-specific release
+validation. Any future mechanism must remain owned by `register_secret` and
 must not introduce provider-specific behaviour into the core runner.
 
-## Open Decisions
+## Post-MVP Decisions
 
-- The exact provider protocol and secret-type metadata contract.
-- Which credential provider packages ship in the initial distribution.
-- Whether `register_secret` itself is part of base Quackframe or an optional
-  function extra.
-- The naming and validation rules for default aliases.
-- The precise Azure scope schemes accepted by the MVP after DuckDB compatibility
-  testing.
+- Whether additional credential providers earn inclusion.
+- Whether credential functions move to their own distribution.
+- Whether additional Azure scope schemes should be accepted.
 
 ## Related Docs
 

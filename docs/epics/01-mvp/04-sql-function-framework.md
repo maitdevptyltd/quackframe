@@ -1,6 +1,6 @@
 # SQL Function Framework
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 04
@@ -52,3 +52,7 @@ names.
 
 - Post-MVP external function entry-point discovery and allowlisting contract.
 - Persisted macro cleanup and compatibility policy.
+
+The MVP validates all enabled definitions before making catalog changes and
+installs macros transactionally. Enabled persistent macros are replaced during
+each connection setup.

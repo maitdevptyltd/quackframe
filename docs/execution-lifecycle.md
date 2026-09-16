@@ -95,8 +95,10 @@ The intended configuration distinguishes three concepts:
 - `persistent`: a caller-owned or project-owned file that Quackframe never
   deletes implicitly.
 
-The runtime root defaults to the current working directory. The default mode,
-derived filename, and temporary cleanup details remain open MVP decisions.
+The runtime root defaults to the current working directory. Memory is the
+default mode. Temporary databases use unique paths below `.quackframe/tmp/`
+and are removed after connection closure; persistent files are caller-owned and
+are never deleted implicitly.
 
 ## Related Docs
 

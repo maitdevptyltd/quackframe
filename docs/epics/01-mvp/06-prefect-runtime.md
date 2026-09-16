@@ -1,6 +1,6 @@
 # Prefect Runtime
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 06
@@ -26,3 +26,7 @@ Quackframe's execution contract.
 - Verify file tasks retain caller order and one shared session.
 - Verify flow and task failure states identify the failed file safely.
 - Prove base Quackframe remains importable without Prefect installed.
+
+SQL is read by the file task rather than carried in the execution plan. Static
+decorated wrappers call the existing core execution functions, and runtime
+selection imports those wrappers only when Prefect is selected.

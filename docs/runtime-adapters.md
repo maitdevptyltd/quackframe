@@ -45,22 +45,27 @@ The optional Prefect adapter provides:
 - Prefect logging, timing, state, and failure visibility;
 - the same shared connection and file order as direct execution.
 
-Prefect decorators live only in the optional integration package. The wrappers
-delegate execution to core functions:
+Prefect decorators live only in the optional integration package. Static,
+decorated functions wrap the existing core entry points:
 
 ```python
-@task(task_run_name="{sql_file.stem}", cache_policy=NO_CACHE)
-def execute_sql_file_task(session, sql_file):
-    return execute_sql_file(session, sql_file)
+@task(cache_policy=NO_CACHE, retries=0, persist_result=False)
+def execute_sql_file_task(connection, sql_file):
+    return execute_sql_file(connection, sql_file)
 
 
-@flow
-def run_sql_files_flow(execution):
-    return run_execution(execution, execute_file=execute_sql_file_task)
+@flow(retries=0, persist_result=False)
+def execute_plan_flow(sql_files, config):
+    return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
 ```
 
-The exact implementation may differ, but the dependency direction may not:
-Prefect depends on Quackframe core; Quackframe core does not import Prefect.
+At invocation time, Quackframe derives a descriptive flow name from the runtime
+root and first SQL filename. It applies each SQL filename to the corresponding
+task. This naming makes Prefect history useful without creating new execution
+semantics.
+
+The dependency direction remains one-way: Prefect depends on Quackframe core;
+Quackframe core does not import Prefect.
 
 ## Packaging
 

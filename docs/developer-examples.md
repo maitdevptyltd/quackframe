@@ -54,11 +54,27 @@ or environment settings. See the [Prefect example](../examples/prefect/README.md
 
 Credential management is an optional SQL-function use case:
 
+```toml
+[project]
+dependencies = ["quackframe[prefect]"]
+
+[tool.quackframe]
+runtime = "direct"
+
+[tool.quackframe.functions]
+enabled = ["register_secret"]
+```
+
+The function is enabled independently from the selected runtime. Project SQL
+can then request an MSSQL secret:
+
 ```sql
 SELECT quackframe.register_secret(
-    'prefect',
-    'reporting-reader',
-    'mssql'
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'reporting_reader',
+    overrides := MAP {'database': 'Reporting'}
 );
 ```
 
@@ -67,20 +83,23 @@ authentication strategies can coexist:
 
 ```sql
 SELECT quackframe.register_secret(
-    'prefect',
-    'analytics-storage',
-    'azure_connection_string',
-    'analytics_storage'
+    provider := 'prefect',
+    reference := 'analytics-storage',
+    secret_type := 'azure_connection_string',
+    alias := 'analytics_storage',
+    overrides := MAP {'scope': 'az://example-container/reports/'}
 );
 ```
 
 The provider is an operation parameter. Repository-wide provider selection is
-not required. The referenced Azure credential must also provide the scope where
-the temporary DuckDB secret applies.
+not required. The block or an allowed override must supply the database or scope
+required by the selected secret type.
+
+See the complete [secret registration example](../examples/secrets/README.md).
 
 ## Related Docs
 
-- [Developer API](developer-api.md): the complete proposed entry-point contract.
+- [Developer API](developer-api.md): the complete entry-point contract.
 - [Configuration](configuration.md): checked-in and environment boundaries.
 - [Execution Lifecycle](execution-lifecycle.md): shared-session behaviour.
 - [Credential Providers](credential-providers.md): the credential example and

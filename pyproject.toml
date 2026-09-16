@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quackframe"
+version = "0.1.0"
+description = "A Python runtime for extending and executing DuckDB SQL workflows."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = { file = "LICENSE" }
+authors = [{ name = "Quackframe contributors" }]
+dependencies = [
+    "duckdb==1.5.5",
+    "pydantic>=2.11,<3",
+]
+
+[project.optional-dependencies]
+prefect = [
+    "numpy>=1.26,<3",
+    "prefect>=3.4,<4",
+]
+
+[project.scripts]
+quackframe = "quackframe.cli:main"
+
+[dependency-groups]
+dev = [
+    "numpy>=1.26,<3",
+    "pyright>=1.1.413,<2",
+    "pytest>=9.0,<10",
+    "pytest-cov>=7,<8",
+    "ruff>=0.16,<0.17",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quackframe"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/README.md",
+    "/CONTRIBUTING.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/uv.lock",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+
+[tool.coverage.run]
+branch = true
+source = ["quackframe"]

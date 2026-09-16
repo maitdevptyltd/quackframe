@@ -20,5 +20,7 @@ same command with the workspace folder as the runtime root.
 python run.py
 ```
 
-The example configures an explicit persistent path because Quackframe's default
-database lifecycle is still an open design decision.
+The example configures an explicit persistent path to demonstrate the
+caller-owned database lifecycle. Quackframe otherwise defaults to an in-memory
+database. Its function allowlist is empty because `hello.sql` uses only native
+DuckDB SQL.

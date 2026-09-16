@@ -21,6 +21,12 @@ across agent sessions.
 - The MVP `quackframe.register_secret` function supports both MSSQL credentials
   and Azure connection-string credentials. Use the public secret-type names
   `mssql` and `azure_connection_string`.
+- Quackframe owns the Prefect Block class definitions used by its credential
+  provider; Prefect owns the saved block documents and values. MSSQL `database`
+  and Azure `scope` may be supplied by an allowlisted per-call `overrides` map.
+- Secret overrides use `MAP(VARCHAR, VARCHAR)` and are validated by each secret
+  strategy. SQL must never override usernames, passwords, connection strings,
+  or other secret-bearing fields.
 - Execute caller-supplied SQL files in explicit order within one shared DuckDB
   session. Do not infer dependencies or ordering from folders or filenames.
 - Keep direct execution first-class. Selecting a runtime adapter should
@@ -37,6 +43,9 @@ across agent sessions.
 - Register MVP built-in SQL functions through one explicit, reviewable registry.
   Do not scan the source tree or expose functions merely because a module is
   installed. Third-party discovery is post-MVP and must remain allowlisted.
+- Treat `[tool.quackframe.functions].enabled` as the project allowlist. Its
+  default is empty, installed extras do not modify it, and examples show it even
+  when no functions are enabled.
 - Keep SQL-function installation neutral: the registrar and execution runner
   must not branch on concrete function names, providers, or function-specific
   request types.

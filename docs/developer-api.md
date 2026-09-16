@@ -1,6 +1,6 @@
 # Developer API
 
-Status: proposed public contract for the MVP.
+Status: implemented MVP contract.
 
 Quackframe has three developer entry points. Each resolves the same
 configuration and delegates to the same execution engine.
@@ -27,7 +27,7 @@ The CLI returns a scheduler-friendly process exit code and identifies the
 failed file and statement without logging full SQL or returned query data by
 default.
 
-Proposed one-run overrides include:
+One-run overrides include:
 
 ```powershell
 quackframe run --runtime direct sql/example.sql
@@ -37,8 +37,8 @@ quackframe run --database-path ./scratch.duckdb sql/example.sql
 quackframe run --config ./alternate.toml sql/example.sql
 ```
 
-The exact database flags remain subject to the database-lifecycle decision in
-[Configuration](configuration.md#open-decisions).
+`--memory` and `--temporary` select managed lifecycle modes;
+`--database-path` selects a caller-owned persistent database.
 
 ## Visual Studio Code F5
 
@@ -96,8 +96,8 @@ runs programmatically, but ordinary use should not require it.
 
 On success, `run()` returns a typed `ExecutionResult`. On failure, it raises a
 typed `ExecutionError` containing safe execution context such as the file and
-statement number. Runtime-specific identifiers may appear as generic metadata;
-core result types must not expose Prefect or another adapter's classes.
+statement number. Core result types do not expose Prefect or another adapter's
+classes.
 
 ## SQL Function API
 
@@ -105,10 +105,11 @@ Quackframe functions use a schema-qualified public name:
 
 ```sql
 SELECT quackframe.register_secret(
-    'prefect',
-    'reporting-reader',
-    'mssql',
-    'reporting_reader'
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'reporting_reader',
+    overrides := MAP {'database': 'Reporting'}
 );
 ```
 

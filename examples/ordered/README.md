@@ -13,3 +13,6 @@ quackframe run `
 
 Running `02-report.sql` by itself should fail because F5 and single-file CLI
 execution do not infer prerequisites.
+
+The checked-in configuration uses an empty function allowlist because this
+example demonstrates shared DuckDB session state without Python extensions.

@@ -1,6 +1,6 @@
 # Repository Foundation
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 00
@@ -25,7 +25,10 @@ core and optional integrations.
 - Package imports and CLI help succeed.
 - Lint, format, type, test, and documentation checks run in CI.
 
+Implemented with a `src`-layout Hatchling package, uv lock file, Ruff, Pyright,
+pytest, Windows CI, an MIT license, and an optional `prefect` extra. The base
+package imports without loading Prefect.
+
 ## Follow-ups
 
-- Select the supported Python and DuckDB version ranges.
-- Select the initial build and dependency-management tooling.
+- Add further operating-system jobs when supported environments require them.

@@ -1,6 +1,6 @@
 # Ordered SQL Execution
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 02
@@ -26,3 +26,6 @@ Execute caller-supplied SQL files predictably in one DuckDB session.
 - Test empty, missing, invalid, and failing SQL files.
 - Verify later files do not run after failure.
 - Verify diagnostics exclude full SQL and arbitrary returned data by default.
+
+The test suite exercises shared temporary state, ordered multi-statement files,
+fail-fast behaviour, persistent state after failure, and temporary cleanup.

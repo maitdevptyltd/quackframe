@@ -1,8 +1,8 @@
 # Quackframe Documentation
 
-Quackframe is an orchestrator-agnostic Python runtime for governed, observable
-DuckDB SQL workflows. These documents separate the stable core from optional
-runtime and service integrations.
+Quackframe is a Python runtime for extending and executing DuckDB SQL
+workflows. These documents separate the stable core from optional runtime and
+service integrations.
 
 ## Architecture
 
@@ -22,8 +22,8 @@ runtime and service integrations.
   optional SQL-function use case.
 - [Prototype Reference](mad-utilities-duckdb-reference.md): evidence retained
   from the earlier prototype without inheriting its coupling.
-- [Roadmap](roadmap.md): proposed MVP phases, acceptance criteria, and open
-  decisions.
+- [Roadmap](roadmap.md): delivered MVP phases, acceptance criteria, and
+  post-MVP decisions.
 - [Epics](epics/README.md): implementor-facing phase tracking.
 
 ## Knowledge Map
@@ -54,7 +54,6 @@ decision or implementation work in front of you.
 
 ## Documentation Status
 
-The project is currently being specified. Documents distinguish accepted
-direction from proposed API details and open decisions. Source code and package
-metadata do not exist yet, so examples describe the intended contract rather
-than a released implementation.
+The MVP contract is implemented in `src/quackframe`. The phase documents record
+the initial implementation and its validation boundaries; the roadmap now
+separates delivered MVP behaviour from post-MVP work.

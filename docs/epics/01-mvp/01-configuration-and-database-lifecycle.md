@@ -1,6 +1,6 @@
 # Configuration And Database Lifecycle
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 01
@@ -28,8 +28,10 @@ framework-independent runtime contract.
 - Prove persistent paths are never deleted implicitly.
 - Prove configuration errors occur before project SQL begins.
 
-## Open Decisions
+## Decisions
 
-- Default database mode.
-- Derived database path when none is configured.
-- Root discovery behaviour when a parent `pyproject.toml` exists.
+- Default to an in-memory database.
+- Create temporary databases below `<root>/.quackframe/tmp/` and always clean
+  them after connection closure.
+- Require an explicit path for persistent mode and never delete it implicitly.
+- Use exactly `cwd` as the implicit root; do not search parents.

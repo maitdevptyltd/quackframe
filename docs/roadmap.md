@@ -1,6 +1,6 @@
 # Quackframe Roadmap
 
-Status: planning as of 2026-09-15.
+Status: MVP implemented as of 2026-09-15.
 
 This roadmap sequences the smallest implementation that can prove Quackframe's
 public contract. Architecture details belong in focused documents; phase status
@@ -65,7 +65,11 @@ and validation notes belong in [epic phase files](epics/README.md).
 - Implement `quackframe.register_secret` as a self-contained function package.
 - Define its private provider contract and registry.
 - Implement a Prefect Block provider without coupling it to the Prefect runtime.
+- Ship Quackframe-owned Prefect Block definitions for the supported credential
+  shapes.
 - Support `mssql` and `azure_connection_string` secret strategies in the MVP.
+- Support allowlisted per-call overrides so one stored credential can register
+  multiple database- or scope-specific secrets.
 - Register temporary DuckDB secrets without returning or logging credentials.
 
 ## Early Acceptance Criteria
@@ -82,16 +86,18 @@ and validation notes belong in [epic phase files](epics/README.md).
 - Prefect credentials can be used with direct or Prefect runtime execution.
 - MSSQL and scoped Azure connection-string credentials can be registered as
   temporary DuckDB secrets.
+- One Prefect credential document can be reused with different non-sensitive
+  database or scope overrides.
 - No standard diagnostic path emits credentials or arbitrary returned data.
 
-## Open Decisions
+## Post-MVP Decisions
 
-- Default database mode and derived file location.
-- Exact names and fields for Python result and execution-plan types.
+- Whether a public execution-plan type is earned by programmatic callers.
 - Supported VS Code launch mechanism and fallback.
 - Post-MVP external function entry-point discovery and allowlisting contract.
-- Whether the first credential function ships in base or as an optional extra.
-- Minimum supported Python and DuckDB versions.
+- Persisted macro cleanup and compatibility policy beyond replacement on
+  enabled runs.
+- Additional credential providers and Azure scope forms.
 
 ## Related Docs
 

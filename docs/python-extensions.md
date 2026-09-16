@@ -30,12 +30,14 @@ CREATE OR REPLACE MACRO quackframe.register_secret(
     provider,
     reference,
     secret_type,
-    alias := NULL
+    alias := NULL,
+    overrides := NULL
 ) AS _quackframe_register_secret(
     provider,
     reference,
     secret_type,
-    alias
+    alias,
+    overrides
 );
 ```
 
@@ -164,11 +166,9 @@ change through the connection currently executing the UDF. The prototype avoids
 a runner-owned request queue by opening a short-lived duplicate connection to
 the same database instance inside the connection-aware function.
 
-Quackframe retains duplicate-connection execution as a proven candidate for
-functions such as `register_secret`. Before treating it as the implementation
-contract, tests must verify the behaviour for every supported DuckDB version,
-database mode, and relevant concurrency case. The core runner must not become
-aware of the function's deferred or duplicate-connection work.
+`register_secret` uses duplicate-connection execution. The function owns this
+behaviour; the core runner has no deferred-operation queue or function-specific
+branch. Compatibility is tested against the pinned DuckDB MVP version.
 
 ## Persistent Database Consideration
 
@@ -176,9 +176,10 @@ A schema-qualified macro cannot currently be both temporary and stored in an
 ordinary `quackframe` schema. In a persistent DuckDB file, public macros may
 therefore persist while their Python UDFs remain connection-scoped.
 
-Quackframe should recreate its macros and private UDFs during every connection
-setup. The exact cleanup and compatibility policy for persisted macro metadata
-remains an implementation decision.
+Quackframe recreates enabled macros and private UDFs during every connection
+setup. Definitions and signatures are validated before catalog changes begin,
+and macro installation is transactional. Persisted macros remain implementation
+metadata in persistent databases and are replaced on the next enabled run.
 
 ## Related Docs
 

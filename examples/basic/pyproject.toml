@@ -9,3 +9,6 @@ runtime = "direct"
 [tool.quackframe.database]
 mode = "persistent"
 path = ".quackframe/example.duckdb"
+
+[tool.quackframe.functions]
+enabled = []

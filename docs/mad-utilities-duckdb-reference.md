@@ -94,4 +94,4 @@ an automatically accepted cross-version guarantee.
 - [Runtime Adapters](runtime-adapters.md): the extracted Prefect runtime boundary.
 - [Credential Providers](credential-providers.md): generalized credential
   resolution.
-- [Roadmap](roadmap.md): the proposed migration sequence.
+- [Roadmap](roadmap.md): the delivered MVP sequence.

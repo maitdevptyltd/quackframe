@@ -8,3 +8,6 @@ runtime = "direct"
 
 [tool.quackframe.database]
 mode = "memory"
+
+[tool.quackframe.functions]
+enabled = []

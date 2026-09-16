@@ -1,6 +1,6 @@
 # Developer Entry Points
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 03
@@ -27,5 +27,6 @@ Expose one execution engine through CLI, VS Code F5, and Python entry points.
 
 ## Open Decisions
 
-- Whether task-backed VS Code execution is required as a fallback.
-- Whether `ExecutionPlan` is necessary in the MVP public API.
+- A public `ExecutionPlan` was not needed for the MVP. `run()` accepts the
+  ordered paths and a typed configuration directly.
+- A task-backed VS Code fallback remains a post-MVP compatibility option.

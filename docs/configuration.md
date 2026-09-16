@@ -22,7 +22,7 @@ or sensitive endpoints that the project does not intend to disclose.
 
 ## Canonical Model
 
-The proposed top-level shape is:
+The implemented MVP shape is:
 
 ```text
 QuackframeConfig
@@ -36,12 +36,10 @@ QuackframeConfig
   duckdb
     settings
     extensions
-  integrations
 ```
 
-The exact public fields remain subject to implementation review. Function
-packages may define their own namespaced configuration without forcing unrelated
-functions to adopt a shared thematic model.
+Function packages may define their own namespaced configuration without forcing
+unrelated functions to adopt a shared thematic model.
 
 ## Repository Configuration
 
@@ -58,6 +56,16 @@ path = ".quackframe/example.duckdb"
 [tool.quackframe.functions]
 enabled = []
 ```
+
+`functions.enabled` is the checked-in allowlist of Quackframe SQL functions for
+the project. Examples include it even when empty so function exposure is visible
+during review. Omitting the section resolves to the same empty allowlist; it
+does not enable every installed function.
+
+Each configured name must resolve to an available built-in or an explicitly
+allowed external definition. Unknown functions and functions whose optional
+dependencies are unavailable fail configuration validation before project SQL
+executes. Installing Quackframe or an extra never changes the enabled list.
 
 `pyproject.toml` is the default project input because a downstream Python
 project already uses it for dependencies and tool configuration. Hydra or
@@ -83,6 +91,18 @@ For VS Code F5:
 makes the workspace folder the predictable default root. A scheduler should set
 its working directory explicitly or provide a root override.
 
+## Database Defaults And Lifecycle
+
+The default database mode is `memory`; no database file is created. Temporary
+mode creates a unique file below `.quackframe/tmp/` under the runtime root and
+removes that file and its WAL after the connection closes, including after a
+failed run. An explicitly selected temporary path must remain under the runtime
+root and must not already exist.
+
+Persistent mode requires `database.path`. Quackframe resolves a relative path
+from the runtime root, creates its parent directory when necessary, and never
+deletes the database implicitly.
+
 ## Environment Inputs
 
 Quackframe-owned settings may have `QUACKFRAME_` environment equivalents where
@@ -91,6 +111,7 @@ deployment overrides are useful, for example:
 ```text
 QUACKFRAME_ROOT
 QUACKFRAME_RUNTIME
+QUACKFRAME_DATABASE_MODE
 QUACKFRAME_DATABASE_PATH
 DUCKDB_TEMP_DIRECTORY
 ```
@@ -119,7 +140,7 @@ An API URL is not necessarily a credential, but it may disclose private
 hostnames, network topology, environment names, or tenant information. Public
 examples should therefore prefer Prefect environment variables or profiles.
 
-Quackframe may support a checked-in default:
+Post-MVP, Quackframe may support a checked-in shared default:
 
 ```toml
 [tool.quackframe.integrations.prefect]
@@ -129,9 +150,9 @@ api_url = "https://prefect.example.com/api"
 only when the repository intentionally shares that endpoint. API keys and
 credential values are never valid checked-in configuration.
 
-The shared `integrations.prefect` section is available to both the Prefect
-runtime and Prefect-backed function providers. Runtime-specific presentation
-settings belong under `runtimes.prefect` if they are later required.
+The MVP does not interpret this table. It relies on Prefect's native environment
+and profile resolution for both the runtime and Prefect-backed function
+providers.
 
 ## Precedence
 
@@ -147,15 +168,14 @@ flowchart TD
 Higher-numbered sources supply values only when a higher-precedence source does
 not. Every source is validated through the same typed model.
 
-## Open Decisions
+## DuckDB Settings
 
-- Whether the default database mode is `memory`, `temporary`, or `persistent`.
-- The derived database path when no explicit path is configured.
-- Whether the runtime root can be discovered from a parent `pyproject.toml` or
-  is always exactly the invocation working directory.
-- The minimum useful DuckDB settings surface for the MVP.
-- Whether Quackframe needs any Prefect-specific values beyond native Prefect
-  settings during the MVP.
+The MVP accepts string-valued connection settings and an explicit extension
+list under `[tool.quackframe.duckdb]`. Extension names are validated before
+their generated `INSTALL` and `LOAD` statements execute.
+
+The implicit root is exactly the invocation working directory. Quackframe does
+not search parent directories for configuration.
 
 ## Related Docs
 

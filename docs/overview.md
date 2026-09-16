@@ -1,9 +1,8 @@
 # Quackframe Overview
 
-Quackframe is an orchestrator-agnostic Python runtime for governed, observable
-DuckDB SQL workflows. SQL remains the primary authoring surface. Python frames
-execution, provides deliberate extension points, and connects optional runtime
-and service integrations.
+Quackframe is a Python runtime for extending and executing DuckDB SQL
+workflows. SQL remains the primary authoring surface. Python frames execution,
+provides deliberate extension points, and connects optional integrations.
 
 ## What Quackframe Is
 
@@ -86,12 +85,13 @@ A typed `QuackframeConfig` model is the canonical configuration contract.
 arguments, and direct Python values are inputs to that model.
 
 The runtime root defaults to the current working directory. This makes
-`cwd: ${workspaceFolder}` sufficient for predictable F5 execution. The exact
-default database lifecycle and derived file location remain open decisions.
+`cwd: ${workspaceFolder}` sufficient for predictable F5 execution. Database
+execution defaults to one in-memory session; temporary and caller-owned
+persistent modes are explicit alternatives.
 
-## MVP Stance
+## Implemented MVP
 
-The MVP should prove:
+The MVP provides:
 
 - configuration loading and root-relative path resolution;
 - one DuckDB session per invocation;
@@ -105,11 +105,11 @@ The MVP should prove:
 
 ## Related Docs
 
-- [Developer API](developer-api.md): the proposed public entry points.
+- [Developer API](developer-api.md): the implemented public entry points.
 - [Execution Lifecycle](execution-lifecycle.md): the invariants behind every
   entry point.
 - [Configuration](configuration.md): how settings are resolved.
 - [Runtime Adapters](runtime-adapters.md): how runtime selection remains optional.
 - [SQL Function Extensions](python-extensions.md): the autonomous function
   model.
-- [Roadmap](roadmap.md): proposed implementation order.
+- [Roadmap](roadmap.md): delivered phases and post-MVP direction.

@@ -1,6 +1,6 @@
 # Runtime Adapter Boundary
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-15
 Epic: 01 MVP
 Phase: 05
@@ -25,3 +25,7 @@ core execution semantics.
 - Prove adapter selection cannot silently add retries, caching, concurrency, or
   file reordering.
 - Verify missing optional dependencies fail before SQL execution.
+
+The direct adapter imports no optional framework. Runtime selection occurs
+before a DuckDB session opens, and missing Prefect support produces an
+actionable optional-dependency error.
