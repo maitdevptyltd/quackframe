@@ -23,9 +23,10 @@ class PrefectCredentialProvider:
     def resolve(self, reference: str, secret_type: str) -> DuckDBSecret:
         """Load a Prefect Block and convert it to the requested DuckDB secret."""
 
+        block_name = self._block_name(reference)
         try:
             if secret_type == "mssql":
-                block = cast(MssqlCredentials, MssqlCredentials.load(reference))
+                block = cast(MssqlCredentials, MssqlCredentials.load(block_name))
                 return MssqlSecret(
                     host=block.host,
                     user=block.user,
@@ -38,7 +39,7 @@ class PrefectCredentialProvider:
             if secret_type == "azure_connection_string":
                 block = cast(
                     AzureConnectionStringCredentials,
-                    AzureConnectionStringCredentials.load(reference),
+                    AzureConnectionStringCredentials.load(block_name),
                 )
                 return AzureConnectionStringSecret(
                     connection_string=block.connection_string,
@@ -52,3 +53,13 @@ class PrefectCredentialProvider:
             ) from None
 
         raise ValueError(f"Unsupported Prefect secret type: {secret_type}")
+
+    @staticmethod
+    def _block_name(reference: str) -> str:
+        """Translate a SQL-friendly reference into a Prefect document name."""
+
+        # Prefect document names require dashes, while Quackframe deliberately
+        # limits DuckDB secret aliases to simple SQL identifiers with underscores.
+        # Both spellings therefore identify one Prefect document; Prefect cannot
+        # store the underscored alternative.
+        return reference.replace("_", "-")

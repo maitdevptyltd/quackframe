@@ -19,6 +19,9 @@ connection-string registration.
 - Add an optional Prefect Block provider.
 - Define the Prefect Block classes inside the optional provider package and
   document their registration with Prefect.
+- Translate SQL-friendly underscore references to Prefect's required dashed
+  document names while deriving underscore-safe DuckDB aliases from dashed
+  references.
 - Support the public secret types `mssql` and `azure_connection_string`.
 - Accept an optional `MAP(VARCHAR, VARCHAR)` named `overrides`.
 - Allow MSSQL `database`, `port`, and `use_encrypt` overrides and Azure `scope`
@@ -31,6 +34,8 @@ connection-string registration.
 ## Validation
 
 - Test provider selection, references, aliases, and unsupported types.
+- Test the Prefect-reference and DuckDB-alias naming translation in both
+  directions.
 - Test MSSQL credential translation and defaults.
 - Test Azure connection-string validation, scope handling, extension loading,
   and parameter binding.

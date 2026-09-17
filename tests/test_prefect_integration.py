@@ -103,9 +103,10 @@ def test_prefect_provider_translates_mssql_block() -> None:
         password=SecretStr("sensitive"),
     )
 
-    with patch.object(MssqlCredentials, "load", return_value=block):
-        credentials = PrefectCredentialProvider().resolve("shared-login", "mssql")
+    with patch.object(MssqlCredentials, "load", return_value=block) as load:
+        credentials = PrefectCredentialProvider().resolve("shared_login", "mssql")
 
+    load.assert_called_once_with("shared-login")
     assert isinstance(credentials, ResolvedMssqlCredentials)
     assert credentials.database is None
     assert credentials.password.get_secret_value() == "sensitive"
@@ -114,12 +115,17 @@ def test_prefect_provider_translates_mssql_block() -> None:
 def test_prefect_provider_translates_azure_block() -> None:
     block = AzureConnectionStringCredentials(connection_string=SecretStr("sensitive"))
 
-    with patch.object(AzureConnectionStringCredentials, "load", return_value=block):
+    with patch.object(
+        AzureConnectionStringCredentials,
+        "load",
+        return_value=block,
+    ) as load:
         credentials = PrefectCredentialProvider().resolve(
-            "shared-storage",
+            "shared_storage",
             "azure_connection_string",
         )
 
+    load.assert_called_once_with("shared-storage")
     assert isinstance(credentials, ResolvedAzureCredentials)
     assert credentials.scope is None
     assert credentials.connection_string.get_secret_value() == "sensitive"

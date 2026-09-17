@@ -121,6 +121,12 @@ Each function owns its implementation and support code as a self-contained
 unit. It conforms only to the minimal registration, naming, safety, and
 diagnostic contract needed to coexist in Quackframe.
 
+For the Prefect provider, SQL may use underscores in a Block reference even
+though Prefect stores the document name with dashes. When no explicit alias is
+supplied, Quackframe performs the inverse translation so the generated DuckDB
+secret remains a simple SQL identifier. See
+[Credential Providers](credential-providers.md#prefect-references-and-duckdb-aliases).
+
 ## Entry-point Invariants
 
 - Every entry point uses the same configuration model.

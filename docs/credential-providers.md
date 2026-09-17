@@ -45,6 +45,38 @@ The public name uses `azure_connection_string` rather than an abbreviated
 `azure_connection_str`. This leaves room for future Azure authentication
 strategies without treating every Azure credential as a connection string.
 
+## Prefect References And DuckDB Aliases
+
+Prefect Block document names use lowercase letters, numbers, and dashes, while
+Quackframe limits generated DuckDB secret aliases to simple SQL identifiers
+using letters, numbers, and underscores. The Prefect provider bridges that
+naming boundary in both directions:
+
+- an underscored SQL reference such as `shared_sql_login` loads the Prefect
+  Block document named `shared-sql-login`; and
+- when `alias` is omitted, a dashed reference such as `shared-sql-login`
+  registers the DuckDB secret alias `shared_sql_login`.
+
+This translation deliberately treats dashed and underscored spellings as the
+same Prefect reference. Prefect does not permit the underscored document-name
+alternative, so the convenience does not collapse two valid Prefect names.
+Other credential providers retain ownership of their own reference rules.
+
+This lets DuckDB-oriented SQL use one identifier-safe spelling throughout:
+
+```sql
+SELECT quackframe.register_secret(
+    'prefect',
+    'shared_sql_login',
+    'mssql'
+);
+
+ATTACH '' AS reporting (
+    TYPE mssql,
+    SECRET shared_sql_login
+);
+```
+
 ## Per-call Overrides
 
 `overrides` is an optional `MAP(VARCHAR, VARCHAR)`. The SQL-facing name reflects
@@ -105,6 +137,7 @@ The `register_secret` function owns:
 A credential provider owns:
 
 - resolving its reference through the external service;
+- translating provider-specific reference naming rules at that boundary;
 - deciding which secret-type names it supports;
 - explicitly translating the resolved fields into the requested Quackframe
   secret model;

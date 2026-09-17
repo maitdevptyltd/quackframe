@@ -25,9 +25,9 @@ core and optional integrations.
 - Package imports and CLI help succeed.
 - Lint, format, type, test, and documentation checks run in CI.
 
-Implemented with a `src`-layout Hatchling package, uv lock file, Ruff, Pyright,
-pytest, Windows CI, an MIT license, and an optional `prefect` extra. The base
-package imports without loading Prefect.
+Implemented with a `src`-layout Hatchling package, Poetry lock file, Ruff,
+Pyright, pytest, Windows CI, an MIT license, and an optional `prefect` extra.
+The base package imports without loading Prefect.
 
 ## Follow-ups
 

@@ -23,6 +23,8 @@ def register_secret(
     owns override validation, extension loading, and registration.
     """
 
+    # Provider references may contain dashes, but the generated DuckDB secret
+    # alias is deliberately limited to simple SQL identifier characters.
     resolved_alias = validate_identifier(
         alias or reference.replace("-", "_"),
         "secret alias",

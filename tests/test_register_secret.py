@@ -104,6 +104,34 @@ def test_register_secret_selects_provider_and_uses_duplicate_connection(
     resolved_secret.register.assert_called_once_with(duplicate, "reporting")
 
 
+def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credentials = Mock(spec=DuckDBSecret)
+    resolved_secret = Mock(spec=DuckDBSecret)
+    credentials.resolve_overrides.return_value = resolved_secret
+    provider = Mock()
+    provider.resolve.return_value = credentials
+    connection = MagicMock()
+    duplicate = Mock()
+    connection.duplicate.return_value.__enter__.return_value = duplicate
+
+    def get_provider(_: str) -> CredentialProvider:
+        return cast(CredentialProvider, provider)
+
+    monkeypatch.setattr(function_module, "get_provider", get_provider)
+
+    register_secret(
+        connection,
+        "prefect",
+        "shared-login",
+        "mssql",
+    )
+
+    provider.resolve.assert_called_once_with("shared-login", "mssql")
+    resolved_secret.register.assert_called_once_with(duplicate, "shared_login")
+
+
 def test_mssql_override_values_are_typed_and_bound() -> None:
     connection = RecordingConnection()
     credentials = MssqlCredentials(

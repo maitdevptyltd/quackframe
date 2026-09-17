@@ -70,13 +70,17 @@ can then request an MSSQL secret:
 
 ```sql
 SELECT quackframe.register_secret(
-    provider := 'prefect',
-    reference := 'shared-sql-login',
-    secret_type := 'mssql',
-    alias := 'reporting_reader',
+    'prefect',
+    'shared_sql_login',
+    'mssql',
+    'reporting_reader',
     overrides := MAP {'database': 'Reporting'}
 );
 ```
+
+The Prefect provider resolves `shared_sql_login` as the Prefect Block document
+`shared-sql-login`. If the alias is omitted, Quackframe also derives the
+DuckDB-safe alias `shared_sql_login` from the reference.
 
 Azure Storage connection strings use a distinct secret type so later Azure
 authentication strategies can coexist:
