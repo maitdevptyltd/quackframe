@@ -77,6 +77,8 @@ Use focused skills instead of expanding this file with task-specific detail.
 
 ## Workflow Expectations
 
+- Poetry is the only supported dependency and environment manager. Using `uv`
+  is forbidden; do not run it or create, restore, or maintain a `uv.lock` file.
 - For non-trivial API, execution, extension, adapter, provider, configuration,
   or architecture changes, establish the developer-facing direction before
   implementation.

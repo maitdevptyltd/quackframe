@@ -46,7 +46,7 @@ include = [
     "/CONTRIBUTING.md",
     "/LICENSE",
     "/pyproject.toml",
-    "/uv.lock",
+    "/poetry.lock",
 ]
 
 [tool.pytest.ini_options]
