@@ -15,6 +15,10 @@ from the main documentation.
 - [06 Prefect Runtime](01-mvp/06-prefect-runtime.md)
 - [07 Credential Function Example](01-mvp/07-credential-function-example.md)
 
+## Epic 02: Result Logging
+
+- [01 SQL Result Logging](02-result-logging/01-sql-result-logging.md)
+
 ## Status Rules
 
 Allowed statuses are `Planned`, `In Progress`, `Blocked`, and `Complete`.

@@ -25,6 +25,8 @@ service integrations.
 - [Roadmap](roadmap.md): delivered MVP phases, acceptance criteria, and
   post-MVP decisions.
 - [Epics](epics/README.md): implementor-facing phase tracking.
+- [SQL Result Logging Scope](epics/02-result-logging/01-sql-result-logging.md):
+  planned statement selection and direct or Prefect log delivery.
 
 ## Knowledge Map
 
