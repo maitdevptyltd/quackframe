@@ -60,6 +60,7 @@ def execute_with_prefect(
             f"Prefect runtime failed: {safe_error_reason(error)}"
         ) from None
 
+
 def _execute_named_file_task(
     connection: DuckDBPyConnection,
     sql_file: PreparedSqlFile,

@@ -193,10 +193,10 @@ class AzureConnectionStringSecret(DuckDBSecret):
     def _validate_azure_scope(value: str) -> str:
         """Require a supported, non-empty Azure URI ending in a slash."""
 
-        if not value.startswith(("az://", "azure://", "abfss://")):
-            raise ValueError(
-                "Azure scope must use an az://, azure://, or abfss:// URI"
-            )
+        supported_prefixes = ("az://", "azure://", "abfss://")
+        if not value.startswith(supported_prefixes):
+            expected_prefixes = "az://, azure://, or abfss://"
+            raise ValueError(f"Azure scope must use an {expected_prefixes} URI")
         if not value.endswith("/"):
             raise ValueError("Azure scope must end with a trailing slash")
         if not value.split("://", maxsplit=1)[1].rstrip("/"):
