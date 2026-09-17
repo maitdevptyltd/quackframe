@@ -1,7 +1,7 @@
 # SQL Function Framework
 
 Status: **Complete**
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 Epic: 01 MVP
 Phase: 04
 Related docs: [SQL Function Extensions](../../python-extensions.md)
@@ -56,3 +56,7 @@ names.
 The MVP validates all enabled definitions before making catalog changes and
 installs macros transactionally. Enabled persistent macros are replaced during
 each connection setup.
+
+The supported scalar annotation map is a named module-level framework boundary.
+Optional dependencies selected within a function are checked by that function's
+adapter rather than attached to the generic function definition.

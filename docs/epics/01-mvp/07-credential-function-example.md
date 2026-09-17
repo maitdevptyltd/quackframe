@@ -1,7 +1,7 @@
 # Credential Function Example
 
 Status: **Complete**
-Last updated: 2026-09-15
+Last updated: 2026-09-17
 Epic: 01 MVP
 Phase: 07
 Related docs: [Credential Providers](../../credential-providers.md)
@@ -44,7 +44,15 @@ connection-string registration.
 
 ## Open Decisions
 
-- The function definition ships in the repository but requires the `prefect`
-  extra because Prefect is the only MVP credential provider.
+- Additional provider entries remain post-MVP and are added only for concrete
+  integration needs.
 - MVP Azure scopes accept `az://`, `azure://`, and `abfss://` URIs with a
   trailing slash. Broader compatibility remains post-MVP work.
+
+The provider registry now lazily loads each implementation and its optional
+dependency. Providers return a provider-independent `DuckDBSecret`; each
+concrete secret model owns its fields, safe override resolution, DuckDB
+extension loading, and parameter-bound temporary registration. The generic
+function contains no secret-type dispatcher and no global Prefect requirement.
+The shared provider contract accepts a plain secret-type name; supported names
+and conversions belong to each provider rather than a central type list.

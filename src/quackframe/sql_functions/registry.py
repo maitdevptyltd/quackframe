@@ -8,7 +8,11 @@ BUILTIN_FUNCTIONS: tuple[SqlFunction, ...] = (register_secret_function,)
 
 
 def resolve_functions(enabled_names: tuple[str, ...]) -> tuple[SqlFunction, ...]:
-    """Resolve the project allowlist against the reviewable built-in registry."""
+    """Return the built-in functions explicitly enabled by the project.
+
+    Installation never scans packages, so adding code cannot silently expose a
+    new SQL capability to downstream projects.
+    """
 
     if len(set(enabled_names)) != len(enabled_names):
         raise ConfigurationError("Enabled SQL function names must be unique")

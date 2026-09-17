@@ -143,7 +143,7 @@ remain inside the function package.
 Before project SQL executes, Quackframe:
 
 1. resolves the enabled function definitions;
-2. validates unique names and available optional dependencies;
+2. validates unique names, signatures, and function-wide optional dependencies;
 3. registers each private Python UDF on the active connection;
 4. creates or replaces its public macro in the `quackframe` schema; and
 5. reports enabled public names without exposing sensitive configuration.
@@ -158,6 +158,12 @@ packages may later advertise definitions through Python package entry points,
 but discovery would only make them available. A separate allowlist must enable
 them before the same generic registrar exposes them to SQL. External discovery
 is not required for the MVP.
+
+An optional dependency that belongs to a choice made inside a function is
+loaded at that narrower boundary. For example, enabling `register_secret` does
+not require Prefect; selecting its `prefect` credential provider does. This
+allows other providers to remain independent while the generic function
+registrar stays neutral.
 
 ## Connection-aware Mutation
 

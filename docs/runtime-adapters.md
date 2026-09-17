@@ -59,10 +59,16 @@ def execute_plan_flow(sql_files, config):
     return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
 ```
 
-At invocation time, Quackframe derives a descriptive flow name from the runtime
-root and first SQL filename. It applies each SQL filename to the corresponding
-task. This naming makes Prefect history useful without creating new execution
-semantics.
+The Prefect flow has the fixed name `quackframe-run` because it represents the
+stable Quackframe execution process. When Quackframe loads a downstream
+`[project].name` from `pyproject.toml`, it uses that value as the Prefect flow
+run name. If no project name is available, Quackframe leaves the run name unset
+and lets Prefect generate it.
+
+Each SQL-file task is named from that file's path stem. Full paths remain in
+execution results and failures, where they provide useful diagnostic context.
+Quackframe never derives flow or flow-run identity from SQL filenames,
+timestamps, runtime folders, or generated random values.
 
 The dependency direction remains one-way: Prefect depends on Quackframe core;
 Quackframe core does not import Prefect.
@@ -81,6 +87,12 @@ Installing base Quackframe must not install Prefect. Selecting the Prefect
 runtime without its optional dependency should fail with an actionable message.
 A separate distribution can be introduced later if release cadence or
 dependency isolation earns that boundary.
+
+Runtime names, implementation loaders, and missing-dependency messages live in
+one explicit registry. Configuration validation and command-line choices read
+the public names from that registry. Adding a runtime therefore requires its
+implementation and one registry entry rather than coordinated name branches in
+the CLI, configuration model, and selector.
 
 ## Prefect Connection Settings
 

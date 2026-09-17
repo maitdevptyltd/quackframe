@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from quackframe import cli
 from quackframe.cli import main
 
 
@@ -41,3 +42,15 @@ def test_cli_uses_distinct_status_for_configuration_failure(
 
     assert exit_code == 2
     assert "Configuration error" in capsys.readouterr().err
+
+
+def test_cli_runtime_choices_use_the_runtime_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "runtime_names", lambda: ("example",))
+
+    arguments = cli.build_parser().parse_args(
+        ["run", "--runtime", "example", "example.sql"]
+    )
+
+    assert arguments.runtime == "example"

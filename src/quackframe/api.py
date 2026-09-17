@@ -16,7 +16,12 @@ def run(
     *,
     config: QuackframeConfig | None = None,
 ) -> ExecutionResult:
-    """Execute ordered SQL files through the configured runtime."""
+    """Execute ordered SQL files through the configured runtime.
+
+    Callers may supply a fully resolved configuration. Otherwise Quackframe
+    loads project, environment, and default values from the current directory.
+    Every runtime returns the same Quackframe result type.
+    """
 
     resolved_config = config or load_config()
     prepared_files = prepare_sql_files(sql_files, root=resolved_config.root)

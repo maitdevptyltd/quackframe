@@ -1,7 +1,7 @@
 # Runtime Adapter Boundary
 
 Status: **Complete**
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 Epic: 01 MVP
 Phase: 05
 Related docs: [Runtime Adapters](../../runtime-adapters.md)
@@ -29,3 +29,7 @@ core execution semantics.
 The direct adapter imports no optional framework. Runtime selection occurs
 before a DuckDB session opens, and missing Prefect support produces an
 actionable optional-dependency error.
+
+One explicit registry now owns runtime names, lazy implementation loading, and
+missing-dependency messages. Configuration validation and CLI choices consume
+the same names.

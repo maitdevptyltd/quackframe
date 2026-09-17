@@ -1,7 +1,7 @@
 """Optional Prefect runtime and Block provider tests."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import SecretStr
@@ -11,6 +11,8 @@ prefect = pytest.importorskip("prefect")
 from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 
 from quackframe import QuackframeConfig, run  # noqa: E402
+from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
+from quackframe.sql import PreparedSqlFile  # noqa: E402
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
     AzureConnectionStringCredentials as ResolvedAzureCredentials,
 )
@@ -43,6 +45,55 @@ def test_prefect_runtime_preserves_order_and_shared_session(tmp_path: Path) -> N
         "01-create.sql",
         "02-use.sql",
     )
+
+
+def test_prefect_flow_has_a_stable_name() -> None:
+    assert prefect_runtime.execute_plan_flow.name == "quackframe-run"
+
+
+def test_prefect_file_task_uses_the_path_stem(tmp_path: Path) -> None:
+    task_call = Mock()
+    sql_file = PreparedSqlFile(path=tmp_path / "01-load-data.sql")
+
+    with patch.object(
+        prefect_runtime.execute_sql_file_task,
+        "with_options",
+        return_value=task_call,
+    ) as with_options:
+        prefect_runtime._execute_named_file_task(  # pyright: ignore[reportPrivateUsage]
+            Mock(),
+            sql_file,
+        )
+
+    with_options.assert_called_once_with(name="01-load-data")
+    task_call.assert_called_once()
+
+
+def test_prefect_flow_run_uses_project_name(tmp_path: Path) -> None:
+    configured_flow = Mock()
+    configured_flow.return_value = Mock()
+    config = QuackframeConfig(
+        root=tmp_path,
+        runtime="prefect",
+        project_name="analytics-workflows",
+    )
+
+    with patch.object(
+        prefect_runtime.execute_plan_flow,
+        "with_options",
+        return_value=configured_flow,
+    ) as with_options:
+        prefect_runtime.execute_with_prefect((), config)
+
+    with_options.assert_called_once_with(flow_run_name="analytics-workflows")
+
+
+def test_prefect_provider_rejects_unknown_secret_type_explicitly() -> None:
+    with pytest.raises(ValueError, match="Unsupported Prefect secret type"):
+        PrefectCredentialProvider().resolve(
+            "shared-secret",
+            "future_type",
+        )
 
 
 def test_prefect_provider_translates_mssql_block() -> None:

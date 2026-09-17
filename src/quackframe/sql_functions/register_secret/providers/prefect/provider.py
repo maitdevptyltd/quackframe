@@ -3,11 +3,9 @@
 from typing import cast
 
 from quackframe.sql_functions.register_secret.models import (
-    AzureConnectionStringCredentials as ResolvedAzureCredentials,
-)
-from quackframe.sql_functions.register_secret.models import Credential, SecretType
-from quackframe.sql_functions.register_secret.models import (
-    MssqlCredentials as ResolvedMssqlCredentials,
+    AzureConnectionStringSecret,
+    DuckDBSecret,
+    MssqlSecret,
 )
 from quackframe.sql_functions.register_secret.providers.prefect.blocks import (
     AzureConnectionStringCredentials,
@@ -16,13 +14,19 @@ from quackframe.sql_functions.register_secret.providers.prefect.blocks import (
 
 
 class PrefectCredentialProvider:
-    """Load the Quackframe-owned Block type selected by the secret strategy."""
+    """Translate Quackframe-owned Prefect Blocks into DuckDB secret models.
 
-    def resolve(self, reference: str, secret_type: SecretType) -> Credential:
+    Each supported secret type has an explicit conversion path. Unknown types
+    fail clearly instead of falling through to an unrelated Block shape.
+    """
+
+    def resolve(self, reference: str, secret_type: str) -> DuckDBSecret:
+        """Load a Prefect Block and convert it to the requested DuckDB secret."""
+
         try:
             if secret_type == "mssql":
                 block = cast(MssqlCredentials, MssqlCredentials.load(reference))
-                return ResolvedMssqlCredentials(
+                return MssqlSecret(
                     host=block.host,
                     user=block.user,
                     password=block.password,
@@ -31,16 +35,20 @@ class PrefectCredentialProvider:
                     use_encrypt=block.use_encrypt,
                 )
 
-            block = cast(
-                AzureConnectionStringCredentials,
-                AzureConnectionStringCredentials.load(reference),
-            )
-            return ResolvedAzureCredentials(
-                connection_string=block.connection_string,
-                scope=block.scope,
-            )
+            if secret_type == "azure_connection_string":
+                block = cast(
+                    AzureConnectionStringCredentials,
+                    AzureConnectionStringCredentials.load(reference),
+                )
+                return AzureConnectionStringSecret(
+                    connection_string=block.connection_string,
+                    scope=block.scope,
+                )
+
         except Exception:  # Prefect exposes several client and validation failures.
             raise RuntimeError(
                 f"Prefect credential block '{reference}' could not be loaded. "
                 "Confirm that it exists in the configured Prefect API."
             ) from None
+
+        raise ValueError(f"Unsupported Prefect secret type: {secret_type}")

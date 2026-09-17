@@ -1,4 +1,4 @@
-"""Run the invariant Quackframe execution lifecycle."""
+"""Run SQL files through Quackframe's shared execution path."""
 
 from __future__ import annotations
 
@@ -22,11 +22,18 @@ def execute_plan(
     *,
     execute_file: FileExecutor = execute_sql_file,
 ) -> ExecutionResult:
-    """Run validated files serially in one owned DuckDB session."""
+    """Run validated files serially in one owned DuckDB session.
+
+    Enabled SQL functions are installed before project SQL begins. The supplied
+    file executor may add runtime observation, but it must execute each file in
+    order against this same live connection.
+    """
 
     started_at = datetime.now(UTC)
     file_results: list[SqlFileResult] = []
 
+    # One run owns exactly one database session. Optional runtimes may report
+    # each file separately, but every file must keep using this connection.
     with open_duckdb_session(config) as connection:
         install_functions(connection, config.functions.enabled)
         for sql_file in sql_files:

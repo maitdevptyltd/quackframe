@@ -75,6 +75,29 @@ def test_environment_overrides_toml(tmp_path: Path) -> None:
     assert config.runtime == "prefect"
 
 
+def test_project_name_is_loaded_for_runtime_display(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "analytics-workflows"\n',
+        encoding="utf-8",
+    )
+
+    config = load_config(root=tmp_path, environ={})
+
+    assert config.project_name == "analytics-workflows"
+
+
+def test_runtime_validation_uses_the_runtime_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quackframe import config as config_module
+
+    monkeypatch.setattr(config_module, "runtime_names", lambda: ("example",))
+
+    config = QuackframeConfig(runtime="example")
+
+    assert config.runtime == "example"
+
+
 def test_memory_override_clears_a_toml_database_path(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         """

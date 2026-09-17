@@ -21,7 +21,11 @@ _EXTENSION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 def open_duckdb_session(
     config: QuackframeConfig,
 ) -> Generator[DuckDBPyConnection, None, None]:
-    """Open one configured session and clean up only Quackframe-owned files."""
+    """Open one configured session and clean up Quackframe-owned files.
+
+    Quackframe closes the connection in every database mode. It deletes files
+    only for temporary databases created for this run.
+    """
 
     database_path, managed_path = _database_path(config)
     connection: DuckDBPyConnection | None = None
@@ -33,6 +37,8 @@ def open_duckdb_session(
     finally:
         if connection is not None:
             connection.close()
+        # Persistent paths belong to the caller. A non-null managed path is the
+        # explicit proof that Quackframe owns both the database file and its WAL.
         if managed_path is not None:
             _remove_managed_database(managed_path)
 
@@ -41,6 +47,8 @@ def _open_connection(
     database_path: str,
     config: QuackframeConfig,
 ) -> DuckDBPyConnection:
+    """Open DuckDB with the final settings and report setup failures clearly."""
+
     try:
         return duckdb.connect(
             database=database_path,
@@ -53,6 +61,8 @@ def _open_connection(
 
 
 def _database_path(config: QuackframeConfig) -> tuple[str, Path | None]:
+    """Return DuckDB's connection target and any path Quackframe must remove."""
+
     if config.database.mode == "memory":
         return ":memory:", None
 
@@ -85,6 +95,8 @@ def _database_path(config: QuackframeConfig) -> tuple[str, Path | None]:
 
 
 def _prepare_parent(path: Path) -> None:
+    """Create a database parent directory or report its exact failing path."""
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as error:
@@ -97,6 +109,8 @@ def _load_extensions(
     connection: DuckDBPyConnection,
     extensions: tuple[str, ...],
 ) -> None:
+    """Install and load explicitly configured DuckDB extensions in order."""
+
     for extension in extensions:
         if _EXTENSION_NAME.fullmatch(extension) is None:
             raise ConfigurationError(f"Invalid DuckDB extension name: {extension}")
@@ -111,6 +125,8 @@ def _load_extensions(
 
 
 def _remove_managed_database(path: Path) -> None:
+    """Remove a Quackframe-owned temporary database and its possible WAL."""
+
     try:
         path.unlink(missing_ok=True)
         path.with_name(f"{path.name}.wal").unlink(missing_ok=True)

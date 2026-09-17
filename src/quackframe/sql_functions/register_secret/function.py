@@ -5,14 +5,7 @@ from __future__ import annotations
 from duckdb import DuckDBPyConnection
 
 from quackframe.sql_functions.register_secret.providers.registry import get_provider
-from quackframe.sql_functions.register_secret.strategies import (
-    register_resolved_secret,
-)
-from quackframe.sql_functions.register_secret.validation import (
-    parse_secret_type,
-    validate_identifier,
-    validate_overrides,
-)
+from quackframe.sql_functions.register_secret.validation import validate_identifier
 
 
 def register_secret(
@@ -23,28 +16,24 @@ def register_secret(
     alias: str | None = None,
     overrides: dict[str, str] | None = None,
 ) -> bool:
-    """Resolve a stored credential and register a temporary DuckDB secret."""
+    """Resolve and register one temporary DuckDB secret.
 
-    resolved_type = parse_secret_type(secret_type)
+    SQL supplies only a provider reference, a validated alias, and non-sensitive
+    overrides. The selected provider returns a Quackframe secret model that
+    owns override validation, extension loading, and registration.
+    """
+
     resolved_alias = validate_identifier(
         alias or reference.replace("-", "_"),
         "secret alias",
     )
-    resolved_overrides = validate_overrides(
-        resolved_type,
-        overrides,
-    )
     credential_provider = get_provider(provider)
-    credentials = credential_provider.resolve(reference, resolved_type)
+    secret = credential_provider.resolve(reference, secret_type)
+    resolved_secret = secret.resolve_overrides(overrides or {})
 
-    # The active connection is executing this UDF. Its duplicate can mutate the
-    # same DuckDB instance without re-entering the active query.
+    # The active connection is already running this SQL function. A short-lived
+    # duplicate reaches the same database without trying to reuse that busy
+    # connection, and keeps this special behaviour inside register_secret.
     with connection.duplicate() as secret_connection:
-        register_resolved_secret(
-            secret_connection,
-            resolved_type,
-            resolved_alias,
-            credentials,
-            resolved_overrides,
-        )
+        resolved_secret.register(secret_connection, resolved_alias)
     return True

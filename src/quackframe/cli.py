@@ -10,16 +10,17 @@ from pathlib import Path
 from quackframe.api import run
 from quackframe.config import load_config
 from quackframe.errors import ConfigurationError, ExecutionError, QuackframeError
+from quackframe.runtimes.registry import runtime_names
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the stable command-line surface."""
+    """Build the command-line interface from shared public registries."""
 
     parser = argparse.ArgumentParser(prog="quackframe")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run_parser = subparsers.add_parser("run", help="run ordered SQL files")
     run_parser.add_argument("sql_files", nargs="+")
-    run_parser.add_argument("--runtime", choices=("direct", "prefect"))
+    run_parser.add_argument("--runtime", choices=runtime_names())
     run_parser.add_argument("--config", type=Path)
     run_parser.add_argument("--root", type=Path)
 
@@ -31,7 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Execute the CLI and return scheduler-friendly process status."""
+    """Run ordered SQL files and return a scheduler-friendly process status.
+
+    Configuration failures return ``2``. Execution and other Quackframe
+    failures return ``1`` without exposing SQL text or sensitive values.
+    """
 
     arguments = build_parser().parse_args(argv)
     database_mode = None

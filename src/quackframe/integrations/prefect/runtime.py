@@ -16,17 +16,21 @@ def execute_sql_file_task(
     connection: DuckDBPyConnection,
     sql_file: PreparedSqlFile,
 ) -> SqlFileResult:
-    """Represent one existing Quackframe file execution as a Prefect task."""
+    """Show one SQL file as a non-cached Prefect task.
+
+    The task receives the existing live DuckDB connection, preserving the
+    same database session across the ordered file list.
+    """
 
     return execute_sql_file(connection, sql_file)
 
 
-@flow(retries=0, persist_result=False)
+@flow(name="quackframe-run", retries=0, persist_result=False)
 def execute_plan_flow(
     sql_files: tuple[PreparedSqlFile, ...],
     config: QuackframeConfig,
 ) -> ExecutionResult:
-    """Represent one existing Quackframe execution plan as a Prefect flow."""
+    """Represent the stable Quackframe execution process as a Prefect flow."""
 
     return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
 
@@ -35,13 +39,20 @@ def execute_with_prefect(
     sql_files: tuple[PreparedSqlFile, ...],
     config: QuackframeConfig,
 ) -> ExecutionResult:
-    """Run the decorated wrappers under a descriptive Prefect flow name."""
+    """Run Quackframe with an optional project name in Prefect.
 
-    named_flow = execute_plan_flow.with_options(
-        name=_flow_name(sql_files, config),
-    )
+    The flow name remains ``quackframe-run`` for every invocation. When the
+    downstream ``pyproject.toml`` supplied a project name, Prefect uses it for
+    the individual flow run instead.
+    """
+
+    configured_flow = execute_plan_flow
+    if config.project_name is not None:
+        configured_flow = execute_plan_flow.with_options(
+            flow_run_name=config.project_name,
+        )
     try:
-        return named_flow(sql_files, config)
+        return configured_flow(sql_files, config)
     except ExecutionError:
         raise
     except Exception as error:
@@ -49,20 +60,11 @@ def execute_with_prefect(
             f"Prefect runtime failed: {safe_error_reason(error)}"
         ) from None
 
-
-def _flow_name(
-    sql_files: tuple[PreparedSqlFile, ...],
-    config: QuackframeConfig,
-) -> str:
-    first_file = sql_files[0].path.stem
-    if len(sql_files) == 1:
-        return f"{config.root.name}: {first_file}"
-    return f"{config.root.name}: {first_file} (+{len(sql_files) - 1} files)"
-
-
 def _execute_named_file_task(
     connection: DuckDBPyConnection,
     sql_file: PreparedSqlFile,
 ) -> SqlFileResult:
-    named_task = execute_sql_file_task.with_options(name=sql_file.path.name)
+    """Name one Prefect task from its SQL path stem and execute it in order."""
+
+    named_task = execute_sql_file_task.with_options(name=sql_file.path.stem)
     return named_task(connection, sql_file)

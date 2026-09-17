@@ -1,4 +1,4 @@
-"""Function-neutral DuckDB registration."""
+"""Install enabled Python functions in DuckDB."""
 
 from __future__ import annotations
 
@@ -14,12 +14,24 @@ from quackframe.errors import FunctionDefinitionError, safe_error_reason
 from quackframe.sql_functions.definition import SqlFunction
 from quackframe.sql_functions.registry import resolve_functions
 
+_DUCKDB_SCALAR_TYPES: dict[Any, Any] = {
+    str: VARCHAR,
+    bool: BOOLEAN,
+    int: BIGINT,
+    float: DOUBLE,
+}
+
 
 def install_functions(
     connection: DuckDBPyConnection,
     enabled_names: tuple[str, ...],
 ) -> None:
-    """Install enabled definitions without knowing their concrete behaviour."""
+    """Install every enabled function through the same shared path.
+
+    Definitions and signatures are validated before DuckDB catalog changes
+    begin. The schema, private Python functions, and public SQL names are then
+    installed together so a failure cannot leave a half-installed interface.
+    """
 
     definitions = resolve_functions(enabled_names)
     prepared: list[tuple[SqlFunction, list[Any], Any]] = []
@@ -32,6 +44,8 @@ def install_functions(
         connection.execute("BEGIN TRANSACTION")
         connection.execute('CREATE SCHEMA IF NOT EXISTS "quackframe"')
         for definition, parameter_types, return_type in prepared:
+            # Quackframe supplies the connection to functions that need it.
+            # SQL callers see only the remaining, ordinary arguments.
             connection.create_function(  # pyright: ignore[reportUnknownMemberType]
                 definition.private_name,
                 definition.bind(connection),
@@ -52,6 +66,8 @@ def install_functions(
 def _duckdb_signature(
     definition: SqlFunction,
 ) -> tuple[list[Any], Any]:
+    """Read a Python function's type hints and return its DuckDB types."""
+
     try:
         hints = get_type_hints(definition.callable)
     except (NameError, TypeError) as error:
@@ -78,15 +94,11 @@ def _duckdb_signature(
 
 
 def _duckdb_type(annotation: Any, function_name: str) -> Any:
+    """Map one supported Python type hint to the matching DuckDB type."""
+
     annotation = _without_none(annotation)
-    scalar_types: dict[Any, Any] = {
-        str: VARCHAR,
-        bool: BOOLEAN,
-        int: BIGINT,
-        float: DOUBLE,
-    }
-    if annotation in scalar_types:
-        return scalar_types[annotation]
+    if annotation in _DUCKDB_SCALAR_TYPES:
+        return _DUCKDB_SCALAR_TYPES[annotation]
 
     origin = get_origin(annotation)
     arguments = get_args(annotation)
@@ -100,6 +112,8 @@ def _duckdb_type(annotation: Any, function_name: str) -> Any:
 
 
 def _without_none(annotation: Any) -> Any:
+    """Return the value type from a ``value | None`` type hint."""
+
     origin = get_origin(annotation)
     if origin in (Union, types.UnionType):
         arguments = tuple(

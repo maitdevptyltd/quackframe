@@ -1,7 +1,7 @@
 # Prefect Runtime
 
 Status: **Complete**
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 Epic: 01 MVP
 Phase: 06
 Related docs: [Runtime Adapters](../../runtime-adapters.md)
@@ -30,3 +30,7 @@ Quackframe's execution contract.
 SQL is read by the file task rather than carried in the execution plan. Static
 decorated wrappers call the existing core execution functions, and runtime
 selection imports those wrappers only when Prefect is selected.
+
+The flow name is fixed as `quackframe-run`. A downstream `[project].name` is
+used as the flow-run name when available, while SQL-file task names use path
+stems and retain full paths in Quackframe results and failures.

@@ -4,7 +4,7 @@ Extend and execute DuckDB SQL workflows through a small Python runtime.
 
 Quackframe executes explicitly ordered SQL files in one shared DuckDB session.
 Use it directly from the command line or Python, or install the optional Prefect
-adapter to represent the same execution as a flow with filename-named tasks.
+adapter to represent the same execution as a flow with path-stem-named tasks.
 
 ```powershell
 pip install quackframe

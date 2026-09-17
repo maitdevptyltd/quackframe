@@ -9,7 +9,6 @@ register_secret_function = SqlFunction(
     bind_connection=True,
     side_effects=True,
     null_handling="special",
-    required_modules=("prefect",),
 )
 
 __all__ = ["register_secret_function"]

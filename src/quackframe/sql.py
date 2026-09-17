@@ -15,7 +15,7 @@ from quackframe.models import SqlFileResult
 
 @dataclass(frozen=True)
 class PreparedSqlFile:
-    """A validated SQL path ready for execution."""
+    """Hold a validated SQL path ready for ordered execution."""
 
     path: Path
 
@@ -25,7 +25,11 @@ def prepare_sql_files(
     *,
     root: Path,
 ) -> tuple[PreparedSqlFile, ...]:
-    """Resolve a non-empty ordered SQL-file list before opening DuckDB."""
+    """Validate an ordered SQL-file list before opening DuckDB.
+
+    Relative paths resolve from the runtime root. Reading every file here makes
+    missing, empty, or invalid inputs fail before Quackframe creates a database.
+    """
 
     supplied_paths = tuple(Path(path) for path in sql_files)
     if not supplied_paths:
@@ -50,7 +54,11 @@ def execute_sql_file(
     connection: DuckDBPyConnection,
     sql_file: PreparedSqlFile,
 ) -> SqlFileResult:
-    """Execute every parsed statement in one file without retaining query data."""
+    """Execute every parsed statement in one file on the shared connection.
+
+    DuckDB's parser determines statement boundaries. Quackframe retains only a
+    count and safe failure location, never full SQL or returned rows.
+    """
 
     started_at = datetime.now(UTC)
     statement_number: int | None = None
@@ -78,6 +86,8 @@ def execute_sql_file(
 
 
 def _read_sql(path: Path) -> str:
+    """Read one non-empty UTF-8 SQL file with an actionable path on failure."""
+
     try:
         sql = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:

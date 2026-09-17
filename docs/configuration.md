@@ -28,6 +28,7 @@ The implemented MVP shape is:
 QuackframeConfig
   root
   runtime
+  project_name (loaded metadata when available)
   database
     mode
     path
@@ -40,6 +41,15 @@ QuackframeConfig
 
 Function packages may define their own namespaced configuration without forcing
 unrelated functions to adopt a shared thematic model.
+
+Runtime values are validated against the public names in the runtime registry.
+The CLI uses the same registry for `--runtime` choices, so configuration,
+selection, and command-line help cannot drift into separate hardcoded lists.
+
+When configuration comes from a `pyproject.toml` containing `[project].name`,
+Quackframe retains that non-sensitive metadata for optional runtime display.
+The Prefect adapter uses it as the flow-run name; it does not affect core
+execution or database behaviour.
 
 ## Repository Configuration
 

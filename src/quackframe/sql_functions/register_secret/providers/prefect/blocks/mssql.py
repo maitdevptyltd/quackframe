@@ -5,7 +5,11 @@ from pydantic import Field, SecretStr
 
 
 class MssqlCredentials(Block):
-    """Reusable SQL Server authentication with an optional database."""
+    """Store reusable SQL Server authentication in Prefect.
+
+    ``database`` may be omitted so reviewed SQL can select it through the
+    allowlisted Quackframe override.
+    """
 
     host: str = Field(min_length=1)
     user: SecretStr

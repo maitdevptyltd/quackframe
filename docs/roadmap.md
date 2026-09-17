@@ -56,7 +56,7 @@ and validation notes belong in [epic phase files](epics/README.md).
 ## Phase 6: Prefect Runtime
 
 - Add Prefect as an optional dependency.
-- Wrap one invocation as a flow and each file as a filename-named task.
+- Wrap one invocation as a stable flow and each file as a path-stem-named task.
 - Preserve one shared session, ordering, failure, and no-cache semantics.
 - Respect native Prefect profiles and environment settings.
 
@@ -67,7 +67,7 @@ and validation notes belong in [epic phase files](epics/README.md).
 - Implement a Prefect Block provider without coupling it to the Prefect runtime.
 - Ship Quackframe-owned Prefect Block definitions for the supported credential
   shapes.
-- Support `mssql` and `azure_connection_string` secret strategies in the MVP.
+- Support `mssql` and `azure_connection_string` secret models in the MVP.
 - Support allowlisted per-call overrides so one stored credential can register
   multiple database- or scope-specific secrets.
 - Register temporary DuckDB secrets without returning or logging credentials.

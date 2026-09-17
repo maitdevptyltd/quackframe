@@ -75,16 +75,16 @@ SELECT quackframe.register_secret(
 );
 ```
 
-Each secret strategy owns an allowlist and typed parser:
+Each concrete secret model owns an allowlist and typed parser:
 
 | Secret type | Allowed override keys |
 | --- | --- |
 | `mssql` | `database`, `port`, `use_encrypt` |
 | `azure_connection_string` | `scope` |
 
-String values are parsed into the strategy's typed override model before they
-are merged. Precedence is per-call override, then block value, then the
-strategy's documented default. Required fields are validated after the merge.
+String values are parsed by the selected secret model before they are merged.
+Precedence is per-call override, then provider value, then the model's
+documented default. Required fields are validated after the merge.
 Unknown keys and invalid values fail before DuckDB creates a secret.
 
 Overrides are reviewed SQL, not a second credential channel. They must never
@@ -95,19 +95,32 @@ secret-bearing fields.
 
 The `register_secret` function owns:
 
-- validating provider, reference, secret type, and alias;
+- validating the alias used in generated SQL;
 - selecting an installed provider implementation;
-- asking that provider to register a DuckDB secret;
+- asking that provider for a provider-independent `DuckDBSecret` model;
+- asking that model to resolve allowlisted overrides and register itself;
 - returning a non-sensitive outcome; and
 - converting failures into safe diagnostics.
 
 A credential provider owns:
 
 - resolving its reference through the external service;
-- translating the resolved fields into the requested DuckDB secret type;
-- using parameter binding rather than SQL interpolation;
+- deciding which secret-type names it supports;
+- explicitly translating the resolved fields into the requested Quackframe
+  secret model;
+- rejecting secret types for which it has no explicit conversion;
+- loading only the optional dependencies required by that provider; and
+- keeping sensitive values out of returned results and errors.
+
+A concrete `DuckDBSecret` model owns:
+
+- its typed credential fields;
+- its allowlisted override parsing and final validation;
+- required DuckDB extension loading;
+- temporary-secret registration using bound values rather than SQL
+  interpolation;
 - keeping sensitive values out of returned results and logs; and
-- respecting provider-native authentication and configuration.
+- its secret-type-specific error messages.
 
 Project SQL owns which references it requests and how registered DuckDB secrets
 are used in later `ATTACH`, file access, or other operations.
@@ -129,6 +142,15 @@ These combinations remain valid:
 
 Using Prefect credentials must not require the Prefect runtime, and the Prefect
 runtime must not require credential registration.
+
+The generic `register_secret` SQL function has no global Prefect dependency.
+Provider dependencies are checked only after SQL selects a provider. A future
+non-Prefect provider can therefore install and run without Prefect present.
+
+The generic function passes the requested secret-type name to the selected
+provider as plain text. There is no central list of MSSQL, Azure, or future
+secret types. Each provider rejects names it does not explicitly support, and
+each returned secret model owns its own type-specific behaviour.
 
 For Azure connection-string registration, the Prefect provider resolves a block
 containing the connection string and an optional scope. The scope must be
@@ -201,9 +223,14 @@ documentation.
 ## Function Autonomy
 
 `register_secret` owns its provider protocol and registry within its own
-function package. Other SQL functions do not have to adopt those abstractions.
-If another function later needs similar provider behaviour, duplication is
-acceptable until a genuinely shared invariant earns extraction.
+function package. Each provider registry entry records its public name, lazy
+implementation loader, and actionable missing-dependency message. Adding a
+provider requires a provider package and one entry rather than a new branch in
+the generic selector.
+
+Other SQL functions do not have to adopt those abstractions. If another
+function later needs similar provider behaviour, duplication is acceptable
+until a genuinely shared invariant earns extraction.
 
 ## Connection Mutation
 
@@ -213,7 +240,7 @@ credential-specific request for the runner to process after the current SQL
 statement and keeps the runner function-neutral.
 
 The MVP implements that approach inside `register_secret`. Tests cover the
-duplicate-connection boundary and parameter-bound strategy calls. Live
+duplicate-connection boundary and parameter-bound model calls. Live
 credential and extension smoke tests remain environment-specific release
 validation. Any future mechanism must remain owned by `register_secret` and
 must not introduce provider-specific behaviour into the core runner.

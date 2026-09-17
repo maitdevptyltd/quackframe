@@ -1,4 +1,4 @@
-"""Core execution contracts shared by every runtime adapter."""
+"""Results shared by direct execution and optional runtimes."""
 
 from dataclasses import dataclass
 from datetime import timedelta
@@ -7,7 +7,11 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class SqlFileResult:
-    """Non-sensitive outcome for one executed SQL file."""
+    """Report the safe outcome of one executed SQL file.
+
+    Results retain path, statement count, and elapsed time without retaining
+    SQL text or returned query data.
+    """
 
     path: Path
     statement_count: int
@@ -16,7 +20,11 @@ class SqlFileResult:
 
 @dataclass(frozen=True)
 class ExecutionResult:
-    """Framework-independent outcome for one successful invocation."""
+    """Report one successful run without runtime-specific types.
+
+    The command line, direct Python calls, and optional runtimes all return this
+    same result shape.
+    """
 
     runtime: str
     database_mode: str
@@ -25,5 +33,6 @@ class ExecutionResult:
 
     @property
     def statement_count(self) -> int:
-        """Return the total number of completed statements."""
+        """Return the completed statement count across every executed file."""
+
         return sum(file.statement_count for file in self.files)
