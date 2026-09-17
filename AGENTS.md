@@ -101,9 +101,9 @@ Use the checks required by the applicable skill. The standard repository checks
 are:
 
 ```powershell
-uv run pytest
-uv run ruff check .
-uv run pyright
+poetry run pytest
+poetry run ruff check .
+poetry run pyright
 python .agents/skills/quackframe-documentation/scripts/check_doc_links.py
 git diff --check
 ```
