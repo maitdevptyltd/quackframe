@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from dotenv import dotenv_values
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -133,9 +134,10 @@ def load_config(
 ) -> QuackframeConfig:
     """Build the final configuration for one Quackframe run.
 
-    Project TOML is the lowest-precedence input. Environment values override
-    it, and explicit Python or CLI values win over both. All inputs pass through
-    the same typed model before execution begins.
+    Project TOML is the lowest-precedence input. Runtime-root dotenv values
+    override it, supplied or process environment values override dotenv, and
+    explicit Python or CLI values win over every source. All inputs pass
+    through the same typed model before execution begins.
     """
 
     environment = os.environ if environ is None else environ
@@ -149,11 +151,14 @@ def load_config(
         if config_path is not None
         else initial_root / "pyproject.toml"
     )
+    dotenv_environment = _read_dotenv(initial_root / ".env")
+    dotenv_environment.pop("QUACKFRAME_ROOT", None)
 
     data, project_name = _read_project_config(
         source_path,
         required=config_path is not None,
     )
+    data = _merge(data, _environment_config(dotenv_environment))
     data = _merge(data, _environment_config(environment))
     data = _merge(
         data,
@@ -173,6 +178,21 @@ def load_config(
         return QuackframeConfig.model_validate(data)
     except ValidationError as error:
         raise ConfigurationError(_validation_reason(error)) from None
+
+
+def _read_dotenv(path: Path) -> dict[str, str]:
+    """Read one optional dotenv file without changing process state."""
+
+    if not path.exists():
+        return {}
+
+    try:
+        with path.open(encoding="utf-8") as stream:
+            parsed_values = dotenv_values(stream=stream)
+    except (OSError, UnicodeError):
+        raise ConfigurationError(f"Could not read dotenv file: {path}") from None
+
+    return {name: value for name, value in parsed_values.items() if value is not None}
 
 
 def _read_project_config(

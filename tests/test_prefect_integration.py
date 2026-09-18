@@ -11,7 +11,7 @@ prefect = pytest.importorskip("prefect")
 
 from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 
-from quackframe import QuackframeConfig, run  # noqa: E402
+from quackframe import QuackframeConfig, load_config, run  # noqa: E402
 from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
 from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
@@ -46,6 +46,25 @@ def test_prefect_runtime_preserves_order_and_shared_session(tmp_path: Path) -> N
         "01-create.sql",
         "02-use.sql",
     )
+
+
+def test_dotenv_permission_allows_prefect_result_logging(tmp_path: Path) -> None:
+    sql_file = tmp_path / "result.sql"
+    sql_file.write_text(
+        "-- quackframe: log-result\nSELECT 'visible' AS value;",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env").write_text(
+        'QUACKFRAME_RUNTIME="prefect"\n'
+        'QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING="true"\n',
+        encoding="utf-8",
+    )
+    config = load_config(root=tmp_path, environ={})
+
+    with prefect_test_harness():
+        result = run([sql_file], config=config)
+
+    assert result.runtime == "prefect"
 
 
 def test_prefect_flow_has_a_stable_name() -> None:

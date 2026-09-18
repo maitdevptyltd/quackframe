@@ -2099,6 +2099,7 @@ aws = ["prefect-aws (>=0.5.8)"]
 azure = ["prefect-azure (>=0.4.0)"]
 bitbucket = ["prefect-bitbucket (>=0.3.0)"]
 buildx = ["python-on-whales (>=0.81)"]
+bundles = ["uv (>=0.6.0)"]
 dask = ["prefect-dask (>=0.3.0)"]
 databricks = ["prefect-databricks (>=0.3.0)"]
 dbt = ["prefect-dbt (>=0.6.0)"]
@@ -2529,10 +2530,9 @@ six = ">=1.5"
 name = "python-dotenv"
 version = "1.2.3"
 description = "Read key-value pairs from a .env file and set them as environment variables"
-optional = true
+optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "extra == \"prefect\""
 files = [
     {file = "python_dotenv-1.2.3-py3-none-any.whl", hash = "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9"},
     {file = "python_dotenv-1.2.3.tar.gz", hash = "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35"},
@@ -3830,4 +3830,4 @@ prefect = ["numpy", "prefect"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "39825236d6624e22c9251e747947445adca4f7e9a5b3ebbd7731c5edadb8e05b"
+content-hash = "61cd0f06c1b2cbdd0ad48548c24cb242e1d859e299648a2011e3ecb0d33a4bd3"

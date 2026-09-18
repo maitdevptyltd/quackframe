@@ -1,6 +1,6 @@
 # Dotenv Configuration Loading
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-09-18
 Epic: 03 Configuration
 Phase: 01
@@ -17,7 +17,7 @@ settings from `.env`, while Quackframe settings such as
 `QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` remain unavailable unless another
 tool first exports them into the process environment.
 
-## Proposed Scope
+## Implemented Scope
 
 - Add `python-dotenv` as a direct core dependency and use its supported parser
   rather than implementing dotenv syntax inside Quackframe.
@@ -70,8 +70,9 @@ tool first exports them into the process environment.
 
 - Add one narrow dotenv-reading helper beside the existing configuration-source
   functions in `src/quackframe/config.py`.
-- Merge the parsed dotenv mapping with the supplied or process environment
-  before calling the existing `_environment_config()` translator.
+- Translate the parsed dotenv mapping and the supplied or process environment
+  separately, then structurally merge them in precedence order. This preserves
+  source-level semantics for related settings such as database mode and path.
 - Keep source precedence visible in `load_config()` rather than introducing a
   configuration-provider framework.
 - Update the dependency lock, developer configuration documentation, and a
@@ -122,10 +123,9 @@ Quackframe's established configuration loader.
 - Expanding environment variables into checked-in TOML values.
 - Turning dotenv files into a credential store or logging their contents.
 
-## Open Decision
+## Decision
 
-- Whether `QUACKFRAME_ROOT` may be supplied by the discovered `.env`. The
-  recommended first implementation keeps root as a bootstrap input from an
-  explicit argument, the process environment, or the current working
-  directory; this avoids loading configuration from one root and then silently
-  switching to another.
+- `QUACKFRAME_ROOT` remains a bootstrap input from an explicit argument, the
+  process environment, or the current working directory. A value in the
+  discovered `.env` is ignored so configuration cannot load from one root and
+  then silently switch to another or trigger a second dotenv search.

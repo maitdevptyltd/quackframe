@@ -76,6 +76,11 @@ direction. Without permission, a non-direct run that would emit results fails
 before project SQL executes. Direct terminal output does not require this
 permission.
 
+The CLI and `load_config()` also read Quackframe-owned settings from exactly
+`.env` at the resolved runtime root. Process environment values override that
+file, and the CLI flags above override both. Quackframe never exports parsed
+dotenv values into the process environment.
+
 ## Visual Studio Code F5
 
 F5 is a first-class developer experience implemented as a thin wrapper over the

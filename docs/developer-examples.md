@@ -37,6 +37,22 @@ print(result)
 The Python API resolves the same `pyproject.toml` and environment inputs as the
 CLI.
 
+## Use Runtime-Local Dotenv Settings
+
+Place optional deployment settings in `.env` at the runtime root:
+
+```dotenv
+QUACKFRAME_RUNTIME="direct"
+QUACKFRAME_DATABASE_PATH=".quackframe/local.duckdb"
+DUCKDB_TEMP_DIRECTORY=".quackframe/tmp"
+```
+
+Then use the normal CLI or Python entry point. Quackframe reads only that file,
+does not search parent directories, and does not modify `os.environ`. Process
+environment values take precedence over `.env`; explicit CLI or Python values
+take precedence over both. Keep `.env` out of Git when it contains secrets or
+environment-sensitive values.
+
 ## Select the Prefect Runtime
 
 ```toml

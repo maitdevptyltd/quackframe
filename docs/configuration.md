@@ -1,9 +1,9 @@
 # Configuration
 
 Quackframe configuration is owned by a typed `QuackframeConfig` model.
-`pyproject.toml`, environment variables, native integration settings, CLI
-arguments, and direct Python values are inputs to that model; they are not
-independent sources of runtime truth.
+`pyproject.toml`, one optional runtime-root `.env`, environment variables,
+native integration settings, CLI arguments, and direct Python values are
+inputs to that model; they are not independent sources of runtime truth.
 
 ## Configuration Boundary
 
@@ -12,7 +12,7 @@ Use this decision rule:
 | Value | Authoritative input |
 | --- | --- |
 | Stable behaviour every clone should inherit | `pyproject.toml` |
-| Machine-, deployment-, identity-, or environment-specific value | Environment or native integration profile |
+| Machine-, deployment-, identity-, or environment-specific value | Runtime-root `.env`, environment, or native integration profile |
 | Credential or sensitive metadata | Native secure mechanism or injected environment |
 | Deliberate exception for one invocation | CLI or direct Python value |
 
@@ -130,6 +130,23 @@ QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING
 DUCKDB_TEMP_DIRECTORY
 ```
 
+Quackframe reads exactly `<runtime-root>/.env` as UTF-8 when `load_config()` is
+used. It does not search parent directories or load variant filenames such as
+`.env.local`. A missing file is a silent no-op. Values are parsed with
+`python-dotenv`, so quoted values, comments, interpolation, and multiline
+values use its supported syntax.
+
+The runtime root is resolved before dotenv loading from an explicit `root`,
+`QUACKFRAME_ROOT` in the supplied or current process environment, or the
+current working directory. `QUACKFRAME_ROOT` inside `.env` is ignored: it does
+not relocate the root or trigger a second dotenv search.
+
+Only the names listed above are consumed from `.env`. Quackframe does not copy
+dotenv values into `os.environ`, and it leaves `PREFECT_*` settings, Prefect
+profiles, and Prefect's native dotenv behaviour to Prefect. Exclude
+secret-bearing `.env` files from Git even though Quackframe itself does not
+treat dotenv as a credential store.
+
 `QUACKFRAME_LOG_SETTING` accepts `annotations-only`, `none`, or `all`.
 `QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` is a Boolean permission that defaults
 to `false`. It is required when a non-direct runtime would send selected values
@@ -185,9 +202,10 @@ providers.
 ```mermaid
 flowchart TD
   Direct[1 Direct Python or CLI] --> Model[QuackframeConfig]
-  Environment[2 Environment and native settings] --> Model
-  TOML[3 pyproject.toml] --> Model
-  Defaults[4 Quackframe defaults] --> Model
+  Environment[2 Supplied or process environment] --> Model
+  Dotenv[3 Runtime-root .env] --> Model
+  TOML[4 pyproject.toml] --> Model
+  Defaults[5 Quackframe defaults] --> Model
   Model --> Runtime[Resolved Runtime Configuration]
 ```
 
