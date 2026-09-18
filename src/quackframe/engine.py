@@ -13,7 +13,10 @@ from quackframe.models import ExecutionResult, SqlFileResult
 from quackframe.sql import PreparedSqlFile, execute_sql_file
 from quackframe.sql_functions.installer import install_functions
 
-FileExecutor = Callable[[DuckDBPyConnection, PreparedSqlFile], SqlFileResult]
+FileExecutor = Callable[
+    [DuckDBPyConnection, PreparedSqlFile],
+    SqlFileResult,
+]
 
 
 def execute_plan(

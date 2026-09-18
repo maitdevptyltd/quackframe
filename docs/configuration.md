@@ -29,6 +29,8 @@ QuackframeConfig
   root
   runtime
   project_name (loaded metadata when available)
+  log_setting
+  allow_external_result_logging
   database
     mode
     path
@@ -123,8 +125,22 @@ QUACKFRAME_ROOT
 QUACKFRAME_RUNTIME
 QUACKFRAME_DATABASE_MODE
 QUACKFRAME_DATABASE_PATH
+QUACKFRAME_LOG_SETTING
+QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING
 DUCKDB_TEMP_DIRECTORY
 ```
+
+`QUACKFRAME_LOG_SETTING` accepts `annotations-only`, `none`, or `all`.
+`QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` is a Boolean permission that defaults
+to `false`. It is required when a non-direct runtime would send selected values
+to an external logging system.
+
+Logging selection and external-result permission are deliberately excluded
+from `[tool.quackframe]`: a checked-in repository cannot grant permission to
+retain returned values. They come from environment, explicit CLI arguments, or
+direct Python configuration. The CLI can override environment values with
+`--log-setting`, `--allow-external-result-logging`, and
+`--deny-external-result-logging`.
 
 Quackframe should not create aliases for every setting owned by another
 product. Optional adapters should first respect that product's native

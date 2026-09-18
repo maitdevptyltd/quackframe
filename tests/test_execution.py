@@ -12,6 +12,10 @@ from quackframe import (
     QuackframeConfig,
     run,
 )
+from quackframe.engine import execute_plan
+from quackframe.runtimes import registry as runtime_registry
+from quackframe.runtimes.registry import RuntimeRegistration
+from quackframe.sql import prepare_sql_files
 
 
 def _write(path: Path, sql: str) -> Path:
@@ -102,3 +106,274 @@ def test_empty_input_fails_before_database_creation(tmp_path: Path) -> None:
         run([], config=config)
 
     assert not database_path.exists()
+
+
+def test_annotations_only_emits_only_annotated_results(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+SELECT 'hidden' AS value;
+-- quackframe: log-result
+SELECT 'shown' AS value;
+""".strip(),
+    )
+
+    run([sql_file], config=QuackframeConfig(root=tmp_path))
+
+    output = capsys.readouterr().out
+    assert "shown" in output
+    assert "hidden" not in output
+
+
+def test_none_ignores_annotations(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        "-- quackframe: log-result\nSELECT 'hidden' AS value;",
+    )
+
+    run(
+        [sql_file],
+        config=QuackframeConfig(root=tmp_path, log_setting="none"),
+    )
+
+    assert capsys.readouterr().out == ""
+
+
+def test_all_emits_annotated_and_unannotated_results_once(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+-- quackframe: log-result
+SELECT 'first-value' AS value;
+SELECT 'second-value' AS value;
+""".strip(),
+    )
+
+    run(
+        [sql_file],
+        config=QuackframeConfig(root=tmp_path, log_setting="all"),
+    )
+
+    output = capsys.readouterr().out
+    assert output.count("first-value") == 1
+    assert output.count("second-value") == 1
+
+
+def test_annotation_binding_ignores_strings_and_semicolons(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+SELECT '-- quackframe: log-result; returning' AS hidden;
+-- ordinary comment
+-- quackframe: log-result
+SELECT 'shown;value' AS visible;
+""".strip(),
+    )
+
+    run([sql_file], config=QuackframeConfig(root=tmp_path))
+
+    output = capsys.readouterr().out
+    assert "shown;value" in output
+    assert "returning" not in output
+
+
+def test_native_relation_rendering_owns_truncation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        "-- quackframe: log-result\nSELECT i FROM range(25) AS rows(i);",
+    )
+
+    run([sql_file], config=QuackframeConfig(root=tmp_path))
+
+    output = capsys.readouterr().out
+    assert "25 rows" in output
+    assert "20 shown" in output
+
+
+def test_annotated_returning_after_unicode_emits_and_executes_once(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_path = tmp_path / "results.duckdb"
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+CREATE TABLE events(value VARCHAR);
+-- quackframe: log-result
+INSERT INTO events VALUES ('é') RETURNING value;
+""".strip(),
+    )
+    config = QuackframeConfig(
+        root=tmp_path,
+        database=DatabaseConfig(mode="persistent", path=database_path),
+    )
+
+    run([sql_file], config=config)
+
+    assert capsys.readouterr().out.count("é") == 1
+    with duckdb.connect(str(database_path)) as connection:
+        assert connection.execute("SELECT value FROM events").fetchall() == [("é",)]
+
+
+def test_all_returning_after_unicode_emits_and_executes_once(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_path = tmp_path / "results.duckdb"
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+CREATE TABLE events(value VARCHAR);
+INSERT INTO events VALUES ('é') RETURNING value;
+""".strip(),
+    )
+    config = QuackframeConfig(
+        root=tmp_path,
+        database=DatabaseConfig(mode="persistent", path=database_path),
+        log_setting="all",
+    )
+
+    run([sql_file], config=config)
+
+    assert capsys.readouterr().out.count("é") == 1
+    with duckdb.connect(str(database_path)) as connection:
+        assert connection.execute("SELECT value FROM events").fetchall() == [("é",)]
+
+
+def test_returning_inside_nested_block_comment_is_not_a_result(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+CREATE TABLE events(value INTEGER);
+INSERT INTO events VALUES (1) /* outer /* inner */ RETURNING */;
+""".strip(),
+    )
+
+    run(
+        [sql_file],
+        config=QuackframeConfig(root=tmp_path, log_setting="all"),
+    )
+
+    assert capsys.readouterr().out == ""
+
+
+def test_prepared_statements_do_not_change_when_source_file_changes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sql_file = _write(tmp_path / "results.sql", "SELECT 'prepared-value';")
+    config = QuackframeConfig(root=tmp_path, log_setting="all")
+    prepared = prepare_sql_files(
+        [sql_file],
+        root=tmp_path,
+        log_setting=config.log_setting,
+    )
+    sql_file.write_text("SELECT 'changed-value';", encoding="utf-8")
+
+    execute_plan(prepared, config)
+
+    output = capsys.readouterr().out
+    assert "prepared-value" in output
+    assert "changed-value" not in output
+
+
+def test_preparation_reports_the_invalid_annotation_statement(
+    tmp_path: Path,
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        """
+CREATE TABLE events(value INTEGER);
+-- quackframe: log-result
+-- another comment
+SELECT 1;
+""".strip(),
+    )
+
+    with pytest.raises(ExecutionError) as captured:
+        prepare_sql_files(
+            [sql_file],
+            root=tmp_path,
+            log_setting="annotations-only",
+        )
+
+    assert captured.value.statement_number == 2
+
+
+def test_external_result_policy_is_supplied_by_the_runtime(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        "-- quackframe: log-result\nSELECT 'local-value';",
+    )
+    local_runtime = RuntimeRegistration(
+        name="local-observer",
+        module_name="quackframe.engine",
+        implementation_name="execute_plan",
+        result_logging_is_external=False,
+    )
+    monkeypatch.setattr(
+        runtime_registry,
+        "RUNTIME_REGISTRY",
+        (*runtime_registry.RUNTIME_REGISTRY, local_runtime),
+    )
+    config = QuackframeConfig(root=tmp_path, runtime="local-observer")
+
+    run([sql_file], config=config)
+
+    assert "local-value" in capsys.readouterr().out
+
+
+def test_external_runtime_requires_permission_before_sql(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "not-created.duckdb"
+    sql_file = _write(
+        tmp_path / "results.sql",
+        "-- quackframe: log-result\nSELECT 1;",
+    )
+    config = QuackframeConfig(
+        root=tmp_path,
+        runtime="prefect",
+        database=DatabaseConfig(mode="persistent", path=database_path),
+    )
+
+    with pytest.raises(ConfigurationError, match="External result logging"):
+        run([sql_file], config=config)
+
+    assert not database_path.exists()
+
+
+def test_all_requires_external_permission_even_without_annotations(
+    tmp_path: Path,
+) -> None:
+    sql_file = _write(tmp_path / "results.sql", "CREATE TABLE example(i INTEGER);")
+    config = QuackframeConfig(
+        root=tmp_path,
+        runtime="prefect",
+        log_setting="all",
+    )
+
+    with pytest.raises(ConfigurationError, match="External result logging"):
+        run([sql_file], config=config)

@@ -36,6 +36,10 @@ files, or credential providers must be local.
 Direct execution remains a first-class path and must work without Prefect
 or another optional runtime dependency installed.
 
+Selected SQL results are rendered with DuckDB's native relation representation
+and written to the terminal. Direct output does not require external-result
+permission.
+
 ## Prefect Runtime
 
 The optional Prefect adapter provides:
@@ -44,6 +48,11 @@ The optional Prefect adapter provides:
 - one filename-named Prefect task run for each SQL file;
 - Prefect logging, timing, state, and failure visibility;
 - the same shared connection and file order as direct execution.
+
+Selected SQL results are written from inside the corresponding file task with
+Prefect's run logger. Because that logging system may retain values, the runtime
+requires explicit external-result permission before project SQL executes and
+emits one retention warning when result logging is enabled.
 
 Prefect decorators live only in the optional integration package. Static,
 decorated functions wrap the existing core entry points:
@@ -88,11 +97,13 @@ runtime without its optional dependency should fail with an actionable message.
 A separate distribution can be introduced later if release cadence or
 dependency isolation earns that boundary.
 
-Runtime names, implementation loaders, and missing-dependency messages live in
-one explicit registry. Configuration validation and command-line choices read
-the public names from that registry. Adding a runtime therefore requires its
-implementation and one registry entry rather than coordinated name branches in
-the CLI, configuration model, and selector.
+Runtime names, implementation loaders, missing-dependency messages, and the
+result-log destination policy live in one explicit registry. Configuration
+validation and command-line choices read the public names from that registry.
+The external-result permission is therefore driven by an adapter capability,
+not by treating every runtime name other than `direct` alike. Adding a runtime
+requires its implementation and one registry entry rather than coordinated
+name branches in the CLI, configuration model, and selector.
 
 ## Prefect Connection Settings
 

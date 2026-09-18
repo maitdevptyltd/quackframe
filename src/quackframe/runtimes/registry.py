@@ -38,6 +38,7 @@ class RuntimeRegistration:
     name: str
     module_name: str
     implementation_name: str
+    result_logging_is_external: bool
     missing_dependency: str | None = None
     missing_dependency_message: str | None = None
 
@@ -68,11 +69,13 @@ RUNTIME_REGISTRY: tuple[RuntimeRegistration, ...] = (
         name="direct",
         module_name="quackframe.engine",
         implementation_name="execute_plan",
+        result_logging_is_external=False,
     ),
     RuntimeRegistration(
         name="prefect",
         module_name="quackframe.integrations.prefect.runtime",
         implementation_name="execute_with_prefect",
+        result_logging_is_external=True,
         missing_dependency="prefect",
         missing_dependency_message=(
             "The Prefect runtime requires 'quackframe[prefect]'"
@@ -95,7 +98,13 @@ def get_runtime(name: str) -> Runtime:
     branches in configuration or command-line code.
     """
 
+    return get_runtime_registration(name).load()
+
+
+def get_runtime_registration(name: str) -> RuntimeRegistration:
+    """Return the adapter registration that owns runtime policy and loading."""
+
     for registration in RUNTIME_REGISTRY:
         if registration.name == name:
-            return registration.load()
+            return registration
     raise OptionalDependencyError(f"Unsupported runtime: {name}")

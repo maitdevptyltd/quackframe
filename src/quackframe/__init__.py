@@ -5,6 +5,7 @@ from quackframe.config import (
     DatabaseConfig,
     DuckDBConfig,
     FunctionsConfig,
+    LogSetting,
     QuackframeConfig,
     load_config,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "ExecutionResult",
     "FunctionDefinitionError",
     "FunctionsConfig",
+    "LogSetting",
     "OptionalDependencyError",
     "QuackframeConfig",
     "QuackframeError",

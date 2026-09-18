@@ -1,8 +1,9 @@
 """Optional Prefect runtime and Block provider tests."""
 
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
+import duckdb
 import pytest
 from pydantic import SecretStr
 
@@ -12,7 +13,7 @@ from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 
 from quackframe import QuackframeConfig, run  # noqa: E402
 from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
-from quackframe.sql import PreparedSqlFile  # noqa: E402
+from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
     AzureConnectionStringCredentials as ResolvedAzureCredentials,
 )
@@ -53,7 +54,10 @@ def test_prefect_flow_has_a_stable_name() -> None:
 
 def test_prefect_file_task_uses_the_path_stem(tmp_path: Path) -> None:
     task_call = Mock()
-    sql_file = PreparedSqlFile(path=tmp_path / "01-load-data.sql")
+    sql_file = PreparedSqlFile(
+        path=tmp_path / "01-load-data.sql",
+        statements=(),
+    )
 
     with patch.object(
         prefect_runtime.execute_sql_file_task,
@@ -66,7 +70,7 @@ def test_prefect_file_task_uses_the_path_stem(tmp_path: Path) -> None:
         )
 
     with_options.assert_called_once_with(name="01-load-data")
-    task_call.assert_called_once()
+    task_call.assert_called_once_with(ANY, sql_file)
 
 
 def test_prefect_flow_run_uses_project_name(tmp_path: Path) -> None:
@@ -86,6 +90,62 @@ def test_prefect_flow_run_uses_project_name(tmp_path: Path) -> None:
         prefect_runtime.execute_with_prefect((), config)
 
     with_options.assert_called_once_with(flow_run_name="analytics-workflows")
+
+
+def test_prefect_file_task_logs_selected_result(
+    tmp_path: Path,
+) -> None:
+    sql_file_path = tmp_path / "result.sql"
+    sql_file_path.write_text(
+        "-- quackframe: log-result\nSELECT 'visible' AS value;",
+        encoding="utf-8",
+    )
+    config = QuackframeConfig(
+        root=tmp_path,
+        runtime="prefect",
+        allow_external_result_logging=True,
+    )
+    sql_file = prepare_sql_files(
+        [sql_file_path],
+        root=tmp_path,
+        log_setting=config.log_setting,
+    )[0]
+    logger = Mock()
+
+    with (
+        duckdb.connect() as connection,
+        patch.object(prefect_runtime, "get_run_logger", return_value=logger),
+    ):
+        prefect_runtime.execute_sql_file_task.fn(connection, sql_file)
+
+    rendered_result = logger.info.call_args.args[0]
+    assert "visible" in rendered_result
+    logger.info.assert_called_once()
+
+
+def test_prefect_warns_once_before_external_results(tmp_path: Path) -> None:
+    sql_file_path = tmp_path / "result.sql"
+    sql_file_path.write_text("SELECT 'visible';", encoding="utf-8")
+    config = QuackframeConfig(
+        root=tmp_path,
+        runtime="prefect",
+        log_setting="all",
+        allow_external_result_logging=True,
+    )
+    sql_files = prepare_sql_files(
+        [sql_file_path],
+        root=tmp_path,
+        log_setting=config.log_setting,
+    )
+    logger = Mock()
+
+    with (
+        patch.object(prefect_runtime, "get_run_logger", return_value=logger),
+        patch.object(prefect_runtime, "execute_plan", return_value=Mock()),
+    ):
+        prefect_runtime.execute_plan_flow.fn(sql_files, config)
+
+    logger.warning.assert_called_once()
 
 
 def test_prefect_provider_rejects_unknown_secret_type_explicitly() -> None:

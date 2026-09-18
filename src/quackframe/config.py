@@ -22,6 +22,13 @@ from quackframe.runtimes.registry import runtime_names
 
 RuntimeName = str
 DatabaseMode = Literal["memory", "temporary", "persistent"]
+LogSetting = Literal["annotations-only", "none", "all"]
+LOG_SETTINGS: tuple[LogSetting, ...] = ("annotations-only", "none", "all")
+
+_INVOCATION_ONLY_SETTINGS = (
+    "log_setting",
+    "allow_external_result_logging",
+)
 
 
 class DatabaseConfig(BaseModel):
@@ -87,6 +94,8 @@ class QuackframeConfig(BaseModel):
     root: Path = Field(default_factory=Path.cwd)
     runtime: RuntimeName = "direct"
     project_name: str | None = Field(default=None, exclude=True, repr=False)
+    log_setting: LogSetting = "annotations-only"
+    allow_external_result_logging: bool = False
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     functions: FunctionsConfig = Field(default_factory=FunctionsConfig)
     duckdb: DuckDBConfig = Field(default_factory=DuckDBConfig)
@@ -116,6 +125,8 @@ def load_config(
     config_path: str | Path | None = None,
     root: str | Path | None = None,
     runtime: RuntimeName | None = None,
+    log_setting: LogSetting | None = None,
+    allow_external_result_logging: bool | None = None,
     database_mode: DatabaseMode | None = None,
     database_path: str | Path | None = None,
     environ: Mapping[str, str] | None = None,
@@ -149,6 +160,8 @@ def load_config(
         _explicit_config(
             root=root,
             runtime=runtime,
+            log_setting=log_setting,
+            allow_external_result_logging=allow_external_result_logging,
             database_mode=database_mode,
             database_path=database_path,
         ),
@@ -188,6 +201,12 @@ def _read_project_config(
     quackframe = tool.get("quackframe", {})
     if not isinstance(quackframe, dict):
         raise ConfigurationError("[tool.quackframe] must be a TOML table")
+    for setting in _INVOCATION_ONLY_SETTINGS:
+        if setting in quackframe:
+            raise ConfigurationError(
+                f"[tool.quackframe].{setting} is not allowed; "
+                "use an environment or invocation value"
+            )
     project_value = project.get("project", {})
     project_name = None
     if isinstance(project_value, dict):
@@ -206,6 +225,10 @@ def _environment_config(environment: Mapping[str, str]) -> dict[str, Any]:
         values["root"] = value
     if value := environment.get("QUACKFRAME_RUNTIME"):
         values["runtime"] = value
+    if value := environment.get("QUACKFRAME_LOG_SETTING"):
+        values["log_setting"] = value
+    if value := environment.get("QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING"):
+        values["allow_external_result_logging"] = value
     if value := environment.get("QUACKFRAME_DATABASE_MODE"):
         values.setdefault("database", {})["mode"] = value
         if value in {"memory", "temporary"}:
@@ -225,6 +248,8 @@ def _explicit_config(
     *,
     root: str | Path | None,
     runtime: RuntimeName | None,
+    log_setting: LogSetting | None,
+    allow_external_result_logging: bool | None,
     database_mode: DatabaseMode | None,
     database_path: str | Path | None,
 ) -> dict[str, Any]:
@@ -235,6 +260,10 @@ def _explicit_config(
         values["root"] = str(root)
     if runtime is not None:
         values["runtime"] = runtime
+    if log_setting is not None:
+        values["log_setting"] = log_setting
+    if allow_external_result_logging is not None:
+        values["allow_external_result_logging"] = allow_external_result_logging
     if database_mode is not None:
         values.setdefault("database", {})["mode"] = database_mode
         if database_mode in {"memory", "temporary"}:

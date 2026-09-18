@@ -26,7 +26,10 @@ service integrations.
   post-MVP decisions.
 - [Epics](epics/README.md): implementor-facing phase tracking.
 - [SQL Result Logging Scope](epics/02-result-logging/01-sql-result-logging.md):
-  planned statement selection and direct or Prefect log delivery.
+  implemented statement selection, native DuckDB rendering, and safe runtime
+  delivery.
+- [Dotenv Configuration Scope](epics/03-configuration/01-dotenv-loading.md):
+  proposed runtime-root `.env` loading for Quackframe-owned settings.
 
 ## Knowledge Map
 

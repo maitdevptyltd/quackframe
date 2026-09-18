@@ -1,14 +1,23 @@
 """Prefect wrappers around Quackframe's existing execution functions."""
 
 from duckdb import DuckDBPyConnection
-from prefect import flow, task
+from prefect import flow, get_run_logger, task
 from prefect.cache_policies import NO_CACHE
 
 from quackframe.config import QuackframeConfig
 from quackframe.engine import execute_plan
 from quackframe.errors import ExecutionError, QuackframeError, safe_error_reason
 from quackframe.models import ExecutionResult, SqlFileResult
-from quackframe.sql import PreparedSqlFile, execute_sql_file
+from quackframe.sql import (
+    PreparedSqlFile,
+    execute_sql_file,
+    result_logging_can_emit,
+)
+
+_RETENTION_WARNING = (
+    "Quackframe result logging is enabled; returned values may be retained "
+    "by the destination logging system."
+)
 
 
 @task(cache_policy=NO_CACHE, retries=0, persist_result=False)
@@ -22,7 +31,11 @@ def execute_sql_file_task(
     same database session across the ordered file list.
     """
 
-    return execute_sql_file(connection, sql_file)
+    return execute_sql_file(
+        connection,
+        sql_file,
+        emit_result=get_run_logger().info,
+    )
 
 
 @flow(name="quackframe-run", retries=0, persist_result=False)
@@ -32,6 +45,8 @@ def execute_plan_flow(
 ) -> ExecutionResult:
     """Represent the stable Quackframe execution process as a Prefect flow."""
 
+    if config.allow_external_result_logging and result_logging_can_emit(sql_files):
+        get_run_logger().warning(_RETENTION_WARNING)
     return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
 
 

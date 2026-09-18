@@ -1,10 +1,11 @@
 """Command-line behaviour tests."""
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
-from quackframe import cli
+from quackframe import QuackframeConfig, cli
 from quackframe.cli import main
 
 
@@ -54,3 +55,55 @@ def test_cli_runtime_choices_use_the_runtime_registry(
     )
 
     assert arguments.runtime == "example"
+
+
+@pytest.mark.parametrize(
+    "flag, expected",
+    [
+        ("--allow-external-result-logging", True),
+        ("--deny-external-result-logging", False),
+    ],
+)
+def test_cli_external_logging_flags_override_in_both_directions(
+    flag: str,
+    expected: bool,
+) -> None:
+    arguments = cli.build_parser().parse_args(["run", flag, "example.sql"])
+
+    assert arguments.allow_external_result_logging is expected
+
+
+def test_cli_logging_overrides_default_to_unspecified() -> None:
+    arguments = cli.build_parser().parse_args(["run", "example.sql"])
+
+    assert arguments.log_setting is None
+    assert arguments.allow_external_result_logging is None
+
+
+def test_cli_passes_logging_overrides_to_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    load_config = Mock(return_value=QuackframeConfig())
+    run = Mock(
+        return_value=Mock(
+            files=(),
+            statement_count=0,
+            runtime="direct",
+        )
+    )
+    monkeypatch.setattr(cli, "load_config", load_config)
+    monkeypatch.setattr(cli, "run", run)
+
+    exit_code = main(
+        [
+            "run",
+            "--log-setting",
+            "none",
+            "--deny-external-result-logging",
+            "example.sql",
+        ]
+    )
+
+    assert exit_code == 0
+    assert load_config.call_args.kwargs["log_setting"] == "none"
+    assert load_config.call_args.kwargs["allow_external_result_logging"] is False

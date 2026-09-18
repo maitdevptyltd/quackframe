@@ -19,6 +19,10 @@ from the main documentation.
 
 - [01 SQL Result Logging](02-result-logging/01-sql-result-logging.md)
 
+## Epic 03: Configuration
+
+- [01 Dotenv Configuration Loading](03-configuration/01-dotenv-loading.md)
+
 ## Status Rules
 
 Allowed statuses are `Planned`, `In Progress`, `Blocked`, and `Complete`.

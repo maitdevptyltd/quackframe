@@ -32,6 +32,8 @@ def test_defaults_use_current_working_directory_and_memory(
 
     assert config.root == tmp_path
     assert config.runtime == "direct"
+    assert config.log_setting == "annotations-only"
+    assert config.allow_external_result_logging is False
     assert config.database.mode == "memory"
     assert config.functions.enabled == ()
 
@@ -73,6 +75,53 @@ def test_environment_overrides_toml(tmp_path: Path) -> None:
     )
 
     assert config.runtime == "prefect"
+
+
+def test_logging_environment_values_are_typed() -> None:
+    config = load_config(
+        environ={
+            "QUACKFRAME_LOG_SETTING": "all",
+            "QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING": "true",
+        }
+    )
+
+    assert config.log_setting == "all"
+    assert config.allow_external_result_logging is True
+
+
+def test_explicit_logging_values_override_environment() -> None:
+    config = load_config(
+        log_setting="none",
+        allow_external_result_logging=False,
+        environ={
+            "QUACKFRAME_LOG_SETTING": "all",
+            "QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING": "true",
+        },
+    )
+
+    assert config.log_setting == "none"
+    assert config.allow_external_result_logging is False
+
+
+@pytest.mark.parametrize(
+    "setting, value",
+    [
+        ("log_setting", '"all"'),
+        ("allow_external_result_logging", "true"),
+    ],
+)
+def test_logging_controls_are_rejected_from_project_config(
+    tmp_path: Path,
+    setting: str,
+    value: str,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        f"[tool.quackframe]\n{setting} = {value}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match=f"{setting} is not allowed"):
+        load_config(root=tmp_path, environ={})
 
 
 def test_project_name_is_loaded_for_runtime_display(tmp_path: Path) -> None:

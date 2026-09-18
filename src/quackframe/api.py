@@ -7,8 +7,8 @@ from pathlib import Path
 
 from quackframe.config import QuackframeConfig, load_config
 from quackframe.models import ExecutionResult
-from quackframe.runtimes.registry import get_runtime
-from quackframe.sql import prepare_sql_files
+from quackframe.runtimes.registry import get_runtime_registration
+from quackframe.sql import prepare_sql_files, validate_external_result_logging
 
 
 def run(
@@ -24,6 +24,15 @@ def run(
     """
 
     resolved_config = config or load_config()
-    prepared_files = prepare_sql_files(sql_files, root=resolved_config.root)
-    runtime = get_runtime(resolved_config.runtime)
-    return runtime(prepared_files, resolved_config)
+    runtime = get_runtime_registration(resolved_config.runtime)
+    prepared_files = prepare_sql_files(
+        sql_files,
+        root=resolved_config.root,
+        log_setting=resolved_config.log_setting,
+    )
+    validate_external_result_logging(
+        prepared_files,
+        resolved_config,
+        result_logging_is_external=runtime.result_logging_is_external,
+    )
+    return runtime.load()(prepared_files, resolved_config)

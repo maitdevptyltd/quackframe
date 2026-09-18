@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from quackframe.api import run
-from quackframe.config import load_config
+from quackframe.config import LOG_SETTINGS, load_config
 from quackframe.errors import ConfigurationError, ExecutionError, QuackframeError
 from quackframe.runtimes.registry import runtime_names
 
@@ -21,8 +21,22 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="run ordered SQL files")
     run_parser.add_argument("sql_files", nargs="+")
     run_parser.add_argument("--runtime", choices=runtime_names())
+    run_parser.add_argument("--log-setting", choices=LOG_SETTINGS)
     run_parser.add_argument("--config", type=Path)
     run_parser.add_argument("--root", type=Path)
+
+    external_logging_group = run_parser.add_mutually_exclusive_group()
+    external_logging_group.add_argument(
+        "--allow-external-result-logging",
+        action="store_true",
+        dest="allow_external_result_logging",
+    )
+    external_logging_group.add_argument(
+        "--deny-external-result-logging",
+        action="store_false",
+        dest="allow_external_result_logging",
+    )
+    run_parser.set_defaults(allow_external_result_logging=None)
 
     database_group = run_parser.add_mutually_exclusive_group()
     database_group.add_argument("--memory", action="store_true")
@@ -52,6 +66,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             config_path=arguments.config,
             root=arguments.root,
             runtime=arguments.runtime,
+            log_setting=arguments.log_setting,
+            allow_external_result_logging=arguments.allow_external_result_logging,
             database_mode=database_mode,
             database_path=arguments.database_path,
         )

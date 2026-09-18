@@ -32,8 +32,8 @@ The happy path is:
 1. Accept a non-empty, ordered list of SQL files.
 2. Resolve `QuackframeConfig` from defaults, repository configuration,
    environment, and explicit overrides.
-3. Validate paths, runtime availability, database lifecycle, and enabled
-   functions before executing SQL.
+3. Validate paths, parse and classify each statement once, and validate runtime
+   result-log policy before executing SQL.
 4. Ask the selected runtime adapter to represent the invocation.
 5. Open one DuckDB session owned by the invocation.
 6. Create the reserved `quackframe` SQL schema and install enabled function
@@ -60,18 +60,22 @@ The happy path is:
 
 The engine validates that each input exists and is an SQL file. Empty files
 fail clearly. Each file is separated into DuckDB statements using DuckDB's own
-parser rather than string splitting.
+parser rather than string splitting. The prepared file retains those statements
+and their resolved result-selection metadata, so policy validation, adapter
+warnings, and execution all consume the same analysis.
 
 By default, diagnostics may include:
 
 - execution and file start or completion;
 - statement number and completion state;
-- scalar result name and value only when explicitly safe;
-- returned-row counts rather than arbitrary result sets;
+- statement results selected by the resolved result-logging policy;
 - elapsed time and the final process outcome.
 
 Diagnostics must not include credentials, bound secret values, full SQL text,
-or arbitrary returned query data by default.
+or unselected returned query data. Selected results use DuckDB's native
+relation rendering and execute exactly once. A runtime whose registry policy
+declares an external result-log destination must receive explicit permission
+before project SQL when the selection would emit values.
 
 ## Failure Contract
 

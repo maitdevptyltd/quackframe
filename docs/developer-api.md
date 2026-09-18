@@ -40,6 +40,42 @@ quackframe run --config ./alternate.toml sql/example.sql
 `--memory` and `--temporary` select managed lifecycle modes;
 `--database-path` selects a caller-owned persistent database.
 
+### SQL result logging
+
+Quackframe logs only statement results selected by the resolved log setting:
+
+```powershell
+quackframe run --log-setting annotations-only sql/example.sql
+quackframe run --log-setting none sql/example.sql
+quackframe run --log-setting all sql/example.sql
+```
+
+`annotations-only` is the default. Select one statement by placing the exact
+annotation immediately before it:
+
+```sql
+-- quackframe: log-result
+SELECT verification_status, mismatch_count
+FROM verification_summary;
+```
+
+DuckDB's native relation representation owns table formatting and truncation.
+The same values may be supplied through `QUACKFRAME_LOG_SETTING`; an explicit
+CLI value takes precedence.
+
+Non-direct runtimes require explicit permission before selected result values
+can be sent to an external logging system:
+
+```powershell
+quackframe run --runtime prefect --allow-external-result-logging sql/example.sql
+quackframe run --runtime prefect --deny-external-result-logging sql/example.sql
+```
+
+These flags override `QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` in either
+direction. Without permission, a non-direct run that would emit results fails
+before project SQL executes. Direct terminal output does not require this
+permission.
+
 ## Visual Studio Code F5
 
 F5 is a first-class developer experience implemented as a thin wrapper over the
@@ -87,9 +123,15 @@ Direct configuration values are explicit overrides:
 ```python
 from quackframe import QuackframeConfig, run
 
-config = QuackframeConfig(runtime="direct")
+config = QuackframeConfig(
+    runtime="direct",
+    log_setting="annotations-only",
+)
 result = run(["sql/example.sql"], config=config)
 ```
+
+Embedded non-direct callers grant retained-log permission explicitly with
+`allow_external_result_logging=True`.
 
 An `ExecutionPlan` may be introduced for callers that construct or validate
 runs programmatically, but ordinary use should not require it.
