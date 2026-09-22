@@ -18,6 +18,9 @@ jobs:
             install-arguments: ""
           - python-version: "3.13"
             install-arguments: ""
+          - python-version: "3.11"
+            install-arguments: "--extras prefect"
+            prefect-version: "3.2.0"
           - python-version: "3.13"
             install-arguments: "--extras prefect"
 
@@ -33,6 +36,10 @@ jobs:
         run: python -m pip install poetry==2.2.1
       - name: Install dependencies
         run: poetry install --no-interaction ${{ matrix.install-arguments }}
+      - name: Install minimum supported Prefect
+        if: matrix.prefect-version != ''
+        # Prefect 3.2 allows newer FastAPI releases that cannot run its test server.
+        run: poetry run python -m pip install "prefect==${{ matrix.prefect-version }}" "fastapi==0.115.14"
       - name: Lint
         run: poetry run ruff check src tests examples/basic/run.py
       - name: Check formatting

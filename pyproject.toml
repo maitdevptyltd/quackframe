@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 prefect = [
     "numpy>=1.26,<3",
-    "prefect>=3.4,<4",
+    "prefect>=3.2,<4",
 ]
 
 [project.scripts]

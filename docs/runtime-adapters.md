@@ -94,6 +94,8 @@ quackframe[prefect]
 
 Installing base Quackframe must not install Prefect. Selecting the Prefect
 runtime without its optional dependency should fail with an actionable message.
+Quackframe supports Prefect 3.2 and later 3.x releases. A downstream project
+should pin a compatible client version that aligns with its Prefect server.
 A separate distribution can be introduced later if release cadence or
 dependency isolation earns that boundary.
 
