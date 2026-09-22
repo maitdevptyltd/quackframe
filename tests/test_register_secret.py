@@ -185,6 +185,11 @@ def test_azure_scope_override_is_validated_and_bound() -> None:
     assert parameters == ["sensitive", "az://container/reports/"]
 
 
+def test_azure_rejects_a_blank_connection_string() -> None:
+    with pytest.raises(ValueError, match="Connection string must not be blank"):
+        AzureConnectionStringCredentials(connection_string=SecretStr(" "))
+
+
 @pytest.mark.parametrize(
     ("scope", "message"),
     [
