@@ -6,5 +6,10 @@ from .azure_connection_string import (
 from .mssql import (
     MssqlCredentials,
 )
+from .ssh_private_key import SshPrivateKeyCredentials
 
-__all__ = ["AzureConnectionStringCredentials", "MssqlCredentials"]
+__all__ = [
+    "AzureConnectionStringCredentials",
+    "MssqlCredentials",
+    "SshPrivateKeyCredentials",
+]

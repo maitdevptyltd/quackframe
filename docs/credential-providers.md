@@ -34,16 +34,19 @@ This keeps provider choice visible in reviewed SQL and permits one workflow to
 use more than one provider. A repository-wide `credentials.provider` setting is
 not required.
 
-The MVP supports two secret types:
+The Prefect provider supports three secret types:
 
 | `secret_type` | Resolved credential shape | DuckDB secret |
 | --- | --- | --- |
 | `mssql` | Host, database, user, password, and optional connection settings | `TYPE mssql` |
 | `azure_connection_string` | Azure Storage connection string and a DuckDB-compatible scope | `TYPE azure`, `PROVIDER config` |
+| `ssh_private_key` | Username, private-key path, port, and scope | `TYPE SSH` |
 
 The public name uses `azure_connection_string` rather than an abbreviated
 `azure_connection_str`. This leaves room for future Azure authentication
 strategies without treating every Azure credential as a connection string.
+Likewise, `ssh_private_key` identifies the supported SSH authentication
+strategy while DuckDB still registers its extension-defined `TYPE SSH` secret.
 
 ## Prefect References And DuckDB Aliases
 
@@ -113,6 +116,7 @@ Each concrete secret model owns an allowlist and typed parser:
 | --- | --- |
 | `mssql` | `database`, `port`, `use_encrypt` |
 | `azure_connection_string` | `scope` |
+| `ssh_private_key` | `scope` |
 
 String values are parsed by the selected secret model before they are merged.
 Precedence is per-call override, then provider value, then the model's
@@ -192,6 +196,14 @@ installs and loads DuckDB's Azure extension as required, then creates a scoped
 temporary secret using bound values. The connection string must never be
 interpolated into generated SQL.
 
+For private-key SSH registration, the Prefect provider resolves a block
+containing a protected username, private-key path, port, and required scope.
+Reviewed SQL may replace only the scope, allowing one block to be narrowed to a
+remote directory without moving authentication or connection settings into
+SQL. The provider installs DuckDB's community `sshfs` extension and creates a
+temporary `TYPE SSH` secret using bound values. Availability therefore depends
+on the platforms for which that community extension publishes binaries.
+
 ## Prefect Block Ownership
 
 Quackframe owns the Prefect Block classes expected by its provider. They live
@@ -203,7 +215,8 @@ sql_functions/register_secret/providers/prefect/
 ├── provider.py
 └── blocks/
     ├── mssql.py
-    └── azure_connection_string.py
+    ├── azure_connection_string.py
+    └── ssh_private_key.py
 ```
 
 The MVP block shapes are conceptually:
@@ -221,6 +234,13 @@ class MssqlCredentials(Block):
 class AzureConnectionStringCredentials(Block):
     connection_string: SecretStr
     scope: str | None = None
+
+
+class SshPrivateKeyCredentials(Block):
+    username: SecretStr
+    key_path: str
+    port: int = 22
+    scope: str
 ```
 
 Quackframe stores no block documents or credential values. Prefect stores the

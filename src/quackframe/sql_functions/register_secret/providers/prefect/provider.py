@@ -6,10 +6,12 @@ from quackframe.sql_functions.register_secret.models import (
     AzureConnectionStringSecret,
     DuckDBSecret,
     MssqlSecret,
+    SshPrivateKeySecret,
 )
 from quackframe.sql_functions.register_secret.providers.prefect.blocks import (
     AzureConnectionStringCredentials,
     MssqlCredentials,
+    SshPrivateKeyCredentials,
 )
 
 
@@ -43,6 +45,18 @@ class PrefectCredentialProvider:
                 )
                 return AzureConnectionStringSecret(
                     connection_string=block.connection_string,
+                    scope=block.scope,
+                )
+
+            if secret_type == "ssh_private_key":
+                block = cast(
+                    SshPrivateKeyCredentials,
+                    SshPrivateKeyCredentials.load(block_name),
+                )
+                return SshPrivateKeySecret(
+                    username=block.username,
+                    key_path=block.key_path,
+                    port=block.port,
                     scope=block.scope,
                 )
 

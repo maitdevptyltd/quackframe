@@ -204,5 +204,64 @@ class AzureConnectionStringSecret(DuckDBSecret):
         return value
 
 
+class SshPrivateKeySecret(DuckDBSecret):
+    """Hold private-key SSH credentials for DuckDB's ``sshfs`` extension.
+
+    Reviewed SQL may narrow the credential to a remote ``scope``. The username,
+    key path, and port always come from the selected provider.
+    """
+
+    secret_type: ClassVar[str] = "ssh_private_key"
+    allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
+
+    username: SecretStr
+    key_path: str = Field(min_length=1)
+    port: int = Field(default=22, ge=1, le=65535)
+    scope: str = Field(min_length=1)
+
+    @field_validator("username")
+    @classmethod
+    def username_must_not_be_blank(cls, value: SecretStr) -> SecretStr:
+        """Reject empty provider values before DuckDB extension work begins."""
+
+        if not value.get_secret_value().strip():
+            raise ValueError("Username must not be blank")
+        return value
+
+    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
+        """Apply the optional SSH scope override."""
+
+        self.validate_override_keys(overrides)
+        scope = overrides.get("scope", self.scope)
+        values = self.model_dump()
+        values["scope"] = scope
+        return type(self).model_validate(values)
+
+    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
+        """Create a temporary SSH secret using bound credential values."""
+
+        connection.execute("INSTALL sshfs FROM community")
+        connection.execute("LOAD sshfs")
+        # The checked alias is the only value written into the SQL text. Every
+        # credential value stays in bound parameters and out of error messages.
+        connection.execute(
+            f'''
+            CREATE OR REPLACE TEMPORARY SECRET "{alias}" (
+                TYPE SSH,
+                USERNAME ?,
+                KEY_PATH ?,
+                PORT ?,
+                SCOPE ?
+            )
+            ''',
+            [
+                self.username.get_secret_value(),
+                self.key_path,
+                self.port,
+                self.scope,
+            ],
+        )
+
 MssqlCredentials = MssqlSecret
 AzureConnectionStringCredentials = AzureConnectionStringSecret
+SshPrivateKeyCredentials = SshPrivateKeySecret

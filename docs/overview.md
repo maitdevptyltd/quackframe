@@ -100,8 +100,8 @@ The MVP provides:
 - self-contained SQL function registration and macro namespacing;
 - direct execution without optional integrations;
 - Prefect as an optional runtime adapter; and
-- Prefect-backed MSSQL and Azure connection-string credentials as initial
-  provider examples, not core dependencies.
+- Prefect-backed MSSQL, Azure connection-string, and private-key SSH credentials
+  as provider examples, not core dependencies.
 
 ## Related Docs
 

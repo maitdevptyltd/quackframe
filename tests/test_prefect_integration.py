@@ -20,9 +20,13 @@ from quackframe.sql_functions.register_secret.models import (  # noqa: E402
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
     MssqlCredentials as ResolvedMssqlCredentials,
 )
+from quackframe.sql_functions.register_secret.models import (  # noqa: E402
+    SshPrivateKeyCredentials as ResolvedSshPrivateKeyCredentials,
+)
 from quackframe.sql_functions.register_secret.providers.prefect.blocks import (  # noqa: E402
     AzureConnectionStringCredentials,
     MssqlCredentials,
+    SshPrivateKeyCredentials,
 )
 from quackframe.sql_functions.register_secret.providers.prefect.provider import (  # noqa: E402
     PrefectCredentialProvider,
@@ -208,6 +212,27 @@ def test_prefect_provider_translates_azure_block() -> None:
     assert isinstance(credentials, ResolvedAzureCredentials)
     assert credentials.scope is None
     assert credentials.connection_string.get_secret_value() == "sensitive"
+
+
+def test_prefect_provider_translates_ssh_private_key_block() -> None:
+    block = SshPrivateKeyCredentials(
+        username=SecretStr("reader"),
+        key_path="/run/secrets/sftp-key",
+        port=2222,
+        scope="sftp://sftp.example.test",
+    )
+
+    with patch.object(SshPrivateKeyCredentials, "load", return_value=block) as load:
+        credentials = PrefectCredentialProvider().resolve(
+            "source_files", "ssh_private_key"
+        )
+
+    load.assert_called_once_with("source-files")
+    assert isinstance(credentials, ResolvedSshPrivateKeyCredentials)
+    assert credentials.username.get_secret_value() == "reader"
+    assert credentials.key_path == "/run/secrets/sftp-key"
+    assert credentials.port == 2222
+    assert credentials.scope == "sftp://sftp.example.test"
 
 
 def test_prefect_provider_failure_does_not_include_underlying_error() -> None:

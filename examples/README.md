@@ -9,7 +9,8 @@ being illustrated.
 - [Prefect Runtime](prefect/README.md): optional Prefect runtime selection
   without checked-in connection details.
 - [Secret Registration](secrets/README.md): direct execution with the explicitly
-  enabled `register_secret` function for MSSQL and Azure connection strings.
+  enabled `register_secret` function for MSSQL, Azure connection strings, and
+  private-key SSH.
 
 The basic and ordered examples run without optional integrations. The Prefect
 and secret examples require the `prefect` extra plus environment-appropriate

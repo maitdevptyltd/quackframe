@@ -17,6 +17,7 @@ from quackframe.sql_functions.register_secret.models import (
     AzureConnectionStringCredentials,
     DuckDBSecret,
     MssqlCredentials,
+    SshPrivateKeyCredentials,
 )
 from quackframe.sql_functions.register_secret.providers import registry
 from quackframe.sql_functions.register_secret.providers.protocol import (
@@ -199,6 +200,65 @@ def test_azure_rejects_an_invalid_scope(scope: str, message: str) -> None:
 
     with pytest.raises(ValueError, match=message):
         credentials.resolve_overrides({"scope": scope})
+
+
+def test_ssh_private_key_scope_override_is_bound() -> None:
+    connection = RecordingConnection()
+    credentials = SshPrivateKeyCredentials(
+        username=SecretStr("reader"),
+        key_path="/run/secrets/sftp-key",
+        port=2222,
+        scope="sftp://sftp.example.test",
+    )
+
+    resolved = credentials.resolve_overrides(
+        {"scope": "sftp://sftp.example.test/from_uber/trips/"}
+    )
+    resolved.register(cast(DuckDBPyConnection, connection), "source_files")
+
+    assert connection.queries[0] == ("INSTALL sshfs FROM community", None)
+    assert connection.queries[1] == ("LOAD sshfs", None)
+    query, parameters = connection.queries[-1]
+    assert "reader" not in query
+    assert "/run/secrets/sftp-key" not in query
+    assert 'TEMPORARY SECRET "source_files"' in query
+    assert parameters == [
+        "reader",
+        "/run/secrets/sftp-key",
+        2222,
+        "sftp://sftp.example.test/from_uber/trips/",
+    ]
+
+
+def test_ssh_private_key_uses_the_block_scope_without_an_override() -> None:
+    credentials = SshPrivateKeyCredentials(
+        username=SecretStr("reader"),
+        key_path="/run/secrets/sftp-key",
+        scope="sftp://sftp.example.test",
+    )
+
+    assert credentials.resolve_overrides({}).scope == "sftp://sftp.example.test"
+
+
+def test_ssh_private_key_rejects_a_blank_username() -> None:
+    with pytest.raises(ValueError, match="Username must not be blank"):
+        SshPrivateKeyCredentials(
+            username=SecretStr(" "),
+            key_path="/run/secrets/sftp-key",
+            scope="sftp://sftp.example.test",
+        )
+
+
+@pytest.mark.parametrize("field", ["username", "key_path", "port"])
+def test_ssh_private_key_rejects_connection_detail_overrides(field: str) -> None:
+    credentials = SshPrivateKeyCredentials(
+        username=SecretStr("reader"),
+        key_path="/run/secrets/sftp-key",
+        scope="sftp://sftp.example.test",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported ssh_private_key override"):
+        credentials.resolve_overrides({field: "must-not-pass"})
 
 
 @pytest.mark.parametrize("field", ["user", "password", "connection_string"])

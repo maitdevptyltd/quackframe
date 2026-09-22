@@ -21,3 +21,11 @@ SELECT quackframe.register_secret(
     alias := 'analytics_storage',
     overrides := MAP {'scope': 'az://example-container/reports/'}
 );
+
+SELECT quackframe.register_secret(
+    provider := 'prefect',
+    reference := 'source-files',
+    secret_type := 'ssh_private_key',
+    alias := 'incoming_files',
+    overrides := MAP {'scope': 'sftp://files.example.test/incoming/'}
+);

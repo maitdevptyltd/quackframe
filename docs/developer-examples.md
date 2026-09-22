@@ -111,6 +111,19 @@ SELECT quackframe.register_secret(
 );
 ```
 
+Private-key SSH credentials use a required remote scope. Reviewed SQL may narrow
+that scope without overriding the username, key path, or port:
+
+```sql
+SELECT quackframe.register_secret(
+    provider := 'prefect',
+    reference := 'source-files',
+    secret_type := 'ssh_private_key',
+    alias := 'incoming_files',
+    overrides := MAP {'scope': 'sftp://files.example.test/incoming/'}
+);
+```
+
 The provider is an operation parameter. Repository-wide provider selection is
 not required. The block or an allowed override must supply the database or scope
 required by the selected secret type.
