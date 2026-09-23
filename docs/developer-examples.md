@@ -87,46 +87,59 @@ can then request an MSSQL secret:
 ```sql
 SELECT quackframe.register_secret(
     'prefect',
-    'shared_sql_login',
-    'mssql',
-    'reporting_reader',
-    overrides := MAP {'database': 'Reporting'}
+    'reporting_sql_login',
+    'mssql'
 );
 ```
 
-The Prefect provider resolves `shared_sql_login` as the Prefect Block document
-`shared-sql-login`. If the alias is omitted, Quackframe also derives the
-DuckDB-safe alias `shared_sql_login` from the reference.
+The Prefect provider resolves `reporting_sql_login` as the complete Prefect
+Block document `reporting-sql-login`. Quackframe derives the DuckDB-safe alias
+`reporting_sql_login` from the reference.
 
 Azure Storage connection strings use a distinct secret type so later Azure
 authentication strategies can coexist:
 
 ```sql
 SELECT quackframe.register_secret(
-    provider := 'prefect',
-    reference := 'analytics-storage',
-    secret_type := 'azure_connection_string',
-    alias := 'analytics_storage',
-    overrides := MAP {'scope': 'az://example-container/reports/'}
+    'prefect',
+    'analytics_storage',
+    'azure_connection_string'
 );
 ```
 
-Private-key SSH credentials use a required remote scope. Reviewed SQL may narrow
-that scope without overriding the username, key path, or port:
+The `analytics-storage` block contains both the connection string and its
+`az://example-container/reports/` scope.
+
+Private-key SSH credentials follow the same concise pattern:
 
 ```sql
 SELECT quackframe.register_secret(
-    provider := 'prefect',
-    reference := 'source-files',
-    secret_type := 'ssh_private_key',
-    alias := 'incoming_files',
-    overrides := MAP {'scope': 'sftp://files.example.test/incoming/'}
+    'prefect',
+    'source_files',
+    'ssh_private_key'
 );
 ```
 
 The provider is an operation parameter. Repository-wide provider selection is
-not required. The block or an allowed override must supply the database or scope
-required by the selected secret type.
+not required. Credential blocks should normally supply the complete database or
+scope required by the selected secret type. Use an allowlisted override only
+when a specific workflow must vary that value per call.
+
+For example, a workflow may deliberately repurpose one shared login for a
+different database and alias:
+
+```sql
+SELECT quackframe.register_secret(
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'reporting_reader',
+    overrides := MAP {'database': 'Reporting'}
+);
+```
+
+The keyword-style arguments and `overrides` are unnecessary when the selected
+block already contains the complete registration values.
 
 See the complete [secret registration example](../examples/secrets/README.md).
 

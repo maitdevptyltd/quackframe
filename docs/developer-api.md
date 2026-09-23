@@ -152,6 +152,18 @@ Quackframe functions use a schema-qualified public name:
 
 ```sql
 SELECT quackframe.register_secret(
+    'prefect',
+    'reporting_sql_login',
+    'mssql'
+);
+```
+
+Most calls should use that concise form with a complete credential block. Use
+the keyword-style arguments and `overrides` only when deliberately repurposing
+one block for a different alias, database, or scope:
+
+```sql
+SELECT quackframe.register_secret(
     provider := 'prefect',
     reference := 'shared-sql-login',
     secret_type := 'mssql',
@@ -159,6 +171,9 @@ SELECT quackframe.register_secret(
     overrides := MAP {'database': 'Reporting'}
 );
 ```
+
+These optional arguments are not required when the referenced block already
+contains the complete registration values.
 
 The public macro delegates to a private connection-scoped Python UDF such as
 `_quackframe_register_secret`. Downstream callers never need to quote a dotted

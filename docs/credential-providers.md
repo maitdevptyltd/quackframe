@@ -6,15 +6,14 @@ abstraction of the execution engine.
 
 ## Intended SQL Contract
 
-A generic function selects its provider per operation:
+A generic function selects its provider per operation. The preferred call uses
+the provider, credential reference, and secret type only:
 
 ```sql
 SELECT quackframe.register_secret(
-    provider := 'prefect',
-    reference := 'shared-sql-login',
-    secret_type := 'mssql',
-    alias := 'reporting_reader',
-    overrides := MAP {'database': 'Reporting'}
+    'prefect',
+    'reporting_sql_login',
+    'mssql'
 );
 ```
 
@@ -30,9 +29,13 @@ register_secret(
 )
 ```
 
-This keeps provider choice visible in reviewed SQL and permits one workflow to
-use more than one provider. A repository-wide `credentials.provider` setting is
-not required.
+The referenced credential should normally contain every value needed for
+registration. Quackframe derives the DuckDB alias from the reference, keeping
+ordinary calls concise. `alias` and `overrides` are optional tools for cases
+where the use case genuinely requires them, not routine configuration inputs.
+
+Keeping the provider explicit permits one workflow to use more than one
+provider. A repository-wide `credentials.provider` setting is not required.
 
 The Prefect provider supports three secret types:
 
@@ -82,10 +85,14 @@ ATTACH '' AS reporting (
 
 ## Per-call Overrides
 
-`overrides` is an optional `MAP(VARCHAR, VARCHAR)`. The SQL-facing name reflects
-its purpose rather than leaking the Python term `kwargs` into the public API.
-It lets one stored credential supply authentication for multiple databases or
-storage scopes.
+`overrides` is an optional escape hatch, not the preferred registration path.
+Keep stable database, connection, and scope values in the credential document
+and omit `overrides` from ordinary calls.
+
+Use an override only when a concrete use case needs one stored authentication
+credential to register different database- or scope-specific secrets per call.
+The SQL-facing name reflects that narrow purpose rather than leaking the Python
+term `kwargs` into the public API.
 
 This shape follows DuckDB's documented [MAP type and literal syntax](https://duckdb.org/docs/stable/sql/data_types/map)
 and keeps the SQL-to-Python boundary explicit.
@@ -189,12 +196,12 @@ provider as plain text. There is no central list of MSSQL, Azure, or future
 secret types. Each provider rejects names it does not explicitly support, and
 each returned secret model owns its own type-specific behaviour.
 
-For Azure connection-string registration, the Prefect provider resolves a block
-containing the connection string and an optional scope. The scope must be
-present either in the block or in the allowed per-call overrides. The provider
-installs and loads DuckDB's Azure extension as required, then creates a scoped
-temporary secret using bound values. The connection string must never be
-interpolated into generated SQL.
+For Azure connection-string registration, the preferred Prefect Block contains
+both the connection string and its scope. The model permits an omitted scope
+only so an exceptional per-call override can supply it. The provider installs
+and loads DuckDB's Azure extension as required, then creates a scoped temporary
+secret using bound values. The connection string must never be interpolated
+into generated SQL.
 
 For private-key SSH registration, the Prefect provider resolves a block
 containing a protected username, private-key path, port, and required scope.
@@ -219,7 +226,8 @@ sql_functions/register_secret/providers/prefect/
     └── ssh_private_key.py
 ```
 
-The MVP block shapes are conceptually:
+The MVP block shapes are conceptually shown below. Optional fields preserve the
+supported override capability; they do not make overrides the preferred usage.
 
 ```python
 class MssqlCredentials(Block):
