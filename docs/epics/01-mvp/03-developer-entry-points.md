@@ -1,7 +1,7 @@
 # Developer Entry Points
 
-Status: **Complete**
-Last updated: 2026-09-15
+Status: **In Progress**
+Last updated: 2026-09-24
 Epic: 01 MVP
 Phase: 03
 Related docs: [Developer API](../../developer-api.md)
@@ -29,4 +29,7 @@ Expose one execution engine through CLI, VS Code F5, and Python entry points.
 
 - A public `ExecutionPlan` was not needed for the MVP. `run()` accepts the
   ordered paths and a typed configuration directly.
-- A task-backed VS Code fallback remains a post-MVP compatibility option.
+- The basic and Prefect examples use a standard-library Python launcher that
+  delegates to Poetry, with output directed to the Debug Console. CLI execution
+  and exit-code checks cover the launcher; editor lifecycle validation remains
+  necessary before claiming full F5 compatibility across supported installations.

@@ -11,8 +11,22 @@ quackframe run sql/hello.sql
 
 ## Visual Studio Code
 
-Open `sql/hello.sql` and press F5. The checked-in launch profile invokes the
-same command with the workspace folder as the runtime root.
+Open this example directory as the VS Code workspace. Install its dependencies
+with `poetry install --no-root` and install the recommended Python extensions.
+Poetry must be available on VS Code's PATH, with Python 3.11 or newer available
+to start the launcher.
+
+Open `sql/hello.sql` and press F5. The checked-in Python launcher invokes
+`poetry run quackframe run` with the workspace folder as the runtime root and
+output in the Debug Console. The unannotated query executes and prints the
+completion summary; add `-- quackframe: log-result` immediately before a query
+to display its result with the default logging setting.
+
+For another downstream repository, copy all three files in `.vscode`:
+`launch.json`, `run_quackframe.py`, and `extensions.json`. No particular Poetry
+environment location is required. See the
+[F5 contract](../../docs/developer-api.md#visual-studio-code-f5) for configuration
+overrides and the explicit external-result-logging profile.
 
 ## Python
 

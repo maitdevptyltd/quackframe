@@ -10,7 +10,7 @@ Quackframe runs one or more explicitly ordered SQL files in a shared DuckDB
 session. It gives the same core behaviour to three developer entry points:
 
 1. the `quackframe run` command;
-2. Visual Studio Code F5 execution through a thin `launch.json` wrapper; and
+2. Visual Studio Code F5 execution through `launch.json` and a Python launcher; and
 3. a Python API for embedding the engine in applications, notebooks, or tests.
 
 Command-line execution is also the automation entry point for schedulers. It is

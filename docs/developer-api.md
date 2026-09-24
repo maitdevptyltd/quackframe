@@ -83,30 +83,42 @@ dotenv values into the process environment.
 
 ## Visual Studio Code F5
 
-F5 is a first-class developer experience implemented as a thin wrapper over the
-CLI:
+F5 runs the active SQL file through the consuming project's Poetry environment.
+Copy the complete [basic example .vscode folder](../examples/basic/.vscode/launch.json)
+into the downstream repository root. Keep all three files together:
 
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Quackframe: Run current SQL",
-      "type": "node-terminal",
-      "request": "launch",
-      "command": "quackframe run \"${file}\"",
-      "cwd": "${workspaceFolder}"
-    }
-  ]
-}
-```
+- `launch.json` starts the Python launcher and selects the Debug Console.
+- `run_quackframe.py` delegates to `poetry run quackframe run`, forwards arguments,
+  and returns the child process exit code.
+- `extensions.json` recommends the Python and Python Debugger extensions.
+
+Install the recommended extensions and the project's Quackframe dependency with
+Poetry, then open the downstream repository root in VS Code. Poetry must be on
+VS Code's PATH. The Python extension needs an available Python 3.11 or newer to
+start the standard-library-only launcher; that interpreter does not need
+Quackframe installed. Poetry selects the environment used for SQL execution,
+with no required `.venv` location or developer-specific interpreter path.
+
+Press F5 with the SQL file active. The normal profile does not grant external
+result-logging permission. The separately named result-logging profile explicitly
+grants it for that run. Existing environment permissions still follow normal
+[configuration precedence](configuration.md#precedence).
+
+The workspace folder is the runtime root. Quackframe reads its configuration and
+optional `.env` there; `QUACKFRAME_RUNTIME=direct` can override a checked-in
+Prefect runtime. Both profiles set UTF-8 output and use `internalConsole`, so
+output appears in the Debug Console without opening an integrated terminal.
+Only results selected by the logging setting are printed; by default this means
+statements marked `-- quackframe: log-result`.
 
 F5 runs only the active SQL file. It does not discover neighbouring files or
 infer prerequisites. A file that depends on earlier setup must be invoked in an
 explicit ordered command or through a future approved job-definition contract.
 
-The `node-terminal` launch type must be validated against supported VS Code
-installations. A task-backed equivalent may become the documented fallback.
+This is an F5 execution entry point, not a SQL statement debugger. VS Code starts
+the wrapper under debugpy; Quackframe executes in its Poetry subprocess. Automated
+CLI checks do not establish VS Code breakpoint or Stop-button behaviour, which
+must be verified in the editor.
 
 ## Python API
 

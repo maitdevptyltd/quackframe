@@ -5,14 +5,16 @@ layout outside the files needed for the demonstration.
 
 ## Run the Active SQL File
 
-Use the launch configuration from the [basic example](../examples/basic/README.md),
+Copy the complete `.vscode` folder from the [basic example](../examples/basic/README.md),
 open `sql/hello.sql`, and press F5. The launch profile runs:
 
 ```powershell
-quackframe run "${file}"
+poetry run quackframe run "${file}"
 ```
 
-with the workspace folder as the current working directory.
+through `run_quackframe.py`, with the workspace folder as the current working
+directory and output in the Debug Console. See the
+[F5 setup requirements](developer-api.md#visual-studio-code-f5).
 
 ## Run Ordered Files
 
