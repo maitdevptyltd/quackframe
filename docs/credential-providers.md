@@ -123,6 +123,7 @@ Each concrete secret model owns an allowlist and typed parser:
 | --- | --- |
 | `mssql` | `database`, `port`, `use_encrypt` |
 | `azure_connection_string` | `scope` |
+| `azure_managed_identity` | `scope` |
 | `ssh_private_key` | `scope` |
 
 String values are parsed by the selected secret model before they are merged.
@@ -203,6 +204,17 @@ and loads DuckDB's Azure extension as required, then creates a scoped temporary
 secret using bound values. The connection string must never be interpolated
 into generated SQL.
 
+For Azure managed-identity registration, use `azure_managed_identity` with an
+`AzureManagedIdentityCredentials` block containing `account_name`, optional
+`client_id`, and optional `scope`. Scope must be supplied in the block or through
+an override, using the same Azure URI validation as connection-string secrets.
+Account and identity selection remain owned by the block. Registration loads
+the Azure extension and creates a temporary `TYPE azure` secret with
+`PROVIDER managed_identity`, binding all field values. `CLIENT_ID` is omitted
+when unset so Azure can use the single available identity. Set it explicitly
+when the environment has multiple identities, as described in the
+[DuckDB Azure documentation](https://duckdb.org/docs/lts/core_extensions/azure#managed-identity).
+
 For private-key SSH registration, the Prefect provider resolves a block
 containing a protected username, private-key path, port, and required scope.
 Reviewed SQL may replace only the scope, allowing one block to be narrowed to a
@@ -223,6 +235,7 @@ sql_functions/register_secret/providers/prefect/
 └── blocks/
     ├── mssql.py
     ├── azure_connection_string.py
+    ├── azure_managed_identity.py
     └── ssh_private_key.py
 ```
 
@@ -241,6 +254,12 @@ class MssqlCredentials(Block):
 
 class AzureConnectionStringCredentials(Block):
     connection_string: SecretStr
+    scope: str | None = None
+
+
+class AzureManagedIdentityCredentials(Block):
+    account_name: str
+    client_id: str | None = None
     scope: str | None = None
 
 

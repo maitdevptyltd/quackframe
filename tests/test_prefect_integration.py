@@ -18,6 +18,9 @@ from quackframe.sql_functions.register_secret.models import (  # noqa: E402
     AzureConnectionStringCredentials as ResolvedAzureCredentials,
 )
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
+    AzureManagedIdentityCredentials as ResolvedAzureManagedIdentityCredentials,
+)
+from quackframe.sql_functions.register_secret.models import (  # noqa: E402
     MssqlCredentials as ResolvedMssqlCredentials,
 )
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
@@ -25,6 +28,7 @@ from quackframe.sql_functions.register_secret.models import (  # noqa: E402
 )
 from quackframe.sql_functions.register_secret.providers.prefect.blocks import (  # noqa: E402
     AzureConnectionStringCredentials,
+    AzureManagedIdentityCredentials,
     MssqlCredentials,
     SshPrivateKeyCredentials,
 )
@@ -212,6 +216,33 @@ def test_prefect_provider_translates_azure_block() -> None:
     assert isinstance(credentials, ResolvedAzureCredentials)
     assert credentials.scope is None
     assert credentials.connection_string.get_secret_value() == "sensitive"
+
+
+@pytest.mark.parametrize("client_id", [None, "selected-identity"])
+@pytest.mark.parametrize("scope", [None, "az://container/"])
+def test_prefect_provider_translates_azure_managed_identity_block(
+    client_id: str | None,
+    scope: str | None,
+) -> None:
+    block = AzureManagedIdentityCredentials(
+        account_name="storage",
+        client_id=client_id,
+        scope=scope,
+    )
+
+    with patch.object(
+        AzureManagedIdentityCredentials, "load", return_value=block
+    ) as load:
+        credentials = PrefectCredentialProvider().resolve(
+            "shared_identity",
+            "azure_managed_identity",
+        )
+
+    load.assert_called_once_with("shared-identity")
+    assert isinstance(credentials, ResolvedAzureManagedIdentityCredentials)
+    assert credentials.account_name == "storage"
+    assert credentials.client_id == client_id
+    assert credentials.scope == scope
 
 
 def test_prefect_provider_translates_ssh_private_key_block() -> None:

@@ -15,6 +15,7 @@ from quackframe.sql_functions.register_secret import function as function_module
 from quackframe.sql_functions.register_secret.function import register_secret
 from quackframe.sql_functions.register_secret.models import (
     AzureConnectionStringCredentials,
+    AzureManagedIdentityCredentials,
     DuckDBSecret,
     MssqlCredentials,
     SshPrivateKeyCredentials,
@@ -185,6 +186,85 @@ def test_azure_scope_override_is_validated_and_bound() -> None:
     assert parameters == ["sensitive", "az://container/reports/"]
 
 
+@pytest.mark.parametrize("client_id", [None, "identity'client"])
+@pytest.mark.parametrize(
+    "scope", ["az://container/", "azure://container/", "abfss://container/"]
+)
+def test_azure_managed_identity_registration_binds_values(
+    client_id: str | None,
+    scope: str,
+) -> None:
+    connection = RecordingConnection()
+    credentials = AzureManagedIdentityCredentials(
+        account_name="storage'account",
+        client_id=client_id,
+        scope=scope,
+    )
+
+    credentials.resolve_overrides({}).register(
+        cast(DuckDBPyConnection, connection),
+        "storage",
+    )
+
+    assert connection.queries[:2] == [("INSTALL azure", None), ("LOAD azure", None)]
+    query, parameters = connection.queries[-1]
+    assert 'TEMPORARY SECRET "storage"' in query
+    assert "PROVIDER managed_identity" in query
+    assert "ACCOUNT_NAME ?" in query
+    assert "storage'account" not in query
+    assert "identity'client" not in query
+    assert scope not in query
+    assert ("CLIENT_ID ?" in query) is (client_id is not None)
+    expected = ["storage'account"]
+    if client_id is not None:
+        expected.append(client_id)
+    assert parameters == [*expected, scope]
+
+
+def test_azure_managed_identity_scope_override_preserves_identity() -> None:
+    credentials = AzureManagedIdentityCredentials(
+        account_name="storage",
+        client_id="identity",
+        scope="az://container/",
+    )
+
+    resolved = credentials.resolve_overrides({"scope": "az://container/reports/"})
+
+    assert resolved.scope == "az://container/reports/"
+    assert credentials.scope == "az://container/"
+    assert resolved.account_name == "storage"
+    assert resolved.client_id == "identity"
+
+
+@pytest.mark.parametrize("field", ["account_name", "client_id"])
+def test_azure_managed_identity_rejects_blank_identity_fields(field: str) -> None:
+    values = {"account_name": "storage", field: " "}
+    with pytest.raises(ValueError, match="must not be blank"):
+        AzureManagedIdentityCredentials.model_validate(values)
+
+
+@pytest.mark.parametrize("field", ["account_name", "client_id", "connection_string"])
+def test_azure_managed_identity_rejects_identity_overrides(field: str) -> None:
+    credentials = AzureManagedIdentityCredentials(account_name="storage")
+    with pytest.raises(ValueError, match="Unsupported azure_managed_identity override"):
+        credentials.resolve_overrides({field: "replacement"})
+
+
+def test_azure_managed_identity_requires_scope_before_registration() -> None:
+    credentials = AzureManagedIdentityCredentials(account_name="storage")
+    connection = RecordingConnection()
+
+    with pytest.raises(ValueError, match="scope is required"):
+        credentials.resolve_overrides({})
+    with pytest.raises(ValueError, match="scope is required"):
+        credentials.register(cast(DuckDBPyConnection, connection), "storage")
+
+    assert connection.queries == []
+    assert credentials.resolve_overrides({"scope": "az://container/"}).scope == (
+        "az://container/"
+    )
+
+
 def test_azure_rejects_a_blank_connection_string() -> None:
     with pytest.raises(ValueError, match="Connection string must not be blank"):
         AzureConnectionStringCredentials(connection_string=SecretStr(" "))
@@ -198,10 +278,18 @@ def test_azure_rejects_a_blank_connection_string() -> None:
         ("az:///", "must identify a storage location"),
     ],
 )
-def test_azure_rejects_an_invalid_scope(scope: str, message: str) -> None:
-    credentials = AzureConnectionStringCredentials(
-        connection_string=SecretStr("sensitive")
-    )
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        AzureConnectionStringCredentials(connection_string=SecretStr("sensitive")),
+        AzureManagedIdentityCredentials(account_name="storage"),
+    ],
+)
+def test_azure_rejects_an_invalid_scope(
+    scope: str,
+    message: str,
+    credentials: DuckDBSecret,
+) -> None:
 
     with pytest.raises(ValueError, match=message):
         credentials.resolve_overrides({"scope": scope})

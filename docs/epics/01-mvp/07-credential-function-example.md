@@ -1,7 +1,7 @@
 # Credential Function Example
 
 Status: **Complete**
-Last updated: 2026-09-17
+Last updated: 2026-09-24
 Epic: 01 MVP
 Phase: 07
 Related docs: [Credential Providers](../../credential-providers.md)
@@ -9,7 +9,7 @@ Related docs: [Credential Providers](../../credential-providers.md)
 ## Outcome
 
 Prove the autonomous SQL-function extension model with optional MSSQL and Azure
-connection-string registration.
+connection-string and managed-identity registration.
 
 ## Scope
 
@@ -23,6 +23,9 @@ connection-string registration.
   document names while deriving underscore-safe DuckDB aliases from dashed
   references.
 - Support the public secret types `mssql` and `azure_connection_string`.
+- Support `azure_managed_identity` through a Quackframe-owned Prefect block
+  with account name, optional client ID, and scope supplied in the block or
+  override. Only scope is overridable; identity selection stays in the block.
 - Accept an optional `MAP(VARCHAR, VARCHAR)` named `overrides`.
 - Allow MSSQL `database`, `port`, and `use_encrypt` overrides and Azure `scope`
   overrides; reject all other keys.
@@ -39,6 +42,8 @@ connection-string registration.
 - Test MSSQL credential translation and defaults.
 - Test Azure connection-string validation, scope handling, extension loading,
   and parameter binding.
+- Test managed-identity block translation, optional client ID omission, bound
+  values, shared Azure scope validation, and rejection of identity overrides.
 - Test override precedence, type conversion, unknown keys, prohibited sensitive
   keys, and missing required post-merge fields.
 - Test one MSSQL block registering secrets for multiple databases.

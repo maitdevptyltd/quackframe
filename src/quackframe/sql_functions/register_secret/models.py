@@ -16,6 +16,8 @@ from pydantic import (
     field_validator,
 )
 
+from quackframe.sql_functions.register_secret.validation import validate_azure_scope
+
 
 class DuckDBSecret(BaseModel, ABC):
     """Describe a credential that Quackframe can register with DuckDB.
@@ -165,7 +167,7 @@ class AzureConnectionStringSecret(DuckDBSecret):
         scope = overrides.get("scope", self.scope)
         if scope is None:
             raise ValueError("Azure scope is required in the block or overrides")
-        return self.model_copy(update={"scope": self._validate_azure_scope(scope)})
+        return self.model_copy(update={"scope": validate_azure_scope(scope)})
 
     def register(self, connection: DuckDBPyConnection, alias: str) -> None:
         """Create a scoped temporary Azure secret using bound values."""
@@ -189,19 +191,63 @@ class AzureConnectionStringSecret(DuckDBSecret):
             [self.connection_string.get_secret_value(), self.scope],
         )
 
-    @staticmethod
-    def _validate_azure_scope(value: str) -> str:
-        """Require a supported, non-empty Azure URI ending in a slash."""
 
-        supported_prefixes = ("az://", "azure://", "abfss://")
-        if not value.startswith(supported_prefixes):
-            expected_prefixes = "az://, azure://, or abfss://"
-            raise ValueError(f"Azure scope must use an {expected_prefixes} URI")
-        if not value.endswith("/"):
-            raise ValueError("Azure scope must end with a trailing slash")
-        if not value.split("://", maxsplit=1)[1].rstrip("/"):
-            raise ValueError("Azure scope must identify a storage location")
+class AzureManagedIdentitySecret(DuckDBSecret):
+    """Register Azure storage access using the execution environment's identity."""
+
+    secret_type: ClassVar[str] = "azure_managed_identity"
+    allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
+
+    account_name: str = Field(min_length=1)
+    client_id: str | None = None
+    scope: str | None = None
+
+    @field_validator("account_name", "client_id")
+    @classmethod
+    def identity_fields_must_not_be_blank(cls, value: str | None) -> str | None:
+        """Reject blank account or identity values before extension work begins."""
+
+        if value is not None and not value.strip():
+            raise ValueError("Azure account name and client ID must not be blank")
         return value
+
+    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
+        """Apply the storage scope without allowing changes to the identity."""
+
+        self.validate_override_keys(overrides)
+        scope = overrides.get("scope", self.scope)
+        if scope is None:
+            raise ValueError("Azure scope is required in the block or overrides")
+        return self.model_copy(update={"scope": validate_azure_scope(scope)})
+
+    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
+        """Create a scoped temporary Azure managed-identity secret."""
+
+        if self.scope is None:
+            raise ValueError("Azure scope is required before registration")
+
+        connection.execute("INSTALL azure")
+        connection.execute("LOAD azure")
+        # Omit CLIENT_ID entirely to let Azure select the available identity.
+        # Account, identity, and scope values always remain bound parameters.
+        client_id_option = ""
+        parameters = [self.account_name]
+        if self.client_id is not None:
+            client_id_option = "CLIENT_ID ?,"
+            parameters.append(self.client_id)
+        parameters.append(self.scope)
+        connection.execute(
+            f'''
+            CREATE OR REPLACE TEMPORARY SECRET "{alias}" (
+                TYPE azure,
+                PROVIDER managed_identity,
+                ACCOUNT_NAME ?,
+                {client_id_option}
+                SCOPE ?
+            )
+            ''',
+            parameters,
+        )
 
 
 class SshPrivateKeySecret(DuckDBSecret):
@@ -264,4 +310,5 @@ class SshPrivateKeySecret(DuckDBSecret):
 
 MssqlCredentials = MssqlSecret
 AzureConnectionStringCredentials = AzureConnectionStringSecret
+AzureManagedIdentityCredentials = AzureManagedIdentitySecret
 SshPrivateKeyCredentials = SshPrivateKeySecret

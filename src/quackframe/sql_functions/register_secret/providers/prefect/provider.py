@@ -4,12 +4,14 @@ from typing import cast
 
 from quackframe.sql_functions.register_secret.models import (
     AzureConnectionStringSecret,
+    AzureManagedIdentitySecret,
     DuckDBSecret,
     MssqlSecret,
     SshPrivateKeySecret,
 )
 from quackframe.sql_functions.register_secret.providers.prefect.blocks import (
     AzureConnectionStringCredentials,
+    AzureManagedIdentityCredentials,
     MssqlCredentials,
     SshPrivateKeyCredentials,
 )
@@ -45,6 +47,17 @@ class PrefectCredentialProvider:
                 )
                 return AzureConnectionStringSecret(
                     connection_string=block.connection_string,
+                    scope=block.scope,
+                )
+
+            if secret_type == "azure_managed_identity":
+                block = cast(
+                    AzureManagedIdentityCredentials,
+                    AzureManagedIdentityCredentials.load(block_name),
+                )
+                return AzureManagedIdentitySecret(
+                    account_name=block.account_name,
+                    client_id=block.client_id,
                     scope=block.scope,
                 )
 

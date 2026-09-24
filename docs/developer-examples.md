@@ -112,6 +112,21 @@ SELECT quackframe.register_secret(
 The `analytics-storage` block contains both the connection string and its
 `az://example-container/reports/` scope.
 
+Azure managed identity uses a block containing the storage account name and
+scope, plus a client ID when selecting a user-assigned identity:
+
+```sql
+SELECT quackframe.register_secret(
+    'prefect',
+    'analytics_identity',
+    'azure_managed_identity'
+);
+```
+
+The `analytics-identity` block can omit `client_id` when the execution environment
+has a single managed identity. As with connection strings, `scope` must be in the
+block or supplied through `overrides := MAP {'scope': 'az://example-container/'}`.
+
 Private-key SSH credentials follow the same concise pattern:
 
 ```sql
