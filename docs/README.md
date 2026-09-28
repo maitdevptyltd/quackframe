@@ -31,6 +31,8 @@ service integrations.
 - [Dotenv Configuration Scope](epics/03-configuration/01-dotenv-loading.md):
   implemented runtime-root `.env` loading for Quackframe-owned settings.
 
+- [Shared Credential Loading And fsspec Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): proposed model-preserving extraction and filesystem delivery.
+
 ## Knowledge Map
 
 ```mermaid

@@ -23,6 +23,10 @@ from the main documentation.
 
 - [01 Dotenv Configuration Loading](03-configuration/01-dotenv-loading.md)
 
+## Epic 04: Filesystems
+
+- [01 Shared Credential Loading And fsspec](04-filesystems/01-shared-credential-loading-and-fsspec.md)
+
 ## Status Rules
 
 Allowed statuses are `Planned`, `In Progress`, `Blocked`, and `Complete`.
