@@ -37,12 +37,13 @@ where the use case genuinely requires them, not routine configuration inputs.
 Keeping the provider explicit permits one workflow to use more than one
 provider. A repository-wide `credentials.provider` setting is not required.
 
-The Prefect provider supports three secret types:
+The Prefect provider supports four secret types:
 
 | `secret_type` | Resolved credential shape | DuckDB secret |
 | --- | --- | --- |
 | `mssql` | Host, database, user, password, and optional connection settings | `TYPE mssql` |
 | `azure_connection_string` | Azure Storage connection string and a DuckDB-compatible scope | `TYPE azure`, `PROVIDER config` |
+| `azure_managed_identity` | Storage account, optional client ID, and scope | `TYPE azure`, `PROVIDER managed_identity` |
 | `ssh_private_key` | Username, private-key path, port, and scope | `TYPE SSH` |
 
 The public name uses `azure_connection_string` rather than an abbreviated
@@ -124,6 +125,7 @@ Each concrete secret model owns an allowlist and typed parser:
 | `mssql` | `database`, `port`, `use_encrypt` |
 | `azure_connection_string` | `scope` |
 | `azure_managed_identity` | `scope` |
+| `azure_managed_identity` | Storage account, optional client ID, and scope | `TYPE azure`, `PROVIDER managed_identity` |
 | `ssh_private_key` | `scope` |
 
 String values are parsed by the selected secret model before they are merged.
@@ -137,43 +139,58 @@ secret-bearing fields.
 
 ## Responsibility Boundary
 
-The `register_secret` function owns:
+Both `register_secret` and [register_filesystem](filesystems.md) select a strategy
+from their own explicit allowlist, then use
+`credential_loading.loading.load_credentials(provider, reference, model_type, overrides)`.
+This shared path selects the provider, loads one concrete strategy and invokes
+its inherited `resolve_overrides()`. It does not register anything or cache
+credentials. Calling both SQL functions loads one Block per call.
 
-- validating the alias used in generated SQL;
-- selecting an installed provider implementation;
-- asking that provider for a provider-independent `DuckDBSecret` model;
-- asking that model to resolve allowlisted overrides and register itself;
-- returning a non-sensitive outcome; and
-- converting failures into safe diagnostics.
+The shared Pydantic models in `credential_loading/models.py` own typed fields,
+validators, override allowlists, parsing and immutable resolution. Resolved
+objects retain their concrete strategy type. MSSQL permits `database`, `port`
+and `use_encrypt`; the Azure and SSH models permit only `scope`. Omitted, NULL
+and empty maps preserve stored values. Invalid supplied values fail instead of
+falling back. Authentication fields cannot be overridden.
 
-A credential provider owns:
+Specialised strategies own their operations:
 
-- resolving its reference through the external service;
-- translating provider-specific reference naming rules at that boundary;
-- deciding which secret-type names it supports;
-- explicitly translating the resolved fields into the requested Quackframe
-  secret model;
-- rejecting secret types for which it has no explicit conversion;
-- loading only the optional dependencies required by that provider; and
-- keeping sensitive values out of returned results and errors.
+- `register_secret/models.py` implements `register_duckdb_secret(connection, alias)`,
+  retaining extension loading and parameter-bound temporary-secret SQL.
+- `register_filesystem/models.py` implements
+  `register_filesystem_protocol(connection)`, owning backend requirements,
+  constructor arguments and DuckDB filesystem registration.
 
-A concrete `DuckDBSecret` model owns:
+Neither registration method is required by the shared credential model. SQL
+identifier validation lives in `sql_functions/validation.py`; the unchanged
+Azure URI validation lives in `credential_loading/validation.py`.
 
-- its typed credential fields;
-- its allowlisted override parsing and final validation;
-- required DuckDB extension loading;
-- temporary-secret registration using bound values rather than SQL
-  interpolation;
-- keeping sensitive values out of returned results and logs; and
-- its secret-type-specific error messages.
+Providers implement the generic contract
+`resolve(reference, model_type: type[T]) -> T`, where `T` derives from
+`CredentialModel`. The requested strategy declares a `credential_type`.
+Providers return that strategy directly; they do not return an intermediate
+model for later conversion. Provider failures must omit sensitive values.
 
-Project SQL owns which references it requests and how registered DuckDB secrets
-are used in later `ATTACH`, file access, or other operations.
+### Python compatibility and provider migration
+
+Existing secret class names and `*Credentials` aliases in
+`sql_functions.register_secret.models` remain available. Their registration
+method is now `register_duckdb_secret()`; the old `register()` method is
+intentionally removed.
+
+Old provider and Prefect Block import paths re-export the shared classes.
+`PrefectCredentialProvider.resolve(reference, "mssql")` and the other existing
+positional secret-type strings still delegate to the same typed loading path.
+New calls should pass a concrete model class. External provider implementations
+must adopt `resolve(reference, model_type)` and construct the supplied class;
+they can register through `credential_loading.providers.registry` without
+editing either SQL wrapper. There is no automatic adapter for providers that
+only accept secret-type strings.
 
 ## Prefect Provider
 
-The first provider is expected to load named Prefect Blocks and register
-temporary DuckDB secrets. It should reuse the Prefect integration's resolved
+The Prefect provider loads named Prefect Blocks for both SQL registration
+functions. It should reuse the Prefect integration's resolved
 client settings whether or not the Prefect runtime adapter is selected.
 
 These combinations remain valid:
@@ -192,14 +209,15 @@ The generic `register_secret` SQL function has no global Prefect dependency.
 Provider dependencies are checked only after SQL selects a provider. A future
 non-Prefect provider can therefore install and run without Prefect present.
 
-The generic function passes the requested secret-type name to the selected
-provider as plain text. There is no central list of MSSQL, Azure, or future
-secret types. Each provider rejects names it does not explicitly support, and
-each returned secret model owns its own type-specific behaviour.
+Each SQL function selects its allowed strategy class before loading. The
+Prefect provider maps its `credential_type` to one Block class and loads that
+Block once. The Block's typed `to_credentials(model_type)` method rejects an
+incompatible credential family and constructs the requested strategy directly
+from explicitly named fields.
 
 For Azure connection-string registration, the preferred Prefect Block contains
 both the connection string and its scope. The model permits an omitted scope
-only so an exceptional per-call override can supply it. The provider installs
+only so an exceptional per-call override can supply it. The secret strategy installs
 and loads DuckDB's Azure extension as required, then creates a scoped temporary
 secret using bound values. The connection string must never be interpolated
 into generated SQL.
@@ -217,20 +235,21 @@ when the environment has multiple identities, as described in the
 
 For private-key SSH registration, the Prefect provider resolves a block
 containing a protected username, private-key path, port, and required scope.
-Reviewed SQL may replace only the scope, allowing one block to be narrowed to a
-remote directory without moving authentication or connection settings into
-SQL. The provider installs DuckDB's community `sshfs` extension and creates a
+Reviewed SQL may replace only the scope without moving authentication or
+connection settings into SQL. For fsspec, scope selects the endpoint and is not
+a directory access restriction; see [Filesystems](filesystems.md). The secret
+strategy installs DuckDB's community `sshfs` extension and creates a
 temporary `TYPE SSH` secret using bound values. Availability therefore depends
 on the platforms for which that community extension publishes binaries.
 
 ## Prefect Block Ownership
 
 Quackframe owns the Prefect Block classes expected by its provider. They live
-inside the optional `register_secret` Prefect provider package so downstream
+inside the optional shared credential provider package so downstream
 repositories do not have to reproduce Quackframe's credential schemas:
 
 ```text
-sql_functions/register_secret/providers/prefect/
+credential_loading/providers/prefect/
 ├── provider.py
 └── blocks/
     ├── mssql.py
@@ -279,7 +298,7 @@ Users can register the Quackframe block types so they are available through the
 Prefect UI:
 
 ```powershell
-prefect block register --module quackframe.sql_functions.register_secret.providers.prefect.blocks
+prefect block register --module quackframe.credential_loading.providers.prefect.blocks
 ```
 
 Prefect distinguishes the local Python class, the server-registered block type,
@@ -300,17 +319,13 @@ documentation.
 - Private API URLs and other sensitive metadata remain in native profiles or
   environment configuration.
 
-## Function Autonomy
+## Provider Registry
 
-`register_secret` owns its provider protocol and registry within its own
-function package. Each provider registry entry records its public name, lazy
-implementation loader, and actionable missing-dependency message. Adding a
-provider requires a provider package and one entry rather than a new branch in
-the generic selector.
-
-Other SQL functions do not have to adopt those abstractions. If another
-function later needs similar provider behaviour, duplication is acceptable
-until a genuinely shared invariant earns extraction.
+`credential_loading/providers` owns the shared protocol and lazy registry.
+Each entry records a public provider name, implementation loader and actionable
+missing-dependency message. Adding a provider requires its implementation and
+one registry entry, without credential-type branches in SQL wrappers or the
+runner. Core imports remain independent of Prefect and fsspec.
 
 ## Connection Mutation
 
@@ -333,6 +348,7 @@ must not introduce provider-specific behaviour into the core runner.
 
 ## Related Docs
 
+- [Filesystems](filesystems.md): standard SFTP registration from the same Blocks.
 - [SQL Function Extensions](python-extensions.md): function packaging and
   macro generation.
 - [Configuration](configuration.md): native provider settings and safe TOML.

@@ -1,1 +1,1 @@
-"""Credential providers selected by register_secret operations."""
+"""Compatibility imports for shared credential providers."""

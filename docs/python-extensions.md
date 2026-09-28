@@ -50,23 +50,24 @@ that schema.
 Each non-trivial function owns its vertical implementation slice:
 
 ```text
+credential_loading/
+    loading.py
+    models.py
+    validation.py
+    providers/
 sql_functions/
-├── definition.py
-├── registry.py
-├── macros.py
-│
-├── register_secret/
-│   ├── __init__.py
-│   ├── function.py
-│   ├── models.py
-│   ├── validation.py
-│   └── providers/
-│       ├── protocol.py
-│       └── prefect.py
-│
-└── publish_metric/
-    ├── __init__.py
-    └── function.py
+    definition.py
+    registry.py
+    installer.py
+    validation.py
+    register_secret/
+        __init__.py
+        function.py
+        models.py
+    register_filesystem/
+        __init__.py
+        function.py
+        models.py
 ```
 
 A simple function may begin as one module. When its supporting logic grows, it
@@ -76,7 +77,9 @@ unrelated functions into a shared implementation hierarchy.
 
 Limited duplication is preferable to restrictive coupling. Shared code should
 be extracted only when the behaviour and invariant genuinely have one owner and
-must change together.
+must change together. The secret and filesystem functions share credential
+loading, fields, validation and overrides. Each retains its own SQL wrapper
+and operation-specific registration strategies.
 
 ## Minimal Function Contract
 
@@ -172,7 +175,7 @@ change through the connection currently executing the UDF. The prototype avoids
 a runner-owned request queue by opening a short-lived duplicate connection to
 the same database instance inside the connection-aware function.
 
-`register_secret` uses duplicate-connection execution. The function owns this
+`register_secret` and `register_filesystem` use duplicate-connection execution. The function owns this
 behaviour; the core runner has no deferred-operation queue or function-specific
 branch. Compatibility is tested against the pinned DuckDB MVP version.
 
@@ -191,6 +194,6 @@ metadata in persistent databases and are replaced on the next enabled run.
 
 - [Developer API](developer-api.md): the SQL-facing call convention.
 - [Execution Lifecycle](execution-lifecycle.md): when functions are installed.
-- [Credential Providers](credential-providers.md): the first planned function
-  use case.
+- [Credential Providers](credential-providers.md): shared model and loading contracts.
+- [Filesystems](filesystems.md): standard filesystem registration and ownership.
 - [Configuration](configuration.md): function enablement and optional settings.

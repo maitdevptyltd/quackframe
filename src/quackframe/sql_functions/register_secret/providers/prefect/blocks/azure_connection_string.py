@@ -1,14 +1,5 @@
-"""Prefect Block for an Azure Storage connection string."""
+"""Compatibility imports for shared credential providers."""
 
-from prefect.blocks.core import Block
-from pydantic import SecretStr
-
-
-class AzureConnectionStringCredentials(Block):
-    """Store an Azure connection string and optional scope in Prefect.
-
-    ``scope`` may be supplied later by the allowlisted Quackframe override.
-    """
-
-    connection_string: SecretStr
-    scope: str | None = None
+from quackframe.credential_loading.providers.prefect.blocks import (
+    AzureConnectionStringCredentials as AzureConnectionStringCredentials,
+)

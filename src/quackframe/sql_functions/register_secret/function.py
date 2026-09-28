@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from duckdb import DuckDBPyConnection
 
-from quackframe.sql_functions.register_secret.providers.registry import get_provider
-from quackframe.sql_functions.register_secret.validation import validate_identifier
+from quackframe.credential_loading.loading import load_credentials
+from quackframe.sql_functions.register_secret.models import get_secret_model
+from quackframe.sql_functions.validation import validate_identifier
 
 
 def register_secret(
@@ -29,13 +30,12 @@ def register_secret(
         alias or reference.replace("-", "_"),
         "secret alias",
     )
-    credential_provider = get_provider(provider)
-    secret = credential_provider.resolve(reference, secret_type)
-    resolved_secret = secret.resolve_overrides(overrides or {})
+    model_type = get_secret_model(secret_type)
+    resolved_secret = load_credentials(provider, reference, model_type, overrides)
 
     # The active connection is already running this SQL function. A short-lived
     # duplicate reaches the same database without trying to reuse that busy
     # connection, and keeps this special behaviour inside register_secret.
     with connection.duplicate() as secret_connection:
-        resolved_secret.register(secret_connection, resolved_alias)
+        resolved_secret.register_duckdb_secret(secret_connection, resolved_alias)
     return True

@@ -12,8 +12,19 @@ prefect = pytest.importorskip("prefect")
 from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 
 from quackframe import QuackframeConfig, load_config, run  # noqa: E402
+from quackframe.credential_loading import loading  # noqa: E402
+from quackframe.credential_loading.providers.prefect import (  # noqa: E402
+    blocks as shared_blocks,
+)
+from quackframe.credential_loading.providers.prefect.provider import (  # noqa: E402
+    PrefectCredentialProvider as SharedPrefectCredentialProvider,
+)
 from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
 from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
+from quackframe.sql_functions.installer import install_functions  # noqa: E402
+from quackframe.sql_functions.register_filesystem.models import (  # noqa: E402
+    SftpFilesystem,
+)
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
     AzureConnectionStringCredentials as ResolvedAzureCredentials,
 )
@@ -279,3 +290,66 @@ def test_prefect_provider_failure_does_not_include_underlying_error() -> None:
 
     assert "shared-login" in str(captured.value)
     assert "sensitive diagnostic" not in str(captured.value)
+
+
+def test_old_block_and_provider_imports_reexport_the_same_classes() -> None:
+    assert PrefectCredentialProvider is SharedPrefectCredentialProvider
+    for block_type in (
+        MssqlCredentials,
+        AzureConnectionStringCredentials,
+        AzureManagedIdentityCredentials,
+        SshPrivateKeyCredentials,
+    ):
+        assert block_type is getattr(shared_blocks, block_type.__name__)
+        assert block_type.get_block_type_name() == block_type.__name__
+        assert block_type.get_block_type_slug() == block_type.__name__.lower()
+
+
+def test_both_sql_functions_load_one_block_each_and_construct_the_requested_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block = SshPrivateKeyCredentials(
+        username=SecretStr("reader"),
+        key_path="/run/secrets/key",
+        scope="sftp://files.example.test/",
+    )
+    provider = PrefectCredentialProvider()
+    monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
+    before = block.model_dump()
+
+    with (
+        patch.object(SshPrivateKeyCredentials, "load", return_value=block) as load,
+        patch.object(
+            ResolvedSshPrivateKeyCredentials, "register_duckdb_secret"
+        ) as secret,
+        patch.object(SftpFilesystem, "register_filesystem_protocol") as filesystem,
+        duckdb.connect() as connection,
+    ):
+        install_functions(connection, ("register_secret", "register_filesystem"))
+        assert connection.execute(
+            "SELECT quackframe.register_secret('prefect', 'source_files', "
+            "'ssh_private_key', overrides := MAP {'scope': 'sftp://other.test/'});"
+        ).fetchone() == (True,)
+        assert connection.execute(
+            "SELECT quackframe.register_filesystem('prefect', 'source_files', 'sftp');"
+        ).fetchone() == (True,)
+
+    assert load.call_count == 2
+    load.assert_called_with("source-files")
+    secret.assert_called_once()
+    filesystem.assert_called_once()
+    assert block.model_dump() == before
+
+
+def test_block_conversion_rejects_an_incompatible_model_family() -> None:
+    block = SshPrivateKeyCredentials(
+        username=SecretStr("reader"), key_path="/key", scope="sftp://files.test/"
+    )
+    with pytest.raises(ValueError, match="Incompatible"):
+        block.to_credentials(ResolvedMssqlCredentials)
+
+    model = block.to_credentials(SftpFilesystem)
+    assert type(model) is SftpFilesystem
+    assert model.username.get_secret_value() == "reader"
+    assert model.key_path == "/key"
+    assert model.port == 22

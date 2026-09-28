@@ -1,6 +1,6 @@
 # Shared Credential Loading And fsspec Filesystems
 
-Status: **Planned**
+Status: **In Progress**
 Last updated: 2026-09-28
 Epic: 04 Filesystems
 Phase: 01
@@ -13,7 +13,8 @@ credential Blocks, while preserving the existing model-owned strategy pattern.
 The requested separation is loading followed by registration. It is not a
 replacement of behavioural models with data-only containers.
 
-This is a scope proposal for review, not approval to implement. The fresh branch
+Implementation was authorised on 2026-09-28 by the request to implement this
+scope on `feat/fsspec-filesystems`. The fresh branch
 is `feat/fsspec-filesystems`, based on `feat/setup` at
 `8d0841eafe8b9211896daddd0d6a418e11cd390a`. Do not cherry-pick the prior filesystem
 implementation. The prior branch and its uncommitted changes remain separate.
@@ -91,7 +92,7 @@ Do not add a validation framework or generic merge engine. Extract and inherit
 the working methods already present. Keep the exact current validation semantics
 unless a separately documented change is approved.
 
-## Proposed Directory Structure
+## Directory Structure
 
 ```text
 src/quackframe/
@@ -192,7 +193,7 @@ choices. Preserve the existing secret registration behaviour while moving its
 method body to the explicitly named operation.
 
 
-## Proposed Loading Contract And Strategy Selection
+## Loading Contract And Strategy Selection
 
 The shared loading operation is conceptually:
 
@@ -255,7 +256,7 @@ SELECT quackframe.register_secret(
 Preserve argument order, named arguments, default alias derivation, nullable
 optional arguments, boolean result, and `MAP(VARCHAR, VARCHAR)` overrides.
 
-Proposed filesystem interface for review:
+Approved filesystem interface:
 
 ```sql
 SELECT quackframe.register_filesystem(
@@ -361,24 +362,56 @@ New tests should exercise behaviour, not merely assert implementation structure.
 The architecture review additionally verifies that the expected shared methods
 are actually inherited and that no prohibited workaround was introduced.
 
-## Decisions To Resolve At Scope Review
+## Implementation And Verification
 
-The folder ownership and preservation requirements above come from the user's
-instructions. These implementation details remain proposals until this scope is
-approved:
+Implementation is complete on `feat/fsspec-filesystems`; the phase remains
+**In Progress** for the user-run live SFTP checks required above. Changes remain
+uncommitted for review.
 
-- The typed provider target-model parameter and Block-local conversion method.
-  Confirm compatibility treatment for any external providers using the old
-  `resolve(reference, secret_type)` protocol.
-- The filesystem SQL signature using a filesystem strategy name (`sftp`) plus
-  optional overrides, with credential type declared on the strategy.
-- Standard backend endpoint/path interpretation, repeated registration behaviour,
-  and resource ownership, to be documented during implementation and verified afterward. Do not
-  inherit the previous branch's one-endpoint policy without review.
+- The baseline at `8d0841e` passed all 119 tests. Initial sandbox temporary-file
+  permission failures were resolved by running with permitted filesystem access
+  and an explicit local pytest temporary directory.
+- Shared model fields, validators, allowlists, parsing and override methods were
+  extracted together. Secret SQL bodies remain unchanged apart from the required
+  method name. The extraction-only compatibility run passed 53 tests.
+- All four Prefect Block JSON schemas, names, slugs and schema checksums were
+  captured before moving classes and compared afterward: unchanged. Existing
+  imports re-export the same canonical classes.
+- The shared provider contract uses the requested concrete model type. Each
+  Prefect Block owns explicit field translation and checks model-family
+  compatibility before construction. Existing positional string calls to the
+  Prefect provider delegate to the typed path. External provider implementations
+  must migrate to that contract; no conversion dispatcher adapts old providers.
+- `register_filesystem` uses the ordinary descriptor registry and shared loader.
+  `SftpFilesystem` inherits SSH override behavior and registers the standard
+  backend. Core runner, installer and execution semantics are unchanged.
+- The `sftp` Poetry extra contains fsspec and Paramiko. The updated lockfile and
+  installed optional integrations are consistent.
+- Automated tests cover SQL optional arguments, safe failures, immutable models,
+  one Block load per call, additional provider/strategy registration and core
+  execution with optional imports blocked. A standard in-memory backend verifies
+  a DuckDB CSV glob read across ordered SQL files and native duplicate rejection.
+- Final validation: 158 tests passed with the locked optional integrations
+  installed; Pyright reported zero errors or warnings. Ruff passed for `src`,
+  `tests` and `examples`; Markdown links and staged/unstaged diff checks passed.
+  Full-repository Ruff reports one pre-existing `I001` in
+  `.agents/skills/quackframe-documentation/scripts/check_doc_links.py`, reproduced
+  from `HEAD` and left unchanged. Poetry's lock check passes with the existing
+  license-table deprecation warning.
+- Standard SFTP endpoint/path interpretation, native duplicate-registration
+  behavior and ownership are documented in [Filesystems](../../filesystems.md).
+  Scope provides the host; its directory is not an enforced access boundary.
+  The Block owns the port. No endpoint registry or custom transport was added.
+
+Live SFTP globbing, DuckDB reads, concurrency and socket cleanup remain for the
+user. They are not established by mocked connection tests or the in-memory
+filesystem integration. If standard library behavior requires a custom transport
+or finalizer framework, return that change to scope review.
 
 ## Related Docs
 
-- [Credential Providers](../../credential-providers.md): current secret contracts.
+- [Credential Providers](../../credential-providers.md): shared models and provider contracts.
+- [Filesystems](../../filesystems.md): SQL usage, endpoint interpretation and ownership.
 - [SQL Function Extensions](../../python-extensions.md): function-owned packages and registration.
 - [Execution Lifecycle](../../execution-lifecycle.md): session ownership and ordered SQL.
 - [Credential Function Example](../01-mvp/07-credential-function-example.md): original strategy implementation scope.

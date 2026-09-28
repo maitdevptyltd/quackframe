@@ -1,7 +1,5 @@
-"""Prefect Block credential provider."""
+"""Compatibility imports for shared credential providers."""
 
-from quackframe.sql_functions.register_secret.providers.prefect.provider import (
-    PrefectCredentialProvider,
+from quackframe.credential_loading.providers.prefect import (
+    PrefectCredentialProvider as PrefectCredentialProvider,
 )
-
-__all__ = ["PrefectCredentialProvider"]

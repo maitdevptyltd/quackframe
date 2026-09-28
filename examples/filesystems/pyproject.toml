@@ -1,0 +1,13 @@
+[project]
+name = "quackframe-filesystems-example"
+version = "0.0.0"
+dependencies = ["quackframe[prefect,sftp]"]
+
+[tool.quackframe]
+runtime = "direct"
+
+[tool.quackframe.database]
+mode = "memory"
+
+[tool.quackframe.functions]
+enabled = ["register_filesystem"]

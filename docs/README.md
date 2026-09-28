@@ -20,6 +20,7 @@ service integrations.
   functions become `quackframe.<function_name>` SQL calls.
 - [Credential Providers](credential-providers.md): credential resolution as one
   optional SQL-function use case.
+- [Filesystems](filesystems.md): SFTP registration, endpoint semantics and backend lifetime.
 - [Prototype Reference](mad-utilities-duckdb-reference.md): evidence retained
   from the earlier prototype without inheriting its coupling.
 - [Roadmap](roadmap.md): delivered MVP phases, acceptance criteria, and
@@ -31,7 +32,7 @@ service integrations.
 - [Dotenv Configuration Scope](epics/03-configuration/01-dotenv-loading.md):
   implemented runtime-root `.env` loading for Quackframe-owned settings.
 
-- [Shared Credential Loading And fsspec Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): proposed model-preserving extraction and filesystem delivery.
+- [Shared Credential Loading And fsspec Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): implemented shared credential loading and SFTP registration.
 
 ## Knowledge Map
 

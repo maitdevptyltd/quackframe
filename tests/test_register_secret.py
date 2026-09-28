@@ -10,8 +10,9 @@ import pytest
 from duckdb import DuckDBPyConnection
 from pydantic import SecretStr
 
+from quackframe.credential_loading import loading as loading_module
+from quackframe.credential_loading.providers import registry
 from quackframe.sql_functions.installer import install_functions
-from quackframe.sql_functions.register_secret import function as function_module
 from quackframe.sql_functions.register_secret.function import register_secret
 from quackframe.sql_functions.register_secret.models import (
     AzureConnectionStringCredentials,
@@ -20,7 +21,6 @@ from quackframe.sql_functions.register_secret.models import (
     MssqlCredentials,
     SshPrivateKeyCredentials,
 )
-from quackframe.sql_functions.register_secret.providers import registry
 from quackframe.sql_functions.register_secret.providers.protocol import (
     CredentialProvider,
 )
@@ -39,6 +39,47 @@ class RecordingConnection:
         return self
 
 
+@pytest.mark.parametrize(
+    "optional_arguments", ["", ", NULL, NULL", ", overrides := MAP {}"]
+)
+def test_secret_sql_preserves_values_with_omitted_null_and_empty_overrides(
+    monkeypatch: pytest.MonkeyPatch, optional_arguments: str
+) -> None:
+    original = MssqlCredentials(
+        host="sql.example.test",
+        user=SecretStr("reader"),
+        password=SecretStr("protected"),
+        database="Reporting",
+    )
+    provider = Mock()
+    provider.resolve.return_value = original
+    monkeypatch.setattr(loading_module, "get_provider", Mock(return_value=provider))
+    registered: list[tuple[MssqlCredentials, str]] = []
+
+    def register(
+        model: MssqlCredentials, connection: DuckDBPyConnection, alias: str
+    ) -> None:
+        assert connection.execute("SELECT 1").fetchone() == (1,)
+        registered.append((model, alias))
+
+    monkeypatch.setattr(MssqlCredentials, "register_duckdb_secret", register)
+    with duckdb.connect() as connection:
+        install_functions(connection, ("register_secret",))
+        result = connection.execute(
+            "SELECT quackframe.register_secret('example', 'shared-login', "
+            f"'mssql'{optional_arguments})"
+        ).fetchone()
+
+    assert result == (True,)
+    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
+    assert len(registered) == 1
+    resolved, alias = registered[0]
+    assert type(resolved) is MssqlCredentials
+    assert resolved.model_dump() == original.model_dump()
+    assert resolved is not original
+    assert alias == "shared_login"
+
+
 def test_public_macro_forwards_named_map_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -51,7 +92,7 @@ def test_public_macro_forwards_named_map_overrides(
     def get_provider(_: str) -> CredentialProvider:
         return cast(CredentialProvider, provider)
 
-    monkeypatch.setattr(function_module, "get_provider", get_provider)
+    monkeypatch.setattr(loading_module, "get_provider", get_provider)
 
     with duckdb.connect() as connection:
         install_functions(connection, ("register_secret",))
@@ -68,10 +109,10 @@ def test_public_macro_forwards_named_map_overrides(
         ).fetchone()
 
     assert result == (True,)
-    provider.resolve.assert_called_once_with("shared-login", "mssql")
+    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
     credentials.resolve_overrides.assert_called_once_with({"database": "Reporting"})
-    resolved_secret.register.assert_called_once()
-    assert resolved_secret.register.call_args.args[1] == "reporting"
+    resolved_secret.register_duckdb_secret.assert_called_once()
+    assert resolved_secret.register_duckdb_secret.call_args.args[1] == "reporting"
 
 
 def test_register_secret_selects_provider_and_uses_duplicate_connection(
@@ -89,7 +130,7 @@ def test_register_secret_selects_provider_and_uses_duplicate_connection(
     def get_provider(_: str) -> CredentialProvider:
         return cast(CredentialProvider, provider)
 
-    monkeypatch.setattr(function_module, "get_provider", get_provider)
+    monkeypatch.setattr(loading_module, "get_provider", get_provider)
 
     outcome = register_secret(
         connection,
@@ -101,9 +142,11 @@ def test_register_secret_selects_provider_and_uses_duplicate_connection(
     )
 
     assert outcome is True
-    provider.resolve.assert_called_once_with("shared-login", "mssql")
+    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
     credentials.resolve_overrides.assert_called_once_with({"database": "Reporting"})
-    resolved_secret.register.assert_called_once_with(duplicate, "reporting")
+    resolved_secret.register_duckdb_secret.assert_called_once_with(
+        duplicate, "reporting"
+    )
 
 
 def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
@@ -121,7 +164,7 @@ def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
     def get_provider(_: str) -> CredentialProvider:
         return cast(CredentialProvider, provider)
 
-    monkeypatch.setattr(function_module, "get_provider", get_provider)
+    monkeypatch.setattr(loading_module, "get_provider", get_provider)
 
     register_secret(
         connection,
@@ -130,8 +173,10 @@ def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
         "mssql",
     )
 
-    provider.resolve.assert_called_once_with("shared-login", "mssql")
-    resolved_secret.register.assert_called_once_with(duplicate, "shared_login")
+    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
+    resolved_secret.register_duckdb_secret.assert_called_once_with(
+        duplicate, "shared_login"
+    )
 
 
 def test_mssql_override_values_are_typed_and_bound() -> None:
@@ -145,7 +190,7 @@ def test_mssql_override_values_are_typed_and_bound() -> None:
     resolved = credentials.resolve_overrides(
         {"database": "Reporting", "port": "1444", "use_encrypt": "false"},
     )
-    resolved.register(cast(DuckDBPyConnection, connection), "reporting")
+    resolved.register_duckdb_secret(cast(DuckDBPyConnection, connection), "reporting")
 
     query, parameters = connection.queries[-1]
     assert "sensitive" not in query
@@ -179,7 +224,7 @@ def test_azure_scope_override_is_validated_and_bound() -> None:
     )
 
     resolved = credentials.resolve_overrides({"scope": "az://container/reports/"})
-    resolved.register(cast(DuckDBPyConnection, connection), "storage")
+    resolved.register_duckdb_secret(cast(DuckDBPyConnection, connection), "storage")
 
     query, parameters = connection.queries[-1]
     assert "sensitive" not in query
@@ -201,7 +246,7 @@ def test_azure_managed_identity_registration_binds_values(
         scope=scope,
     )
 
-    credentials.resolve_overrides({}).register(
+    credentials.resolve_overrides({}).register_duckdb_secret(
         cast(DuckDBPyConnection, connection),
         "storage",
     )
@@ -257,7 +302,9 @@ def test_azure_managed_identity_requires_scope_before_registration() -> None:
     with pytest.raises(ValueError, match="scope is required"):
         credentials.resolve_overrides({})
     with pytest.raises(ValueError, match="scope is required"):
-        credentials.register(cast(DuckDBPyConnection, connection), "storage")
+        credentials.register_duckdb_secret(
+            cast(DuckDBPyConnection, connection), "storage"
+        )
 
     assert connection.queries == []
     assert credentials.resolve_overrides({"scope": "az://container/"}).scope == (
@@ -307,7 +354,9 @@ def test_ssh_private_key_scope_override_is_bound() -> None:
     resolved = credentials.resolve_overrides(
         {"scope": "sftp://sftp.example.test/from_uber/trips/"}
     )
-    resolved.register(cast(DuckDBPyConnection, connection), "source_files")
+    resolved.register_duckdb_secret(
+        cast(DuckDBPyConnection, connection), "source_files"
+    )
 
     assert connection.queries[0] == ("INSTALL sshfs FROM community", None)
     assert connection.queries[1] == ("LOAD sshfs", None)
