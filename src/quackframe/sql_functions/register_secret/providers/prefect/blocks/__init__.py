@@ -1,13 +1,11 @@
-"""Quackframe-owned Prefect Block definitions."""
+"""Compatibility imports for the shared credential provider."""
 
-from .azure_connection_string import (
+from quackframe.credential_providers.prefect.blocks import (
     AzureConnectionStringCredentials,
-)
-from .azure_managed_identity import AzureManagedIdentityCredentials
-from .mssql import (
+    AzureManagedIdentityCredentials,
     MssqlCredentials,
+    SshPrivateKeyCredentials,
 )
-from .ssh_private_key import SshPrivateKeyCredentials
 
 __all__ = [
     "AzureConnectionStringCredentials",

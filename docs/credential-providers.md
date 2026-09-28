@@ -141,7 +141,8 @@ The `register_secret` function owns:
 
 - validating the alias used in generated SQL;
 - selecting an installed provider implementation;
-- asking that provider for a provider-independent `DuckDBSecret` model;
+- asking that provider for backend-independent typed credentials;
+- converting those credentials into the matching `DuckDBSecret` model;
 - asking that model to resolve allowlisted overrides and register itself;
 - returning a non-sensitive outcome; and
 - converting failures into safe diagnostics.
@@ -151,8 +152,8 @@ A credential provider owns:
 - resolving its reference through the external service;
 - translating provider-specific reference naming rules at that boundary;
 - deciding which secret-type names it supports;
-- explicitly translating the resolved fields into the requested Quackframe
-  secret model;
+- explicitly translating the resolved fields into shared Quackframe
+  credential data;
 - rejecting secret types for which it has no explicit conversion;
 - loading only the optional dependencies required by that provider; and
 - keeping sensitive values out of returned results and errors.
@@ -193,13 +194,13 @@ Provider dependencies are checked only after SQL selects a provider. A future
 non-Prefect provider can therefore install and run without Prefect present.
 
 The generic function passes the requested secret-type name to the selected
-provider as plain text. There is no central list of MSSQL, Azure, or future
-secret types. Each provider rejects names it does not explicitly support, and
-each returned secret model owns its own type-specific behaviour.
+provider as plain text. Each provider rejects names it does not explicitly
+support. The secret function maps supported credential models to its own
+registration strategies; filesystem registration owns its separate mapping.
 
 For Azure connection-string registration, the preferred Prefect Block contains
 both the connection string and its scope. The model permits an omitted scope
-only so an exceptional per-call override can supply it. The provider installs
+only so an exceptional per-call override can supply it. The secret model installs
 and loads DuckDB's Azure extension as required, then creates a scoped temporary
 secret using bound values. The connection string must never be interpolated
 into generated SQL.
@@ -219,18 +220,18 @@ For private-key SSH registration, the Prefect provider resolves a block
 containing a protected username, private-key path, port, and required scope.
 Reviewed SQL may replace only the scope, allowing one block to be narrowed to a
 remote directory without moving authentication or connection settings into
-SQL. The provider installs DuckDB's community `sshfs` extension and creates a
+SQL. The secret registration model installs DuckDB's community `sshfs` extension and creates a
 temporary `TYPE SSH` secret using bound values. Availability therefore depends
 on the platforms for which that community extension publishes binaries.
 
 ## Prefect Block Ownership
 
 Quackframe owns the Prefect Block classes expected by its provider. They live
-inside the optional `register_secret` Prefect provider package so downstream
+inside the shared optional credential-provider package so downstream
 repositories do not have to reproduce Quackframe's credential schemas:
 
 ```text
-sql_functions/register_secret/providers/prefect/
+credential_providers/prefect/
 ├── provider.py
 └── blocks/
     ├── mssql.py
@@ -279,7 +280,7 @@ Users can register the Quackframe block types so they are available through the
 Prefect UI:
 
 ```powershell
-prefect block register --module quackframe.sql_functions.register_secret.providers.prefect.blocks
+prefect block register --module quackframe.credential_providers.prefect.blocks
 ```
 
 Prefect distinguishes the local Python class, the server-registered block type,
@@ -300,17 +301,26 @@ documentation.
 - Private API URLs and other sensitive metadata remain in native profiles or
   environment configuration.
 
-## Function Autonomy
+## Shared Loading And Separate Registration
 
-`register_secret` owns its provider protocol and registry within its own
-function package. Each provider registry entry records its public name, lazy
-implementation loader, and actionable missing-dependency message. Adding a
-provider requires a provider package and one entry rather than a new branch in
-the generic selector.
+`credential_providers` owns provider selection, Block loading, and typed
+credential data. Both `register_secret` and `register_filesystem` use the same
+loader. Calling both functions loads the Block twice; there is no credential
+cache. Shared models have no DuckDB or fsspec registration methods.
 
-Other SQL functions do not have to adopt those abstractions. If another
-function later needs similar provider behaviour, duplication is acceptable
-until a genuinely shared invariant earns extraction.
+`register_secret` converts loaded data into its own secret model, which owns
+safe overrides, extension loading, and parameter-bound registration.
+`register_filesystem` constructs the selected filesystem independently; the
+first implementation supports SFTP private-key credentials.
+
+The former Prefect Block module paths re-export the same classes for import
+compatibility. Class names, field schemas, and Block type slugs are retained so
+existing documents remain usable. The existing `register_secret` SQL interface
+and secret model import aliases remain supported.
+
+Provider implementations remain lazy and optional. Installing the function
+framework does not import Prefect, fsspec, or Paramiko. See
+[Filesystem Registration](filesystems.md) for SFTP usage and limitations.
 
 ## Connection Mutation
 

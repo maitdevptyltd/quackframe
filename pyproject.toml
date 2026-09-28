@@ -17,6 +17,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+sftp = [
+    "fsspec>=2025.3,<2027",
+    "paramiko>=3.5,<5",
+]
 prefect = [
     "numpy>=1.26,<3",
     "prefect>=3.2,<4",

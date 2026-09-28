@@ -50,29 +50,34 @@ that schema.
 Each non-trivial function owns its vertical implementation slice:
 
 ```text
-sql_functions/
-├── definition.py
-├── registry.py
-├── macros.py
-│
-├── register_secret/
-│   ├── __init__.py
-│   ├── function.py
-│   ├── models.py
-│   ├── validation.py
-│   └── providers/
-│       ├── protocol.py
-│       └── prefect.py
-│
-└── publish_metric/
-    ├── __init__.py
-    └── function.py
+quackframe/
+  credential_providers/
+    models.py
+    protocol.py
+    registry.py
+    prefect/
+      provider.py
+      blocks/
+  sql_functions/
+    definition.py
+    installer.py
+    registry.py
+    register_secret/
+      function.py
+      models.py
+      validation.py
+    register_filesystem/
+      function.py
+      sftp.py
 ```
 
 A simple function may begin as one module. When its supporting logic grows, it
 becomes a function-named package. Themes such as credentials or observability
 may be recorded as metadata and documentation categories; they do not force
 unrelated functions into a shared implementation hierarchy.
+
+Credential loading is shared in the sibling `credential_providers` package;
+registration behaviour remains owned by each SQL function.
 
 Limited duplication is preferable to restrictive coupling. Shared code should
 be extracted only when the behaviour and invariant genuinely have one owner and
@@ -172,7 +177,7 @@ change through the connection currently executing the UDF. The prototype avoids
 a runner-owned request queue by opening a short-lived duplicate connection to
 the same database instance inside the connection-aware function.
 
-`register_secret` uses duplicate-connection execution. The function owns this
+`register_secret` and `register_filesystem` use duplicate-connection execution. Each function owns this
 behaviour; the core runner has no deferred-operation queue or function-specific
 branch. Compatibility is tested against the pinned DuckDB MVP version.
 

@@ -2,9 +2,13 @@
 
 from quackframe.errors import ConfigurationError
 from quackframe.sql_functions.definition import SqlFunction
+from quackframe.sql_functions.register_filesystem import register_filesystem_function
 from quackframe.sql_functions.register_secret import register_secret_function
 
-BUILTIN_FUNCTIONS: tuple[SqlFunction, ...] = (register_secret_function,)
+BUILTIN_FUNCTIONS: tuple[SqlFunction, ...] = (
+    register_secret_function,
+    register_filesystem_function,
+)
 
 
 def resolve_functions(enabled_names: tuple[str, ...]) -> tuple[SqlFunction, ...]:

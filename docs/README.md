@@ -20,6 +20,8 @@ service integrations.
   functions become `quackframe.<function_name>` SQL calls.
 - [Credential Providers](credential-providers.md): credential resolution as one
   optional SQL-function use case.
+- [Filesystem Registration](filesystems.md): SFTP credential loading, globbing,
+  and DuckDB registration.
 - [Prototype Reference](mad-utilities-duckdb-reference.md): evidence retained
   from the earlier prototype without inheriting its coupling.
 - [Roadmap](roadmap.md): delivered MVP phases, acceptance criteria, and

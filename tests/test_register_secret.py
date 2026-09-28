@@ -10,6 +10,7 @@ import pytest
 from duckdb import DuckDBPyConnection
 from pydantic import SecretStr
 
+from quackframe.credential_providers import registry
 from quackframe.sql_functions.installer import install_functions
 from quackframe.sql_functions.register_secret import function as function_module
 from quackframe.sql_functions.register_secret.function import register_secret
@@ -20,7 +21,6 @@ from quackframe.sql_functions.register_secret.models import (
     MssqlCredentials,
     SshPrivateKeyCredentials,
 )
-from quackframe.sql_functions.register_secret.providers import registry
 from quackframe.sql_functions.register_secret.providers.protocol import (
     CredentialProvider,
 )
@@ -52,6 +52,9 @@ def test_public_macro_forwards_named_map_overrides(
         return cast(CredentialProvider, provider)
 
     monkeypatch.setattr(function_module, "get_provider", get_provider)
+    monkeypatch.setattr(
+        function_module, "secret_from_credentials", Mock(return_value=credentials)
+    )
 
     with duckdb.connect() as connection:
         install_functions(connection, ("register_secret",))
@@ -90,6 +93,9 @@ def test_register_secret_selects_provider_and_uses_duplicate_connection(
         return cast(CredentialProvider, provider)
 
     monkeypatch.setattr(function_module, "get_provider", get_provider)
+    monkeypatch.setattr(
+        function_module, "secret_from_credentials", Mock(return_value=credentials)
+    )
 
     outcome = register_secret(
         connection,
@@ -122,6 +128,9 @@ def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
         return cast(CredentialProvider, provider)
 
     monkeypatch.setattr(function_module, "get_provider", get_provider)
+    monkeypatch.setattr(
+        function_module, "secret_from_credentials", Mock(return_value=credentials)
+    )
 
     register_secret(
         connection,

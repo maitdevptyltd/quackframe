@@ -23,6 +23,10 @@ from the main documentation.
 
 - [01 Dotenv Configuration Loading](03-configuration/01-dotenv-loading.md)
 
+## Epic 04: Filesystems
+
+- [01 Shared Credentials And SFTP](04-filesystems/01-shared-credentials-and-sftp.md)
+
 ## Status Rules
 
 Allowed statuses are `Planned`, `In Progress`, `Blocked`, and `Complete`.

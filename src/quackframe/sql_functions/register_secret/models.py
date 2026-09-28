@@ -1,4 +1,4 @@
-"""Provider-independent DuckDB secrets returned by credential providers."""
+"""DuckDB secret registration strategies built from shared credential data."""
 
 from __future__ import annotations
 
@@ -10,19 +10,29 @@ from duckdb import DuckDBPyConnection
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Field,
-    SecretStr,
     ValidationError,
-    field_validator,
 )
 
+from quackframe.credential_providers.models import (
+    AzureConnectionStringCredentials as AzureConnectionStringCredentialData,
+)
+from quackframe.credential_providers.models import (
+    AzureManagedIdentityCredentials as AzureManagedIdentityCredentialData,
+)
+from quackframe.credential_providers.models import Credentials
+from quackframe.credential_providers.models import (
+    MssqlCredentials as MssqlCredentialData,
+)
+from quackframe.credential_providers.models import (
+    SshPrivateKeyCredentials as SshPrivateKeyCredentialData,
+)
 from quackframe.sql_functions.register_secret.validation import validate_azure_scope
 
 
 class DuckDBSecret(BaseModel, ABC):
     """Describe a credential that Quackframe can register with DuckDB.
 
-    A credential provider converts stored values into one of these models. The
+    The secret function converts shared credential data into one of these models. The
     SQL function can then apply safe overrides and register the secret without
     checking which kind of credential it received.
     """
@@ -51,7 +61,7 @@ class DuckDBSecret(BaseModel, ABC):
         """Load required extensions and create one temporary DuckDB secret."""
 
 
-class MssqlSecret(DuckDBSecret):
+class MssqlSecret(MssqlCredentialData, DuckDBSecret):
     """Hold MSSQL credentials and own their DuckDB registration behaviour.
 
     Only ``database``, ``port``, and ``use_encrypt`` may be changed by reviewed
@@ -62,13 +72,6 @@ class MssqlSecret(DuckDBSecret):
     allowed_overrides: ClassVar[frozenset[str]] = frozenset(
         {"database", "port", "use_encrypt"}
     )
-
-    host: str = Field(min_length=1)
-    user: SecretStr
-    password: SecretStr
-    database: str | None = None
-    port: int = Field(default=1433, ge=1, le=65535)
-    use_encrypt: bool = True
 
     def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
         """Parse MSSQL overrides and require a database after merging."""
@@ -138,7 +141,7 @@ class MssqlSecret(DuckDBSecret):
         raise ValueError("use_encrypt override must be true or false")
 
 
-class AzureConnectionStringSecret(DuckDBSecret):
+class AzureConnectionStringSecret(AzureConnectionStringCredentialData, DuckDBSecret):
     """Hold an Azure connection string and own its scoped registration.
 
     Reviewed SQL may choose only the non-sensitive storage ``scope``. The
@@ -147,18 +150,6 @@ class AzureConnectionStringSecret(DuckDBSecret):
 
     secret_type: ClassVar[str] = "azure_connection_string"
     allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
-
-    connection_string: SecretStr
-    scope: str | None = None
-
-    @field_validator("connection_string")
-    @classmethod
-    def connection_string_must_not_be_blank(cls, value: SecretStr) -> SecretStr:
-        """Reject empty provider values before DuckDB extension work begins."""
-
-        if not value.get_secret_value().strip():
-            raise ValueError("Connection string must not be blank")
-        return value
 
     def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
         """Apply and validate the optional Azure storage scope override."""
@@ -192,24 +183,11 @@ class AzureConnectionStringSecret(DuckDBSecret):
         )
 
 
-class AzureManagedIdentitySecret(DuckDBSecret):
+class AzureManagedIdentitySecret(AzureManagedIdentityCredentialData, DuckDBSecret):
     """Register Azure storage access using the execution environment's identity."""
 
     secret_type: ClassVar[str] = "azure_managed_identity"
     allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
-
-    account_name: str = Field(min_length=1)
-    client_id: str | None = None
-    scope: str | None = None
-
-    @field_validator("account_name", "client_id")
-    @classmethod
-    def identity_fields_must_not_be_blank(cls, value: str | None) -> str | None:
-        """Reject blank account or identity values before extension work begins."""
-
-        if value is not None and not value.strip():
-            raise ValueError("Azure account name and client ID must not be blank")
-        return value
 
     def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
         """Apply the storage scope without allowing changes to the identity."""
@@ -250,7 +228,7 @@ class AzureManagedIdentitySecret(DuckDBSecret):
         )
 
 
-class SshPrivateKeySecret(DuckDBSecret):
+class SshPrivateKeySecret(SshPrivateKeyCredentialData, DuckDBSecret):
     """Hold private-key SSH credentials for DuckDB's ``sshfs`` extension.
 
     Reviewed SQL may narrow the credential to a remote ``scope``. The username,
@@ -259,20 +237,6 @@ class SshPrivateKeySecret(DuckDBSecret):
 
     secret_type: ClassVar[str] = "ssh_private_key"
     allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
-
-    username: SecretStr
-    key_path: str = Field(min_length=1)
-    port: int = Field(default=22, ge=1, le=65535)
-    scope: str = Field(min_length=1)
-
-    @field_validator("username")
-    @classmethod
-    def username_must_not_be_blank(cls, value: SecretStr) -> SecretStr:
-        """Reject empty provider values before DuckDB extension work begins."""
-
-        if not value.get_secret_value().strip():
-            raise ValueError("Username must not be blank")
-        return value
 
     def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
         """Apply the optional SSH scope override."""
@@ -308,7 +272,22 @@ class SshPrivateKeySecret(DuckDBSecret):
             ],
         )
 
+
 MssqlCredentials = MssqlSecret
 AzureConnectionStringCredentials = AzureConnectionStringSecret
 AzureManagedIdentityCredentials = AzureManagedIdentitySecret
 SshPrivateKeyCredentials = SshPrivateKeySecret
+
+
+def secret_from_credentials(credentials: Credentials) -> DuckDBSecret:
+    """Select DuckDB registration without involving the credential provider."""
+
+    if isinstance(credentials, MssqlCredentialData):
+        return MssqlSecret.model_validate(credentials.model_dump())
+    if isinstance(credentials, AzureConnectionStringCredentialData):
+        return AzureConnectionStringSecret.model_validate(credentials.model_dump())
+    if isinstance(credentials, AzureManagedIdentityCredentialData):
+        return AzureManagedIdentitySecret.model_validate(credentials.model_dump())
+    if isinstance(credentials, SshPrivateKeyCredentialData):
+        return SshPrivateKeySecret.model_validate(credentials.model_dump())
+    raise ValueError("Unsupported credentials for DuckDB secret registration")

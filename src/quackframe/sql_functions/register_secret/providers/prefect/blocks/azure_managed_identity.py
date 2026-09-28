@@ -1,14 +1,7 @@
-"""Prefect Block for Azure Storage managed-identity access."""
+"""Compatibility imports for the shared credential provider."""
 
-from prefect.blocks.core import Block
+from quackframe.credential_providers.prefect.blocks.azure_managed_identity import (
+    AzureManagedIdentityCredentials,
+)
 
-
-class AzureManagedIdentityCredentials(Block):
-    """Store account and identity selection with an optional storage scope.
-
-    ``scope`` may be supplied later by the allowlisted Quackframe override.
-    """
-
-    account_name: str
-    client_id: str | None = None
-    scope: str | None = None
+__all__ = ["AzureManagedIdentityCredentials"]

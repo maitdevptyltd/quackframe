@@ -12,20 +12,20 @@ prefect = pytest.importorskip("prefect")
 from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 
 from quackframe import QuackframeConfig, load_config, run  # noqa: E402
-from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
-from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
+from quackframe.credential_providers.models import (  # noqa: E402
     AzureConnectionStringCredentials as ResolvedAzureCredentials,
 )
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
+from quackframe.credential_providers.models import (  # noqa: E402
     AzureManagedIdentityCredentials as ResolvedAzureManagedIdentityCredentials,
 )
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
+from quackframe.credential_providers.models import (  # noqa: E402
     MssqlCredentials as ResolvedMssqlCredentials,
 )
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
+from quackframe.credential_providers.models import (  # noqa: E402
     SshPrivateKeyCredentials as ResolvedSshPrivateKeyCredentials,
 )
+from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
+from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
 from quackframe.sql_functions.register_secret.providers.prefect.blocks import (  # noqa: E402
     AzureConnectionStringCredentials,
     AzureManagedIdentityCredentials,
@@ -279,3 +279,29 @@ def test_prefect_provider_failure_does_not_include_underlying_error() -> None:
 
     assert "shared-login" in str(captured.value)
     assert "sensitive diagnostic" not in str(captured.value)
+
+
+def test_legacy_block_imports_keep_the_same_classes_and_slugs() -> None:
+    from quackframe.credential_providers.prefect import blocks
+
+    pairs = [
+        (MssqlCredentials, blocks.MssqlCredentials, "mssqlcredentials"),
+        (
+            AzureConnectionStringCredentials,
+            blocks.AzureConnectionStringCredentials,
+            "azureconnectionstringcredentials",
+        ),
+        (
+            AzureManagedIdentityCredentials,
+            blocks.AzureManagedIdentityCredentials,
+            "azuremanagedidentitycredentials",
+        ),
+        (
+            SshPrivateKeyCredentials,
+            blocks.SshPrivateKeyCredentials,
+            "sshprivatekeycredentials",
+        ),
+    ]
+    for legacy_class, shared_class, slug in pairs:
+        assert legacy_class is shared_class
+        assert shared_class.get_block_type_slug() == slug
