@@ -10,8 +10,10 @@ Related docs: [Credential Providers](../../credential-providers.md), [SQL Functi
 
 Enable SQL to register a standard fsspec filesystem with DuckDB using existing
 credential Blocks, while preserving the existing model-owned strategy pattern.
-The requested separation is loading followed by registration. It is not a
-replacement of behavioural models with data-only containers.
+The requested separation is loading followed by registration. Shared models
+retain their behaviour. Before the first release, the repository has one current
+API: superseded imports, credential aliases and string-based provider calls are
+removed. The `register_secret` SQL contract and behaviour remain unchanged.
 
 Implementation was authorised on 2026-09-28 by the request to implement this
 scope on `feat/fsspec-filesystems`. The fresh branch
@@ -39,7 +41,7 @@ not the proposed registration method names or ownership:
   `resolve_overrides()`, and calls its `register()` through a duplicate connection.
 - `register_secret/models.py` contains `DuckDBSecret(BaseModel, ABC)` and concrete
   MSSQL, Azure connection-string, Azure managed-identity, and SSH private-key
-  strategies. It also exports compatibility aliases ending in `Credentials`.
+  strategies.
 - The base model centralizes the override-key check. Concrete models own their
   fields, field validators, allowlists, parsing, override resolution, and secret
   registration. `resolve_overrides()` preserves the concrete model type.
@@ -130,9 +132,9 @@ src/quackframe/
       models.py
 ```
 
-The tree shows implementation ownership. Existing public import paths may remain
-as compatibility re-export modules during migration; they must not contain
-second implementations. Do not create per-type files merely to expand the tree.
+The tree shows the canonical implementation and import paths. Do not retain
+forwarding modules at superseded paths or aliases for removed model names.
+Do not create per-type files merely to expand the tree.
 Keep the existing model grouping unless its size warrants a separately reviewed split.
 
 ### Exact extraction boundaries
@@ -148,8 +150,8 @@ Keep the existing model grouping unless its size warrants a separately reviewed 
   registration bodies under `register_duckdb_secret(connection, alias)`. They
   inherit the extracted credential behaviour instead of reimplementing it.
   The secret-specific abstract contract belongs in this module, not on the
-  shared credential base. Preserve existing concrete class names/import aliases;
-  the registration method is deliberately renamed from `register()`.
+  shared credential base. Concrete strategy names end in `Secret`; credential
+  parents live in the shared module. The operation is `register_duckdb_secret()`.
 - `register_filesystem/models.py`: introduce the filesystem registration contract
   and SFTP strategy, inheriting the same SSH credential parent. Its
   `register_filesystem_protocol(connection)` method owns standard filesystem
@@ -207,8 +209,8 @@ return that resolved strategy. It does not register anything.
 
 The provider contract should be generic in the requested credential model type:
 `resolve(reference, model_type: type[T]) -> T`, where T derives from the shared
-credential base. Preserve compatibility for existing public provider usage where
-required through a thin delegating entry point, not a second loading algorithm.
+credential base. This is the only provider call format. SQL type-name selection
+occurs in the function registry before loading.
 
 Each concrete strategy declares its credential type as class metadata. Each SQL
 function's model module owns an explicit allowlist of its supported strategy
@@ -326,7 +328,8 @@ identity before moving classes. Use Poetry only.
 
 Move common behaviour and its validators together. Adapt provider construction to
 return the selected concrete strategy directly. Retain secret registration method
-bodies under `register_duckdb_secret()` and preserve public class imports. Review this diff independently before adding filesystem
+bodies under `register_duckdb_secret()` and update imports to canonical owners.
+Review this diff independently before adding filesystem
 registration. It must contain no new SSH transport behaviour.
 
 ### 3. Add the filesystem strategy and SQL function
@@ -335,7 +338,7 @@ Add the SFTP strategy and its thin SQL wrapper. Register it through the existing
 connection binding, side effects, and optional-map handling. Keep optional
 filesystem dependencies behind the selected strategy and in a Poetry extra.
 
-### 4. Validate compatibility and architecture
+### 4. Validate behaviour and architecture
 
 Run the full suite with optional integrations installed, focused optional-
 dependency absence checks, Ruff, Pyright, documentation links, and diff checks.
@@ -346,11 +349,11 @@ an explicit request.
 
 | Area | Evidence required |
 | --- | --- |
-| Secret SQL compatibility | Existing positional/named calls, aliases, extension loading, temporary-secret SQL and bound parameter values remain unchanged |
+| Secret SQL behaviour | Existing positional/named calls, aliases, extension loading, temporary-secret SQL and bound parameter values remain unchanged |
 | Models | Original validators/defaults and override semantics remain on common parents; concrete strategy type survives overrides |
 | Overrides | Valid, invalid, blank, omitted, NULL and empty-map cases; forbidden keys; no mutation; safe diagnostics |
 | Shared loading | Both functions use the same provider path; one Block load per call; a concrete requested strategy is returned directly |
-| Prefect compatibility | Old imports re-export the same classes; Block names, slugs, fields and schemas stay compatible; no live document migration required |
+| Prefect Blocks | Canonical shared imports; correct Block names, slugs, fields and model construction |
 | Provider extensibility | An additional test provider works without edits to the generic SQL wrappers |
 | Strategy extensibility | A second test filesystem strategy works through class registration without SFTP branches in the wrapper |
 | Standard SFTP | User-run verification of globbing, DuckDB reads, concurrency and cleanup after implementation |
@@ -373,15 +376,15 @@ uncommitted for review.
   and an explicit local pytest temporary directory.
 - Shared model fields, validators, allowlists, parsing and override methods were
   extracted together. Secret SQL bodies remain unchanged apart from the required
-  method name. The extraction-only compatibility run passed 53 tests.
+  method name. Regression tests exercise the concrete strategies and SQL calls.
 - All four Prefect Block JSON schemas, names, slugs and schema checksums were
-  captured before moving classes and compared afterward: unchanged. Existing
-  imports re-export the same canonical classes.
+  captured before moving classes and compared afterward: unchanged. Blocks and
+  providers have one canonical import location under `credential_loading`.
 - The shared provider contract uses the requested concrete model type. Each
   Prefect Block owns explicit field translation and checks model-family
-  compatibility before construction. Existing positional string calls to the
-  Prefect provider delegate to the typed path. External provider implementations
-  must migrate to that contract; no conversion dispatcher adapts old providers.
+  compatibility before construction. Providers accept only a concrete model
+  class. There are no string-call overloads, obsolete import modules or secret
+  model aliases.
 - `register_filesystem` uses the ordinary descriptor registry and shared loader.
   `SftpFilesystem` inherits SSH override behavior and registers the standard
   backend. Core runner, installer and execution semantics are unchanged.
@@ -391,13 +394,10 @@ uncommitted for review.
   one Block load per call, additional provider/strategy registration and core
   execution with optional imports blocked. A standard in-memory backend verifies
   a DuckDB CSV glob read across ordered SQL files and native duplicate rejection.
-- Final validation: 158 tests passed with the locked optional integrations
-  installed; Pyright reported zero errors or warnings. Ruff passed for `src`,
-  `tests` and `examples`; Markdown links and staged/unstaged diff checks passed.
-  Full-repository Ruff reports one pre-existing `I001` in
-  `.agents/skills/quackframe-documentation/scripts/check_doc_links.py`, reproduced
-  from `HEAD` and left unchanged. Poetry's lock check passes with the existing
-  license-table deprecation warning.
+- First-release API validation: 157 tests passed with the locked optional
+  integrations installed. Pyright reported zero errors or warnings, and
+  full-repository Ruff passed. Markdown links and diff checks passed. The test
+  for obsolete import re-exports was removed; SQL behaviour assertions remain.
 - Standard SFTP endpoint/path interpretation, native duplicate-registration
   behavior and ownership are documented in [Filesystems](../../filesystems.md).
   Scope provides the host; its directory is not an enforced access boundary.

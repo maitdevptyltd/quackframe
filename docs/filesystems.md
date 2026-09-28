@@ -113,7 +113,7 @@ lifecycle redesign returns to scope review.
 
 ## Related Docs
 
-- [Credential Providers](credential-providers.md): shared models and provider migration.
+- [Credential Providers](credential-providers.md): shared models and provider contracts.
 - [SQL Function Extensions](python-extensions.md): explicit enablement and installation.
 - [Execution Lifecycle](execution-lifecycle.md): ordered execution and session ownership.
 - [Filesystem Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md):

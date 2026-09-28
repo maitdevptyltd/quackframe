@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
-
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 FENCE_PATTERN = re.compile(r"```.*?```", re.DOTALL)
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$", re.MULTILINE)

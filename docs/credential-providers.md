@@ -171,21 +171,28 @@ Providers implement the generic contract
 Providers return that strategy directly; they do not return an intermediate
 model for later conversion. Provider failures must omit sensitive values.
 
-### Python compatibility and provider migration
+### Python API
 
-Existing secret class names and `*Credentials` aliases in
-`sql_functions.register_secret.models` remain available. Their registration
-method is now `register_duckdb_secret()`; the old `register()` method is
-intentionally removed.
+Import shared credential models from `quackframe.credential_loading.models`
+and providers from `quackframe.credential_loading.providers`. Secret strategies
+live in `quackframe.sql_functions.register_secret.models` and use the names
+`MssqlSecret`, `AzureConnectionStringSecret`, `AzureManagedIdentitySecret` and
+`SshPrivateKeySecret`.
 
-Old provider and Prefect Block import paths re-export the shared classes.
-`PrefectCredentialProvider.resolve(reference, "mssql")` and the other existing
-positional secret-type strings still delegate to the same typed loading path.
-New calls should pass a concrete model class. External provider implementations
-must adopt `resolve(reference, model_type)` and construct the supplied class;
-they can register through `credential_loading.providers.registry` without
-editing either SQL wrapper. There is no automatic adapter for providers that
-only accept secret-type strings.
+Providers accept a concrete model class:
+
+```python
+from quackframe.credential_loading.providers.prefect.provider import (
+    PrefectCredentialProvider,
+)
+from quackframe.sql_functions.register_secret.models import MssqlSecret
+
+credentials = PrefectCredentialProvider().resolve("reporting_login", MssqlSecret)
+```
+
+SQL type-name selection belongs to each SQL function's strategy registry.
+Providers construct the requested model directly, and register through
+`credential_loading.providers.registry` without editing either SQL wrapper.
 
 ## Prefect Provider
 

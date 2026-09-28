@@ -1,6 +1,6 @@
 """Resolve credential strategies directly from Quackframe Prefect Blocks."""
 
-from typing import TypeVar, cast, overload
+from typing import TypeVar, cast
 
 from quackframe.credential_loading.models import CredentialModel
 from quackframe.credential_loading.providers.prefect.blocks import (
@@ -28,26 +28,8 @@ BLOCK_TYPES: dict[str, type[CredentialBlock]] = {
 class PrefectCredentialProvider:
     """Load one Block and let it construct the requested compatible model."""
 
-    @overload
-    def resolve(self, reference: str, model_type: type[T]) -> T: ...
-
-    @overload
-    def resolve(self, reference: str, model_type: str) -> CredentialModel: ...
-
-    def resolve(self, reference: str, model_type: type[T] | str) -> T | CredentialModel:
-        """Resolve a strategy; legacy secret-type strings delegate to this path."""
-
-        if isinstance(model_type, str):
-            # Preserve direct provider calls without a second loading algorithm.
-            from quackframe.sql_functions.register_secret.models import get_secret_model
-
-            try:
-                secret_model = get_secret_model(model_type)
-            except ValueError:
-                raise ValueError(
-                    f"Unsupported Prefect secret type: {model_type}"
-                ) from None
-            return self.resolve(reference, secret_model)
+    def resolve(self, reference: str, model_type: type[T]) -> T:
+        """Load one Block and construct the requested credential strategy."""
 
         block_type = BLOCK_TYPES.get(model_type.credential_type)
         if block_type is None:

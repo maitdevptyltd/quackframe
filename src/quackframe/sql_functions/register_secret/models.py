@@ -164,12 +164,6 @@ class SshPrivateKeySecret(credentials.SshPrivateKeyCredentials, DuckDBSecret):
         )
 
 
-MssqlCredentials = MssqlSecret
-AzureConnectionStringCredentials = AzureConnectionStringSecret
-AzureManagedIdentityCredentials = AzureManagedIdentitySecret
-SshPrivateKeyCredentials = SshPrivateKeySecret
-
-
 SECRET_MODELS: dict[str, type[DuckDBSecret]] = {
     model.secret_type: model
     for model in (

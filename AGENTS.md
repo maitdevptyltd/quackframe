@@ -46,6 +46,9 @@ Use focused skills instead of expanding this file with task-specific detail.
 
 ## Core Guardrails
 
+- Before the first release, maintain one current API. Remove superseded import
+  paths, aliases and call formats instead of adding backward-compatibility
+  shims. Preserve required behaviour with regression tests.
 - Keep core execution independent of Prefect and other orchestrators.
 - Keep direct execution first-class. Runtime adapters must preserve ordering,
   shared-session ownership, fail-fast behaviour, cleanup, and result semantics.

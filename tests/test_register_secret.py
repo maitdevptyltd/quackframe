@@ -12,17 +12,17 @@ from pydantic import SecretStr
 
 from quackframe.credential_loading import loading as loading_module
 from quackframe.credential_loading.providers import registry
+from quackframe.credential_loading.providers.protocol import (
+    CredentialProvider,
+)
 from quackframe.sql_functions.installer import install_functions
 from quackframe.sql_functions.register_secret.function import register_secret
 from quackframe.sql_functions.register_secret.models import (
-    AzureConnectionStringCredentials,
-    AzureManagedIdentityCredentials,
+    AzureConnectionStringSecret,
+    AzureManagedIdentitySecret,
     DuckDBSecret,
-    MssqlCredentials,
-    SshPrivateKeyCredentials,
-)
-from quackframe.sql_functions.register_secret.providers.protocol import (
-    CredentialProvider,
+    MssqlSecret,
+    SshPrivateKeySecret,
 )
 
 
@@ -45,7 +45,7 @@ class RecordingConnection:
 def test_secret_sql_preserves_values_with_omitted_null_and_empty_overrides(
     monkeypatch: pytest.MonkeyPatch, optional_arguments: str
 ) -> None:
-    original = MssqlCredentials(
+    original = MssqlSecret(
         host="sql.example.test",
         user=SecretStr("reader"),
         password=SecretStr("protected"),
@@ -54,15 +54,15 @@ def test_secret_sql_preserves_values_with_omitted_null_and_empty_overrides(
     provider = Mock()
     provider.resolve.return_value = original
     monkeypatch.setattr(loading_module, "get_provider", Mock(return_value=provider))
-    registered: list[tuple[MssqlCredentials, str]] = []
+    registered: list[tuple[MssqlSecret, str]] = []
 
     def register(
-        model: MssqlCredentials, connection: DuckDBPyConnection, alias: str
+        model: MssqlSecret, connection: DuckDBPyConnection, alias: str
     ) -> None:
         assert connection.execute("SELECT 1").fetchone() == (1,)
         registered.append((model, alias))
 
-    monkeypatch.setattr(MssqlCredentials, "register_duckdb_secret", register)
+    monkeypatch.setattr(MssqlSecret, "register_duckdb_secret", register)
     with duckdb.connect() as connection:
         install_functions(connection, ("register_secret",))
         result = connection.execute(
@@ -71,10 +71,10 @@ def test_secret_sql_preserves_values_with_omitted_null_and_empty_overrides(
         ).fetchone()
 
     assert result == (True,)
-    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
+    provider.resolve.assert_called_once_with("shared-login", MssqlSecret)
     assert len(registered) == 1
     resolved, alias = registered[0]
-    assert type(resolved) is MssqlCredentials
+    assert type(resolved) is MssqlSecret
     assert resolved.model_dump() == original.model_dump()
     assert resolved is not original
     assert alias == "shared_login"
@@ -109,7 +109,7 @@ def test_public_macro_forwards_named_map_overrides(
         ).fetchone()
 
     assert result == (True,)
-    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
+    provider.resolve.assert_called_once_with("shared-login", MssqlSecret)
     credentials.resolve_overrides.assert_called_once_with({"database": "Reporting"})
     resolved_secret.register_duckdb_secret.assert_called_once()
     assert resolved_secret.register_duckdb_secret.call_args.args[1] == "reporting"
@@ -142,7 +142,7 @@ def test_register_secret_selects_provider_and_uses_duplicate_connection(
     )
 
     assert outcome is True
-    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
+    provider.resolve.assert_called_once_with("shared-login", MssqlSecret)
     credentials.resolve_overrides.assert_called_once_with({"database": "Reporting"})
     resolved_secret.register_duckdb_secret.assert_called_once_with(
         duplicate, "reporting"
@@ -173,7 +173,7 @@ def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
         "mssql",
     )
 
-    provider.resolve.assert_called_once_with("shared-login", MssqlCredentials)
+    provider.resolve.assert_called_once_with("shared-login", MssqlSecret)
     resolved_secret.register_duckdb_secret.assert_called_once_with(
         duplicate, "shared_login"
     )
@@ -181,7 +181,7 @@ def test_register_secret_derives_a_duckdb_alias_from_a_dashed_reference(
 
 def test_mssql_override_values_are_typed_and_bound() -> None:
     connection = RecordingConnection()
-    credentials = MssqlCredentials(
+    credentials = MssqlSecret(
         host="sql.example.test",
         user=SecretStr("reader"),
         password=SecretStr("sensitive"),
@@ -206,7 +206,7 @@ def test_mssql_override_values_are_typed_and_bound() -> None:
 
 
 def test_mssql_rejects_an_invalid_encryption_override() -> None:
-    credentials = MssqlCredentials(
+    credentials = MssqlSecret(
         host="sql.example.test",
         database="Reporting",
         user=SecretStr("reader"),
@@ -219,9 +219,7 @@ def test_mssql_rejects_an_invalid_encryption_override() -> None:
 
 def test_azure_scope_override_is_validated_and_bound() -> None:
     connection = RecordingConnection()
-    credentials = AzureConnectionStringCredentials(
-        connection_string=SecretStr("sensitive")
-    )
+    credentials = AzureConnectionStringSecret(connection_string=SecretStr("sensitive"))
 
     resolved = credentials.resolve_overrides({"scope": "az://container/reports/"})
     resolved.register_duckdb_secret(cast(DuckDBPyConnection, connection), "storage")
@@ -240,7 +238,7 @@ def test_azure_managed_identity_registration_binds_values(
     scope: str,
 ) -> None:
     connection = RecordingConnection()
-    credentials = AzureManagedIdentityCredentials(
+    credentials = AzureManagedIdentitySecret(
         account_name="storage'account",
         client_id=client_id,
         scope=scope,
@@ -267,7 +265,7 @@ def test_azure_managed_identity_registration_binds_values(
 
 
 def test_azure_managed_identity_scope_override_preserves_identity() -> None:
-    credentials = AzureManagedIdentityCredentials(
+    credentials = AzureManagedIdentitySecret(
         account_name="storage",
         client_id="identity",
         scope="az://container/",
@@ -285,18 +283,18 @@ def test_azure_managed_identity_scope_override_preserves_identity() -> None:
 def test_azure_managed_identity_rejects_blank_identity_fields(field: str) -> None:
     values = {"account_name": "storage", field: " "}
     with pytest.raises(ValueError, match="must not be blank"):
-        AzureManagedIdentityCredentials.model_validate(values)
+        AzureManagedIdentitySecret.model_validate(values)
 
 
 @pytest.mark.parametrize("field", ["account_name", "client_id", "connection_string"])
 def test_azure_managed_identity_rejects_identity_overrides(field: str) -> None:
-    credentials = AzureManagedIdentityCredentials(account_name="storage")
+    credentials = AzureManagedIdentitySecret(account_name="storage")
     with pytest.raises(ValueError, match="Unsupported azure_managed_identity override"):
         credentials.resolve_overrides({field: "replacement"})
 
 
 def test_azure_managed_identity_requires_scope_before_registration() -> None:
-    credentials = AzureManagedIdentityCredentials(account_name="storage")
+    credentials = AzureManagedIdentitySecret(account_name="storage")
     connection = RecordingConnection()
 
     with pytest.raises(ValueError, match="scope is required"):
@@ -314,7 +312,7 @@ def test_azure_managed_identity_requires_scope_before_registration() -> None:
 
 def test_azure_rejects_a_blank_connection_string() -> None:
     with pytest.raises(ValueError, match="Connection string must not be blank"):
-        AzureConnectionStringCredentials(connection_string=SecretStr(" "))
+        AzureConnectionStringSecret(connection_string=SecretStr(" "))
 
 
 @pytest.mark.parametrize(
@@ -328,8 +326,8 @@ def test_azure_rejects_a_blank_connection_string() -> None:
 @pytest.mark.parametrize(
     "credentials",
     [
-        AzureConnectionStringCredentials(connection_string=SecretStr("sensitive")),
-        AzureManagedIdentityCredentials(account_name="storage"),
+        AzureConnectionStringSecret(connection_string=SecretStr("sensitive")),
+        AzureManagedIdentitySecret(account_name="storage"),
     ],
 )
 def test_azure_rejects_an_invalid_scope(
@@ -344,7 +342,7 @@ def test_azure_rejects_an_invalid_scope(
 
 def test_ssh_private_key_scope_override_is_bound() -> None:
     connection = RecordingConnection()
-    credentials = SshPrivateKeyCredentials(
+    credentials = SshPrivateKeySecret(
         username=SecretStr("reader"),
         key_path="/run/secrets/sftp-key",
         port=2222,
@@ -373,7 +371,7 @@ def test_ssh_private_key_scope_override_is_bound() -> None:
 
 
 def test_ssh_private_key_uses_the_block_scope_without_an_override() -> None:
-    credentials = SshPrivateKeyCredentials(
+    credentials = SshPrivateKeySecret(
         username=SecretStr("reader"),
         key_path="/run/secrets/sftp-key",
         scope="sftp://sftp.example.test",
@@ -384,7 +382,7 @@ def test_ssh_private_key_uses_the_block_scope_without_an_override() -> None:
 
 def test_ssh_private_key_rejects_a_blank_username() -> None:
     with pytest.raises(ValueError, match="Username must not be blank"):
-        SshPrivateKeyCredentials(
+        SshPrivateKeySecret(
             username=SecretStr(" "),
             key_path="/run/secrets/sftp-key",
             scope="sftp://sftp.example.test",
@@ -393,7 +391,7 @@ def test_ssh_private_key_rejects_a_blank_username() -> None:
 
 @pytest.mark.parametrize("field", ["username", "key_path", "port"])
 def test_ssh_private_key_rejects_connection_detail_overrides(field: str) -> None:
-    credentials = SshPrivateKeyCredentials(
+    credentials = SshPrivateKeySecret(
         username=SecretStr("reader"),
         key_path="/run/secrets/sftp-key",
         scope="sftp://sftp.example.test",
@@ -405,7 +403,7 @@ def test_ssh_private_key_rejects_connection_detail_overrides(field: str) -> None
 
 @pytest.mark.parametrize("field", ["user", "password", "connection_string"])
 def test_secret_bearing_overrides_are_rejected(field: str) -> None:
-    credentials = MssqlCredentials(
+    credentials = MssqlSecret(
         host="sql.example.test",
         user=SecretStr("reader"),
         password=SecretStr("sensitive"),
@@ -416,7 +414,7 @@ def test_secret_bearing_overrides_are_rejected(field: str) -> None:
 
 
 def test_database_is_required_after_override_merge() -> None:
-    credentials = MssqlCredentials(
+    credentials = MssqlSecret(
         host="sql.example.test",
         user=SecretStr("reader"),
         password=SecretStr("sensitive"),
@@ -427,7 +425,7 @@ def test_database_is_required_after_override_merge() -> None:
 
 
 def test_blank_override_does_not_fall_back_to_block_value() -> None:
-    credentials = MssqlCredentials(
+    credentials = MssqlSecret(
         host="sql.example.test",
         database="DefaultDatabase",
         user=SecretStr("reader"),

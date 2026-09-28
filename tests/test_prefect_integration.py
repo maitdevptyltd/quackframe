@@ -1,6 +1,7 @@
 """Optional Prefect runtime and Block provider tests."""
 
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import ANY, Mock, patch
 
 import duckdb
@@ -13,11 +14,14 @@ from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 
 from quackframe import QuackframeConfig, load_config, run  # noqa: E402
 from quackframe.credential_loading import loading  # noqa: E402
-from quackframe.credential_loading.providers.prefect import (  # noqa: E402
-    blocks as shared_blocks,
+from quackframe.credential_loading.providers.prefect.blocks import (  # noqa: E402
+    AzureConnectionStringCredentials,
+    AzureManagedIdentityCredentials,
+    MssqlCredentials,
+    SshPrivateKeyCredentials,
 )
 from quackframe.credential_loading.providers.prefect.provider import (  # noqa: E402
-    PrefectCredentialProvider as SharedPrefectCredentialProvider,
+    PrefectCredentialProvider,
 )
 from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
 from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
@@ -26,25 +30,10 @@ from quackframe.sql_functions.register_filesystem.models import (  # noqa: E402
     SftpFilesystem,
 )
 from quackframe.sql_functions.register_secret.models import (  # noqa: E402
-    AzureConnectionStringCredentials as ResolvedAzureCredentials,
-)
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
-    AzureManagedIdentityCredentials as ResolvedAzureManagedIdentityCredentials,
-)
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
-    MssqlCredentials as ResolvedMssqlCredentials,
-)
-from quackframe.sql_functions.register_secret.models import (  # noqa: E402
-    SshPrivateKeyCredentials as ResolvedSshPrivateKeyCredentials,
-)
-from quackframe.sql_functions.register_secret.providers.prefect.blocks import (  # noqa: E402
-    AzureConnectionStringCredentials,
-    AzureManagedIdentityCredentials,
-    MssqlCredentials,
-    SshPrivateKeyCredentials,
-)
-from quackframe.sql_functions.register_secret.providers.prefect.provider import (  # noqa: E402
-    PrefectCredentialProvider,
+    AzureConnectionStringSecret,
+    AzureManagedIdentitySecret,
+    MssqlSecret,
+    SshPrivateKeySecret,
 )
 
 
@@ -186,11 +175,14 @@ def test_prefect_warns_once_before_external_results(tmp_path: Path) -> None:
     logger.warning.assert_called_once()
 
 
-def test_prefect_provider_rejects_unknown_secret_type_explicitly() -> None:
-    with pytest.raises(ValueError, match="Unsupported Prefect secret type"):
+def test_prefect_provider_rejects_unknown_credential_type() -> None:
+    class UnsupportedCredentials(MssqlSecret):
+        credential_type: ClassVar[str] = "future_type"
+
+    with pytest.raises(ValueError, match="Unsupported Prefect credential type"):
         PrefectCredentialProvider().resolve(
             "shared-secret",
-            "future_type",
+            UnsupportedCredentials,
         )
 
 
@@ -202,10 +194,10 @@ def test_prefect_provider_translates_mssql_block() -> None:
     )
 
     with patch.object(MssqlCredentials, "load", return_value=block) as load:
-        credentials = PrefectCredentialProvider().resolve("shared_login", "mssql")
+        credentials = PrefectCredentialProvider().resolve("shared_login", MssqlSecret)
 
     load.assert_called_once_with("shared-login")
-    assert isinstance(credentials, ResolvedMssqlCredentials)
+    assert isinstance(credentials, MssqlSecret)
     assert credentials.database is None
     assert credentials.password.get_secret_value() == "sensitive"
 
@@ -220,11 +212,11 @@ def test_prefect_provider_translates_azure_block() -> None:
     ) as load:
         credentials = PrefectCredentialProvider().resolve(
             "shared_storage",
-            "azure_connection_string",
+            AzureConnectionStringSecret,
         )
 
     load.assert_called_once_with("shared-storage")
-    assert isinstance(credentials, ResolvedAzureCredentials)
+    assert isinstance(credentials, AzureConnectionStringSecret)
     assert credentials.scope is None
     assert credentials.connection_string.get_secret_value() == "sensitive"
 
@@ -246,11 +238,11 @@ def test_prefect_provider_translates_azure_managed_identity_block(
     ) as load:
         credentials = PrefectCredentialProvider().resolve(
             "shared_identity",
-            "azure_managed_identity",
+            AzureManagedIdentitySecret,
         )
 
     load.assert_called_once_with("shared-identity")
-    assert isinstance(credentials, ResolvedAzureManagedIdentityCredentials)
+    assert isinstance(credentials, AzureManagedIdentitySecret)
     assert credentials.account_name == "storage"
     assert credentials.client_id == client_id
     assert credentials.scope == scope
@@ -266,11 +258,11 @@ def test_prefect_provider_translates_ssh_private_key_block() -> None:
 
     with patch.object(SshPrivateKeyCredentials, "load", return_value=block) as load:
         credentials = PrefectCredentialProvider().resolve(
-            "source_files", "ssh_private_key"
+            "source_files", SshPrivateKeySecret
         )
 
     load.assert_called_once_with("source-files")
-    assert isinstance(credentials, ResolvedSshPrivateKeyCredentials)
+    assert isinstance(credentials, SshPrivateKeySecret)
     assert credentials.username.get_secret_value() == "reader"
     assert credentials.key_path == "/run/secrets/sftp-key"
     assert credentials.port == 2222
@@ -286,23 +278,10 @@ def test_prefect_provider_failure_does_not_include_underlying_error() -> None:
         ),
         pytest.raises(RuntimeError) as captured,
     ):
-        PrefectCredentialProvider().resolve("shared-login", "mssql")
+        PrefectCredentialProvider().resolve("shared-login", MssqlSecret)
 
     assert "shared-login" in str(captured.value)
     assert "sensitive diagnostic" not in str(captured.value)
-
-
-def test_old_block_and_provider_imports_reexport_the_same_classes() -> None:
-    assert PrefectCredentialProvider is SharedPrefectCredentialProvider
-    for block_type in (
-        MssqlCredentials,
-        AzureConnectionStringCredentials,
-        AzureManagedIdentityCredentials,
-        SshPrivateKeyCredentials,
-    ):
-        assert block_type is getattr(shared_blocks, block_type.__name__)
-        assert block_type.get_block_type_name() == block_type.__name__
-        assert block_type.get_block_type_slug() == block_type.__name__.lower()
 
 
 def test_both_sql_functions_load_one_block_each_and_construct_the_requested_strategy(
@@ -319,9 +298,7 @@ def test_both_sql_functions_load_one_block_each_and_construct_the_requested_stra
 
     with (
         patch.object(SshPrivateKeyCredentials, "load", return_value=block) as load,
-        patch.object(
-            ResolvedSshPrivateKeyCredentials, "register_duckdb_secret"
-        ) as secret,
+        patch.object(SshPrivateKeySecret, "register_duckdb_secret") as secret,
         patch.object(SftpFilesystem, "register_filesystem_protocol") as filesystem,
         duckdb.connect() as connection,
     ):
@@ -346,7 +323,7 @@ def test_block_conversion_rejects_an_incompatible_model_family() -> None:
         username=SecretStr("reader"), key_path="/key", scope="sftp://files.test/"
     )
     with pytest.raises(ValueError, match="Incompatible"):
-        block.to_credentials(ResolvedMssqlCredentials)
+        block.to_credentials(MssqlSecret)
 
     model = block.to_credentials(SftpFilesystem)
     assert type(model) is SftpFilesystem
