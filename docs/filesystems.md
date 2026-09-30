@@ -90,9 +90,9 @@ Construction uses `skip_instance_cache=True`, avoiding reuse through fsspec's
 global instance cache. After successful registration, DuckDB retains the
 filesystem object and backend resource cleanup follows DuckDB/fsspec/Paramiko
 behavior. Quackframe has no separate session finalizer or transport manager.
-Live SFTP concurrency and socket cleanup still require deployment verification;
-the automated tests establish registration lifetime using a standard in-memory
-fsspec backend, not a live SSH server.
+Loopback integration tests now establish that closing the DuckDB session can
+leave an SSH transport active. Process exit releases that connection, but
+persistent-worker cleanup remains unresolved; see the verification boundary below.
 
 Selecting a missing provider or backend gives an actionable installation error.
 Core and secret-only execution do not import fsspec or Paramiko. Registration
@@ -106,10 +106,24 @@ call, registration failure cleanup and optional-dependency absence. An
 additional test provider and strategy exercise the unchanged loading and SQL
 paths, including a DuckDB CSV glob read in a later ordered file.
 
-Live SFTP globbing, DuckDB file reads, concurrency and cleanup are reserved for
-the user's post-implementation checks. There is no custom fallback backend if
-the standard implementation fails those checks; any required transport or
-lifecycle redesign returns to scope review.
+Real [loopback SFTP tests](../tests/test_sftp_integration.py) reproduce a wildcard
+CSV-read hang with four DuckDB threads on DuckDB 1.5.5, fsspec 2026.7.0 and
+Paramiko 4.0.0. Extended traces reproduce response mix-ups with concurrent
+readers sharing a Paramiko client, including without DuckDB or fsspec.
+Independent discovery and one-thread reads return exact results.
+For a caller-controlled local mitigation, execute `SET threads = 1` before the
+read. This has not yet been verified against the external deployment and does
+not resolve the separate connection-cleanup failure after session closure.
+
+The tests use temporary keys, 26 synthetic CSVs, a test credential provider,
+and Quackframe's direct runtime without a Prefect server. Children have hard
+timeouts and stack capture. Run `poetry run pytest tests/test_sftp_integration.py -v`;
+the concurrency and session-cleanup regression assertions currently fail.
+The harness itself closes all processes and server resources.
+
+See the [investigation and proposed scope review](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md#loopback-csv-hang-investigation-2026-09-28)
+for evidence and remaining deployment checks. There is no automatic fallback:
+custom transport or lifecycle changes require a separately accepted scope.
 
 ## Related Docs
 

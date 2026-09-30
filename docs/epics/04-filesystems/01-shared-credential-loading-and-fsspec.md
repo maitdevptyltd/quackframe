@@ -1,7 +1,7 @@
 # Shared Credential Loading And fsspec Filesystems
 
 Status: **In Progress**
-Last updated: 2026-09-28
+Last updated: 2026-09-30
 Epic: 04 Filesystems
 Phase: 01
 Related docs: [Credential Providers](../../credential-providers.md), [SQL Function Extensions](../../python-extensions.md)
@@ -407,6 +407,350 @@ Live SFTP globbing, DuckDB reads, concurrency and socket cleanup remain for the
 user. They are not established by mocked connection tests or the in-memory
 filesystem integration. If standard library behavior requires a custom transport
 or finalizer framework, return that change to scope review.
+
+## Loopback CSV Hang Investigation (2026-09-28)
+
+Status remains **In Progress**. The new local evidence exposes a concurrency
+failure and a separate resource-lifetime failure in the accepted standard
+backend. Production source is unchanged; transport/lifecycle redesign has not
+been approved or implemented.
+
+### Reproduction And Results
+
+Tested branch commit: `ea42c8816918ea048d7cfa522d86aad35399018f`.
+Inspected older branch: `feat/fsspec-sftp` at
+`5009a5190a8e071d14cd084f644d1251df7281f8`.
+
+Environment: Windows, CPython 3.13.9, Quackframe 0.1.0, DuckDB 1.5.5,
+fsspec 2026.7.0, Paramiko 4.0.0, Pydantic 2.13.5, pytest 9.1.1.
+Dependencies were installed from the existing Poetry lock with the `sftp` extra.
+
+The [integration tests](../../../tests/test_sftp_integration.py) start a real
+Paramiko SFTP server on `127.0.0.1` and an ephemeral non-default port. Both SSH
+keys and all files are generated locally. There are 26 daily CSVs, with
+`8192 + day` rows per file (213,343 total), over 1 MB each, alternating column
+order and an extra column on odd days. A nonmatching file checks glob filtering.
+
+The [child probe](../../../tests/sftp_probe.py) registers a test credential
+provider through the existing registry. It returns the requested concrete model
+with temporary local credentials and original scope `sshfs://127.0.0.1`.
+SQL overrides that scope to `sftp://127.0.0.1`. Shared validation, overrides,
+`quackframe.register_filesystem`, the direct runtime, DuckDB, fsspec, Paramiko,
+and the SFTP transport all remain real. A child import guard prohibits Prefect;
+no Prefect server or external service credentials are involved.
+
+Discovery runs independently. Read cases first execute the reported SELECT
+with the local endpoint, then repeat it into a persistent temporary result table
+for exact Python assertions, because `run()` intentionally does not return query
+rows. Every expected filename and count is checked. DuckDB/fsspec reports
+canonical filenames as `sftp:///from_test/trips/...`, omitting the URL authority.
+The provider is called once and the original credential scope stays unchanged.
+
+| Case | Result |
+| --- | --- |
+| Independent glob, four threads | Pass: exactly 26 expected paths |
+| Single CSV, one and four threads | Pass: exactly 8,193 rows |
+| Wildcard, one thread | Pass: all 26 exact per-file counts |
+| Wildcard, four threads | Hangs; child killed at the 60-second deadline |
+| Session cleanup after successful read | Fails: one SSH transport still active after session close and GC |
+| Session cleanup after real missing-file read failure | Fails: one SSH transport still active; later SQL does not execute |
+| Deliberately stalled server read | Pass: watchdog captures blocked read stacks; parent kills and reaps child |
+| Harness cleanup | Pass: client disconnects after exit/kill; server transports, subsystem threads, listener and file handles are closed; private key removed |
+
+The exact SELECT timed out in both confirmation runs; an earlier exploratory
+CTAS form also timed out. The final matrix is **5 passed, 3 failed** in 79.68
+seconds. The one-thread wildcard probe completed in 4.74 seconds, including
+two complete executions, result verification and the 0.5-second cleanup
+observation. The generated CSVs total 29,015,181 bytes on this Windows host.
+All eight child runs disconnected after exit or forced termination; every
+server fixture completed teardown without error.
+
+Each ordinary child has a 60-second hard timeout and dumps all Python thread
+stacks at 42 seconds. The deliberately stalled read uses a five-second deadline.
+Logs, generated SQL, versions, results, and parent process/connection diagnostics
+remain in pytest's temporary directory; generated private keys are removed in
+fixture teardown. The new regressions deliberately fail for the unresolved
+four-thread and runtime-cleanup defects rather than skipping or accepting them.
+
+Run without a Prefect server:
+
+```powershell
+poetry run pytest tests/test_sftp_integration.py -v --tb=short
+```
+
+For retained artifacts under the ignored workspace directory (choose a fresh
+basename; pytest clears an existing `--basetemp` directory):
+
+```powershell
+New-Item -ItemType Directory -Force .quackframe
+poetry run pytest tests/test_sftp_integration.py -v --tb=short --basetemp=.quackframe/sftp-repro
+```
+
+### Interpretation And Proposed Scope Review
+
+The four-thread timeout shows four execution threads simultaneously blocked in
+`SFTPClient._read_response` / `_read_packet` / `Channel.recv`, reached through
+fsspec `open` or `size`/Paramiko `stat`. The transport thread is waiting for SSH
+packets. Registration and listing have succeeded. One-thread reading completes
+in seconds with identical files and SQL options. This strongly supports a
+shared synchronous SFTP-client concurrency problem; a stack dump alone does not
+prove exactly which response was lost or consumed by another reader.
+
+Inspection of installed fsspec shows one shared `ftp` client for opening,
+metadata and file reads. Paramiko protects request-number bookkeeping, but its
+synchronous `_request` does not serialize the complete send/receive exchange.
+The old `SerializedSFTPClient` serialized that exchange and replaced pipelined
+`listdir_iter`; its managed filesystem also added finalization and other SSH
+policy. Its two tiny CSV tests lacked the new bounded-process coverage. Those
+old changes are evidence, not an approved implementation to restore wholesale.
+
+The ordinary fsspec SFTP class has no explicit close/finalizer implementation.
+Closing the DuckDB session and running GC leaves an active Paramiko transport
+in these probes. Process isolation cleans up the test, but does not solve the
+lifetime of connections in a persistent runtime worker.
+
+A caller-selected `SET threads = 1` is a locally verified reading mitigation.
+It does not solve session cleanup and is not yet verified against the external
+server or the Prefect runtime. Do not silently force global DuckDB settings.
+
+**Proposed, not accepted:** review a narrowly scoped SFTP adapter that owns
+serialization across complete request/response exchanges, including directory
+iteration, and explicit idempotent cleanup tied to the owning database session
+on success and failure. Preserve the shared loading/model/SQL contracts. Review
+whether a supported upstream solution can supply these guarantees before
+committing to private Paramiko hooks. A serial adapter would trade throughput
+for correctness; any private hooks require pinned-version regression coverage.
+Do not bring across unrelated SSH trust-policy, routing or pooling behavior.
+
+This proposal crosses the explicit custom-transport and lifecycle exclusions
+above and therefore requires scope approval. No small constructor-only fix has
+been established. Before accepting a redesign, require repeated four-thread
+passes with exact counts, cleanup before process exit on success/failure,
+rejected-registration cleanup, and cancellation/timeout behavior. Local evidence
+does not establish behavior under network latency or remote server limits.
+
+### Repository Validation
+
+- Existing non-Prefect tests: **139 passed**. The Prefect integration module
+  was explicitly excluded because it starts a test Prefect server.
+- New loopback matrix: **5 passed, 3 failed**, exposing the unresolved defects
+  above; none of these regressions are marked expected-failure or skipped when
+  the SFTP dependencies are installed.
+- `poetry run ruff check src tests`: passed.
+- `poetry run pyright --pythonpath .venv/Scripts/python.exe`: zero errors or warnings.
+- Local Markdown link/anchor check and `git diff --check`: passed.
+- Full `poetry run ruff check .`: 13 pre-existing findings under the unchanged
+  `MAD.Utilities.DuckDB` prototype (unused suppressions, imports, nested context
+  managers and enum style). No unrelated lint cleanup was performed.
+- Production source, `pyproject.toml` and `poetry.lock` are unchanged. The
+  pre-existing untracked `assquack/` directory is preserved.
+
+### Remaining Deployment Validation
+
+Verify the consuming environment's exact Python/DuckDB/fsspec/Paramiko versions,
+repeat single-file and 26-file reads with `SET threads = 1`, then validate the
+approved fix under four threads. Separately exercise Prefect Block loading and
+the Prefect runtime, including repeated runs in one worker, cancellation and
+Ctrl+C/Stop behavior. The loopback tests do not establish prompt interrupt
+handling: they deliberately use an external hard kill for bounded cleanup.
+
+No external SFTP, Prefect or Azure credentials were used. Nothing was committed
+or pushed.
+
+## Request/Response Diagnostics (2026-09-30)
+
+The harness now isolates the concurrency failure below DuckDB and fsspec.
+Production code and dependencies remain unchanged at the tested commit above.
+This extends the investigation; it does not implement the proposed adapter.
+
+### Added Evidence
+
+[Packet tracing](../../../tests/sftp_trace.py) wraps the installed Paramiko
+methods and always calls their original implementations. Client and server
+JSONL records include monotonic timestamps, process/thread/native-thread IDs,
+client/channel identity, operation, request/response ID, packet type/size,
+requested byte count, and call completion or exception type. No arguments,
+credentials, keys, file contents or packet bodies are logged. The only logging
+lock covers a single line write, never a transport call or request exchange.
+
+The existing child watchdog and external 60-second deadline remain in place.
+The parent writes `trace-summary.json` even after a timeout or child exception.
+It reconciles client sends, server receipts and replies, overlapping packet
+readers, pending synchronous waiters, and replies consumed by another thread
+whose intended waiter is still pending. Raw `client-trace.jsonl`,
+`server-trace.jsonl`, `child.log`, settings, SQL and parent diagnostics remain
+alongside that summary. Correlation assumes one connection per probe.
+
+Layer controls perform real `stat`/`open`/full CSV reads over one shared client
+through Paramiko alone, then fsspec alone, then the original Quackframe SQL path.
+Every layer uses the same 26 synthetic files and checks the same exact counts.
+The library-only controls explicitly close the clients they own; Quackframe
+session cleanup is still assessed separately. Each layer runs with one and four
+workers, both traced and untraced, to expose timing perturbation by the tracer.
+
+| Layer | One worker, traced and untraced | Four workers, untraced | Four workers, traced |
+| --- | --- | --- | --- |
+| Paramiko only | Exact counts pass | 60-second timeout | 60-second timeout |
+| fsspec only | Exact counts pass | 60-second timeout | 60-second timeout |
+| Quackframe/DuckDB | Exact counts pass | 60-second timeout | `SFTPError: Garbage packet received` |
+
+A separate traced Paramiko repeat also timed out. Its trace proves a concrete
+response mix-up on a single client/channel:
+
+- The reader waiting for request **8** consumed the `attrs` response for **6**.
+- The reader waiting for request **6** consumed the `attrs` response for **8**.
+- That same reader waiting for **6** consumed the `handle` response for **10**.
+- The server trace confirms those exact response IDs, types and lengths were
+  sent. The intended waiters for **6**, **8** and **10** remained pending at
+  the deadline. No sent requests were missing from the server trace, and no
+  server-received requests lacked a server response.
+
+The fsspec-only trace independently shows response **1** consumed by the reader
+waiting for **4**, while request **1** remains pending. These observations
+establish that sharing this synchronous Paramiko client between concurrent
+readers is sufficient to fail; neither DuckDB nor fsspec is required to trigger
+it. The installed `_read_response` implementation removes the response's
+expectation, returns only if its ID matches the current waiter, and does not
+forward another synchronous caller's response. This explains the stranded
+waiters. The additional `Garbage packet received` error is consistent with
+concurrent consumption of the same framed byte stream; packet contents are not
+captured, so the exact byte interleaving is not reconstructed.
+
+An important diagnostic control: successful one-thread DuckDB runs drain queued
+pipelined directory EOF replies while closing a directory handle. Those replies
+can differ from the current waiter's ID without any fault. The analyzer therefore
+does not classify a mismatched ID alone as a lost response. The first matrix run
+exposed an overly strict diagnostic assertion for that healthy case; the
+assertion was corrected, the one-thread DuckDB control rerun successfully, and
+[focused tests](../../../tests/test_sftp_trace.py) now check this distinction and
+payload exclusion. All six four-worker failures remain real backend failures.
+
+### Running The Extended Diagnostics
+
+```powershell
+poetry run pytest tests/test_sftp_integration.py -k layer_diagnostics -v --tb=short
+poetry run pytest tests/test_sftp_trace.py -v
+```
+
+`-k layer_diagnostics` selects the 12-case layer matrix. Add `and not untraced`
+to select only traced runs; `traced` alone also matches the word `untraced`.
+Expect roughly six minutes when all six concurrent cases hit their deadline.
+Use a fresh `--basetemp` to retain artifacts as described above. Backend failures
+remain failing tests; diagnostics do not convert failures into passes.
+
+### Implications For A Fix
+
+Protection must cover shared request/response and packet-reading ownership,
+including metadata operations such as `stat` and `open`. A lock solely around
+CSV parsing or file `read()` is insufficient for the observed metadata races.
+The evidence supports reviewing serialization of the complete SFTP exchange or
+independent clients/channels with explicit ownership. Either requires the scope
+review already described; neither is implemented here. The local one-thread
+mitigation still passes and the separate runtime connection-lifetime issue
+remains unresolved.
+
+Validation of the extension: the non-Prefect core and metadata-correlation
+suite passed **142 tests**. The original eight-case integration matrix still
+reports **5 passed, 3 failed**, unchanged in meaning. The corrected one-thread
+traced DuckDB control and all three focused tracer tests passed together. Ruff
+for `src`/`tests`, formatting of the four harness files, full Pyright, Markdown
+links and diff checks passed. The pre-existing full-repository prototype lint
+findings documented above were not changed.
+
+All completed diagnostic children disconnected after exit/kill, server fixtures
+closed without teardown errors, and temporary private keys were removed. No
+Prefect server or external credentials were used. The test environment and
+commit match the 2026-09-28 record. Nothing was committed or pushed.
+
+## Test-Only Turn-Taking Candidate (2026-09-30)
+
+The user authorized an integration-test proof before framework implementation
+or production-server testing. [The candidate](../../../tests/sftp_turn_taking.py)
+is confined to `tests/`; no production source, dependency or SQL contract changed.
+The previously excluded production transport/lifecycle redesign remains separate.
+
+The candidate uses one reentrant lock per SFTP client around the complete
+synchronous `_request` exchange. A `finally` block releases it on errors.
+`listdir_iter` uses standard synchronous `listdir_attr` operations through the
+same lock instead of pipelined directory requests. Credentials, host-key policy,
+network transport, DuckDB and fsspec remain real and unchanged. A child-process
+factory hook selects the experimental client when requested; this global test
+hook is not a proposed production installation mechanism.
+
+### Proof Conditions
+
+The [turn-taking tests](../../../tests/test_sftp_integration.py) cover:
+
+- Five untraced and five traced fresh child processes, each executing the exact
+  26-file wildcard SELECT with four DuckDB threads and repeating it into a table
+  for exact filename/count assertions: 213,343 rows per execution.
+- Counters that prove multiple actual reader threads and contended lock
+  acquisitions. Passing does not mean DuckDB was reduced to one thread.
+- Four-worker Paramiko-only and fsspec-only controls mixing directory discovery,
+  full reads, deliberately missing-file requests and subsequent successful
+  reads, with tracing both off and on.
+- The real Quackframe failure path after reading a file: the missing-file error
+  returns, later SQL remains unexecuted, and no synchronous waiter remains.
+- A deliberately stalled server: stacks are captured and the parent kills and
+  reaps the child at its five-second deadline. The lock does not itself provide
+  a network timeout or make Ctrl+C responsive.
+- Traced assertions of zero overlapping packet readers, zero stolen replies
+  belonging to pending waiters, no unexplained mismatched responses, and no
+  pending synchronous waiters after successful reads.
+
+An initial diagnostic assertion rejected all out-of-order replies, although all
+ten candidate CSV runs returned exact counts. Inspection showed these remaining
+replies were STATUS acknowledgements for asynchronous file CLOSE requests from
+Paramiko's file destructor, with no synchronous waiter. The classifier now
+allows only server-confirmed CLOSE acknowledgements whose request had no waiter;
+focused positive/negative tests ensure a CLOSE with a waiting caller is not
+misclassified. The checks for overlapping readers and stranded synchronous
+waiters remain, and raw traces are retained.
+
+### Verified Results
+
+The final focused run passed **21 tests** in 70.53 seconds: 16 real integration
+cases and five diagnostic-classifier tests. All ten four-thread SQL repetitions
+returned every expected filename/count, with four observed reader threads and
+thousands of contended lock acquisitions per process. Traces showed no overlapping
+packet readers, stolen pending replies or unexplained response mismatches.
+Mixed discovery/read/error cases and the external timeout/cleanup check passed.
+
+The unchanged control was rerun separately: one thread passed; four threads
+still hung and was killed at 60 seconds. Thus the passing candidate did not
+merely benefit from a changed workload or reduced DuckDB thread count.
+
+The non-Prefect core and tracer suite passed **144 tests**. Source/test Ruff,
+full Pyright, harness formatting, documentation links and diff checks passed.
+Production source and dependency files remain unchanged at
+`ea42c8816918ea048d7cfa522d86aad35399018f` with the same dependency versions
+recorded above. No temporary private keys or probe children remain.
+
+Run the focused proof without a Prefect server:
+
+```powershell
+poetry run pytest tests/test_sftp_integration.py -k turn_taking -v --tb=short
+poetry run pytest tests/test_sftp_trace.py -v
+```
+
+### Adoption Boundary
+
+Successful local proof establishes viability for the tested read-only CSV and
+directory operations, on the pinned environment above. It does not establish
+arbitrary Paramiko asynchronous prefetch/write usage, large-directory memory
+behavior (the candidate materializes directory entries), remote latency/server
+limits, production-server behavior, or prompt Ctrl+C handling.
+
+Turn-taking does not repair the separate connection-lifetime defect. The direct
+runtime still leaves one SSH transport alive after success or failure; the test
+continues to record it without forcibly closing it inside the runtime. Child
+exit/kill and fixture teardown clean up the harness. Library-only controls,
+which explicitly own and close their clients, have no remaining transport.
+
+Framework integration should select the implementation through the SFTP
+strategy, preserve parallelism for unrelated backends, and address session
+resource ownership before deployment. No production SFTP server was accessed.
+Nothing was committed or pushed.
 
 ## Related Docs
 

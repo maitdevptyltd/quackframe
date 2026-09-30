@@ -1,0 +1,489 @@
+"""Real SFTP/SQL regressions, isolated from Prefect and bounded by process timeouts.
+
+Run with: poetry run pytest tests/test_sftp_integration.py -v
+Timeout traces and child output are retained in each pytest temporary directory.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from collections.abc import Iterator
+from contextlib import ExitStack
+from pathlib import Path
+from threading import Event, Thread, current_thread
+from typing import Any, BinaryIO
+
+import pytest
+
+pytest.importorskip("fsspec")
+pytest.importorskip("paramiko")
+
+from paramiko import (
+    RSAKey,
+    ServerInterface,
+    SFTPAttributes,
+    SFTPHandle,
+    SFTPServer,
+    SFTPServerInterface,
+    Transport,
+)
+from paramiko.common import AUTH_FAILED, AUTH_SUCCESSFUL, OPEN_SUCCEEDED
+from sftp_trace import PacketTrace, summarize_trace
+
+FILE_COUNT = 26
+BASE_ROWS = 8192
+REMOTE = "/from_test/trips"
+URL = f"sftp://127.0.0.1{REMOTE}"
+PATTERN = f"{URL}/daily_trips-2026_09_*.csv"
+
+
+class LoopbackServer:
+    """Serve a temporary read-only tree and account for every accepted socket."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.trace_resources = ExitStack()
+        self.handler = SFTPServer
+        self.stop = Event()
+        self.stall_reads = False
+        self.transports: list[Transport] = []
+        self.errors: list[Exception] = []
+        self.subsystems: list[Thread] = []
+        self.opened_paths: list[str] = []
+        self.handles: list[SFTPHandle] = []
+        self.host_key = RSAKey.generate(2048)
+        self.user_key = RSAKey.generate(2048)
+        self.listener = socket.socket()
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen()
+        self.listener.settimeout(0.1)
+        self.port = self.listener.getsockname()[1]
+        assert self.port != 22
+        self.thread = Thread(target=self.serve, daemon=True)
+
+    def enable_trace(self) -> None:
+        # Give this server its own instrumented class; untraced fixtures keep
+        # the exact standard implementation and no global server hooks change.
+        class ObservedServer(SFTPServer):
+            pass
+
+        trace = PacketTrace(self.root.parent / "server-trace.jsonl", "server")
+        self.trace_resources.callback(trace.close)
+        self.trace_resources.enter_context(trace.instrument(ObservedServer))
+        self.handler = ObservedServer
+
+    def serve(self) -> None:
+        owner = self
+
+        class Authentication(ServerInterface):
+            def check_auth_publickey(self, username: str, key: Any) -> int:
+                return (
+                    AUTH_SUCCESSFUL
+                    if username == "reader" and key == owner.user_key
+                    else AUTH_FAILED
+                )
+
+            def check_channel_request(self, kind: str, chanid: int) -> int:
+                return OPEN_SUCCEEDED if kind == "session" else 1
+
+        class ReadHandle(SFTPHandle):
+            readfile: BinaryIO
+
+            def read(self, offset: int, length: int) -> bytes | int:
+                if owner.stall_reads:
+                    owner.stop.wait()
+                return super().read(offset, length)
+
+        class Files(SFTPServerInterface):
+            def session_started(self) -> None:
+                owner.subsystems.append(current_thread())
+
+            def target(self, path: str) -> Path:
+                target = (owner.root / path.lstrip("/")).resolve()
+                if not target.is_relative_to(owner.root.resolve()):
+                    raise PermissionError("Outside temporary SFTP root")
+                return target
+
+            def list_folder(self, path: str) -> list[SFTPAttributes] | int:
+                try:
+                    return [
+                        SFTPAttributes.from_stat(child.stat(), child.name)
+                        for child in self.target(path).iterdir()
+                    ]
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
+            def stat(self, path: str) -> SFTPAttributes | int:
+                try:
+                    return SFTPAttributes.from_stat(self.target(path).stat())
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
+            def open(self, path: str, flags: int, attr: Any) -> SFTPHandle | int:
+                if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC):
+                    return 3  # SFTP_PERMISSION_DENIED
+                try:
+                    handle = ReadHandle(flags)
+                    handle.readfile = self.target(path).open("rb")
+                    owner.handles.append(handle)
+                    owner.opened_paths.append(path)
+                    return handle
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
+        while not self.stop.is_set():
+            try:
+                client, _ = self.listener.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                if self.stop.is_set():
+                    break
+                raise
+            try:
+                transport = Transport(client)
+                self.transports.append(transport)
+                transport.add_server_key(self.host_key)
+                transport.set_subsystem_handler("sftp", self.handler, Files)
+                transport.start_server(server=Authentication())
+            except Exception as error:
+                self.errors.append(error)
+                client.close()
+
+    def wait_disconnected(self) -> None:
+        deadline = time.monotonic() + 5
+        while (
+            any(t.is_active() for t in self.transports) and time.monotonic() < deadline
+        ):
+            time.sleep(0.05)
+        assert all(not t.is_active() for t in self.transports)
+
+    def close(self) -> None:
+        self.stop.set()
+        self.listener.close()
+        for transport in self.transports:
+            transport.close()
+        self.thread.join(timeout=5)
+        for transport in self.transports:
+            transport.join(timeout=5)
+        for subsystem in self.subsystems:
+            subsystem.join(timeout=5)
+        for handle in self.handles:
+            handle.close()
+        self.trace_resources.close()
+        assert not self.thread.is_alive()
+        assert all(not t.is_alive() for t in self.transports)
+        assert all(not subsystem.is_alive() for subsystem in self.subsystems)
+        assert not self.errors
+
+
+@pytest.fixture
+def server(tmp_path: Path) -> Iterator[LoopbackServer]:
+    remote = tmp_path / "remote"
+    directory = remote / REMOTE.lstrip("/")
+    directory.mkdir(parents=True)
+    for day in range(1, FILE_COUNT + 1):
+        # Over a megabyte per file, distinct counts, and differing headers ensure
+        # the wildcard exercises real reads and union_by_name schema discovery.
+        header = "trip_id,payload,optional\n" if day % 2 else "payload,trip_id\n"
+        row = f"123,{'x' * 128},yes\n" if day % 2 else f"{'x' * 128},123\n"
+        (directory / f"daily_trips-2026_09_{day:02}.csv").write_text(
+            header + row * (BASE_ROWS + day), encoding="utf-8"
+        )
+    (directory / "ignore.txt").write_text("not a CSV")
+    local = LoopbackServer(remote)
+    local.user_key.write_private_key_file(str(tmp_path / "client_key"))
+    local.thread.start()
+    try:
+        yield local
+    finally:
+        try:
+            local.close()
+        finally:
+            # Remove credentials even when teardown or an assertion fails.
+            (tmp_path / "client_key").unlink(missing_ok=True)
+
+
+def run_probe(
+    tmp_path: Path,
+    server: LoopbackServer,
+    case: str,
+    threads: int,
+    *,
+    timeout: float = 60,
+    layer: str = "duckdb",
+    trace: bool = False,
+    turn_taking: bool = False,
+) -> tuple[dict[str, Any] | None, str]:
+    """Run the direct runtime in a disposable process; always reap it."""
+    if trace:
+        server.enable_trace()
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "port": server.port,
+                "case": case,
+                "layer": layer,
+                "trace": trace,
+                "turn_taking": turn_taking,
+                "threads": threads,
+                "dump_after": timeout * 0.7,
+            }
+        )
+    )
+    (tmp_path / "register.sql").write_text(
+        f"SET threads = {threads};\n"
+        "SELECT quackframe.register_filesystem('loopback', 'temporary-local-key', "
+        "'sftp', overrides := MAP {'scope': 'sftp://127.0.0.1'});\n"
+    )
+    if case == "glob":
+        query = f"SELECT file FROM glob('{PATTERN}') ORDER BY file"
+    else:
+        path = (
+            f"{URL}/daily_trips-2026_09_01.csv"
+            if case in {"single", "failure"}
+            else PATTERN
+        )
+        query = (
+            "SELECT filename, count(*) AS row_count FROM read_csv("
+            f"'{path}', header = true, all_varchar = true, "
+            "union_by_name = true, filename = true) GROUP BY filename ORDER BY filename"
+        )
+    # Execute the reported SELECT unchanged first. Repeat it into a local table
+    # because run() deliberately does not expose query rows to its caller.
+    sql = f"{query};\nCREATE TABLE result AS {query};\n"
+    if case == "failure":
+        sql += f"SELECT * FROM read_csv('{URL}/missing.csv');\n"
+        sql += "CREATE TABLE must_not_run AS SELECT 1;\n"
+    (tmp_path / "probe.sql").write_text(sql)
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    # Do not inherit consumer runtime settings or access a Prefect endpoint.
+    environment = {
+        key: value
+        for key, value in environment.items()
+        if not key.startswith(("PREFECT_", "QUACKFRAME_"))
+    }
+    environment["SSH_AUTH_SOCK"] = ""
+    environment["PYTHONUNBUFFERED"] = "1"
+    log_path = tmp_path / "child.log"
+    timed_out = False
+    with log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).with_name("sftp_probe.py")),
+                str(tmp_path),
+            ],
+            cwd=tmp_path,
+            env=environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+    server.wait_disconnected()
+    (tmp_path / "parent.json").write_text(
+        json.dumps(
+            {
+                "case": case,
+                "threads": threads,
+                "timed_out": timed_out,
+                "turn_taking": turn_taking,
+                "layer": layer,
+                "trace": trace,
+                "returncode": process.returncode,
+                "port": server.port,
+                "connections": len(server.transports),
+                "opened_paths": server.opened_paths,
+                "active_after_process_exit": sum(
+                    t.is_active() for t in server.transports
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    if trace:
+        summarize_trace(tmp_path)
+    output = log_path.read_text(encoding="utf-8")
+    print(f"{case}, threads={threads}, timeout={timed_out}, log={log_path}\n{output}")
+    if timed_out:
+        return None, output
+    assert process.returncode == 0, output
+    return json.loads((tmp_path / "result.json").read_text()), output
+
+
+def expected_counts(single: bool = False) -> list[list[object]]:
+    # fsspec resolves remote paths on the registered connection and DuckDB
+    # reports them with the scheme but without the input URL authority.
+    return [
+        [f"sftp://{REMOTE}/daily_trips-2026_09_{day:02}.csv", BASE_ROWS + day]
+        for day in range(1, (1 if single else FILE_COUNT) + 1)
+    ]
+
+
+def test_discovery_independently(tmp_path: Path, server: LoopbackServer) -> None:
+    result, output = run_probe(tmp_path, server, "glob", 4)
+    assert result is not None, output
+    assert result["rows"] == [[row[0]] for row in expected_counts()]
+
+
+@pytest.mark.parametrize(
+    ("case", "threads"), [("single", 1), ("single", 4), ("multi", 1), ("multi", 4)]
+)
+def test_csv_counts(
+    tmp_path: Path, server: LoopbackServer, case: str, threads: int
+) -> None:
+    result, output = run_probe(tmp_path, server, case, threads)
+    assert result is not None, f"SFTP CSV read exceeded hard timeout:\n{output}"
+    assert result["rows"] == expected_counts(single=case == "single")
+    assert len(set(server.opened_paths)) == (1 if case == "single" else FILE_COUNT)
+
+
+@pytest.mark.parametrize("case", ["single", "failure"])
+def test_runtime_closes_connections(
+    tmp_path: Path,
+    server: LoopbackServer,
+    case: str,
+) -> None:
+    result, output = run_probe(tmp_path, server, case, 1)
+    assert result is not None, output
+    assert result["rows"] == expected_counts(single=True)
+    assert result["active_transports_after_run"] == 0, (
+        "DuckDB session closed but an SSH transport remains alive before process exit"
+    )
+
+
+def test_timeout_dumps_stacks_and_reaps_child(
+    tmp_path: Path, server: LoopbackServer
+) -> None:
+    server.stall_reads = True
+    result, output = run_probe(tmp_path, server, "single", 1, timeout=5)
+    assert result is None
+    assert "Timeout" in output
+    assert "_read_response" in output
+    assert "sftp_file.py" in output
+    assert server.transports
+    assert all(not transport.is_active() for transport in server.transports)
+
+
+@pytest.mark.parametrize("layer", ["paramiko", "fsspec", "duckdb"])
+@pytest.mark.parametrize("threads", [1, 4])
+@pytest.mark.parametrize("trace", [False, True], ids=["untraced", "traced"])
+def test_layer_diagnostics(
+    tmp_path: Path,
+    server: LoopbackServer,
+    layer: str,
+    threads: int,
+    trace: bool,
+) -> None:
+    result, output = run_probe(
+        tmp_path, server, "multi", threads, layer=layer, trace=trace
+    )
+    if trace:
+        summary = json.loads((tmp_path / "trace-summary.json").read_text())
+        assert summary["client_events"] > 0
+        assert summary["server_events"] > 0
+        if threads == 1:
+            # Pipelined directory EOF replies may legitimately be drained by
+            # a later close. Only a different still-waiting thread is suspect.
+            assert not summary["responses_consumed_by_other_pending_waiters"]
+            assert not summary["overlapping_packet_reads"]
+            assert not summary["pending_waiters"]
+    assert result is not None, f"{layer} exceeded hard timeout:\n{output}"
+    assert result["rows"] == expected_counts()
+    if layer != "duckdb":
+        assert result["active_transports_after_run"] == 0
+
+
+@pytest.mark.parametrize("repeat", range(5))
+@pytest.mark.parametrize("trace", [False, True], ids=["untraced", "traced"])
+def test_turn_taking_four_thread_csv_reads(
+    tmp_path: Path,
+    server: LoopbackServer,
+    repeat: int,
+    trace: bool,
+) -> None:
+    result, output = run_probe(
+        tmp_path, server, "multi", 4, turn_taking=True, trace=trace
+    )
+    assert result is not None, f"Turn-taking repeat {repeat} timed out:\n{output}"
+    assert result["rows"] == expected_counts()
+    assert len(set(server.opened_paths)) == FILE_COUNT
+    stats = result["turn_taking"]
+    assert len(stats) == 1
+    assert len(stats[0]["threads"]) > 1, "Must exercise multiple real reader threads"
+    assert stats[0]["contended_requests"] > 0, "Must exercise actual lock contention"
+    if trace:
+        summary = json.loads((tmp_path / "trace-summary.json").read_text())
+        assert not summary["overlapping_packet_reads"]
+        assert not summary["unexplained_response_mismatches"]
+        assert not summary["responses_consumed_by_other_pending_waiters"]
+        assert not summary["pending_waiters"]
+        assert not summary["received_without_server_response"]
+
+
+@pytest.mark.parametrize("layer", ["paramiko", "fsspec"])
+@pytest.mark.parametrize("trace", [False, True], ids=["untraced", "traced"])
+def test_turn_taking_mixed_listing_reads_and_errors(
+    tmp_path: Path,
+    server: LoopbackServer,
+    layer: str,
+    trace: bool,
+) -> None:
+    result, output = run_probe(
+        tmp_path, server, "mixed", 4, layer=layer, turn_taking=True, trace=trace
+    )
+    assert result is not None, output
+    assert result["rows"] == expected_counts()
+    assert result["active_transports_after_run"] == 0
+    assert len(result["turn_taking"][0]["threads"]) == 4
+    assert result["turn_taking"][0]["contended_requests"] > 0
+    if trace:
+        summary = json.loads((tmp_path / "trace-summary.json").read_text())
+        assert not summary["overlapping_packet_reads"]
+        assert not summary["unexplained_response_mismatches"]
+        assert not summary["responses_consumed_by_other_pending_waiters"]
+        assert not summary["pending_waiters"]
+
+
+def test_turn_taking_runtime_failure_returns_promptly(
+    tmp_path: Path,
+    server: LoopbackServer,
+) -> None:
+    result, output = run_probe(
+        tmp_path, server, "failure", 4, turn_taking=True, trace=True
+    )
+    assert result is not None, output
+    assert result["expected_failure"]
+    assert result["rows"] == expected_counts(single=True)
+    summary = json.loads((tmp_path / "trace-summary.json").read_text())
+    assert not summary["pending_waiters"]
+    # Lifetime is deliberately still measured by the unchanged probe; this
+    # candidate only proves serialization and does not repair runtime cleanup.
+
+
+def test_turn_taking_stalled_server_remains_bounded(
+    tmp_path: Path,
+    server: LoopbackServer,
+) -> None:
+    server.stall_reads = True
+    result, output = run_probe(
+        tmp_path, server, "multi", 4, turn_taking=True, trace=True, timeout=5
+    )
+    assert result is None
+    assert "Timeout" in output
+    assert "_read_response" in output
+    assert "sftp_turn_taking.py" in output
+    assert all(not transport.is_active() for transport in server.transports)
