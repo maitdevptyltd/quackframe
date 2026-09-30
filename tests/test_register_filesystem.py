@@ -116,7 +116,9 @@ def test_invalid_overrides_fail_safely_before_backend_construction(
     monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
 
     with (
-        patch("fsspec.implementations.sftp.SFTPFileSystem") as constructor,
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+        ) as constructor,
         duckdb.connect() as connection,
         pytest.raises(ValueError) as captured,
     ):
@@ -135,7 +137,9 @@ def test_sftp_uses_standard_constructor_and_registers_the_same_object(
 ) -> None:
     pytest.importorskip("fsspec.implementations.sftp")
     connection = Mock(spec=DuckDBPyConnection)
-    with patch("fsspec.implementations.sftp.SFTPFileSystem") as constructor:
+    with patch(
+        "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+    ) as constructor:
         sftp_credentials(scope).register_filesystem_protocol(connection)
 
     constructor.assert_called_once_with(
@@ -155,7 +159,9 @@ def test_failed_registration_closes_unowned_clients_and_hides_backend_errors() -
     connection = Mock(spec=DuckDBPyConnection)
     connection.register_filesystem.side_effect = RuntimeError("protected-value")
     with (
-        patch("fsspec.implementations.sftp.SFTPFileSystem") as constructor,
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+        ) as constructor,
         pytest.raises(RuntimeError, match="could not be registered") as captured,
     ):
         constructor.return_value.ftp.close.side_effect = RuntimeError("close-failure")
@@ -171,7 +177,7 @@ def test_failed_sftp_connection_has_safe_diagnostics() -> None:
     pytest.importorskip("fsspec.implementations.sftp")
     with (
         patch(
-            "fsspec.implementations.sftp.SFTPFileSystem",
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem",
             side_effect=RuntimeError("protected-key"),
         ),
         pytest.raises(RuntimeError, match="could not connect") as captured,
@@ -181,13 +187,19 @@ def test_failed_sftp_connection_has_safe_diagnostics() -> None:
     assert "protected-key" not in str(captured.value)
 
 
-def test_standard_sftp_backend_registers_its_protocols_without_transport_wrappers() -> (
-    None
-):
+def test_serialized_sftp_backend_registers_both_protocols() -> None:
     pytest.importorskip("fsspec.implementations.sftp")
-    with patch("paramiko.SSHClient") as client_type, duckdb.connect() as connection:
+    with (
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SSHClient"
+        ) as client_type,
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPClient.from_transport"
+        ) as channel,
+        duckdb.connect() as connection,
+    ):
         content = b"value\n42\n"
-        ftp = client_type.return_value.open_sftp.return_value
+        ftp = channel.return_value
         ftp.stat.return_value = SimpleNamespace(
             st_mode=S_IFREG,
             st_size=len(content),
@@ -196,6 +208,7 @@ def test_standard_sftp_backend_registers_its_protocols_without_transport_wrapper
             st_atime=0,
             st_mtime=0,
         )
+
         def open_file(*args: object, **kwargs: object) -> BytesIO:
             return BytesIO(content)
 
@@ -214,7 +227,10 @@ def test_standard_sftp_backend_registers_its_protocols_without_transport_wrapper
             key_filename="/run/secrets/protected-key",
             port=2222,
         )
-        client_type.return_value.open_sftp.assert_called_once()
+        channel.assert_called_once_with(
+            client_type.return_value.get_transport.return_value
+        )
+        client_type.return_value.open_sftp.assert_not_called()
 
 
 def test_unknown_filesystem_fails_before_provider_loading(

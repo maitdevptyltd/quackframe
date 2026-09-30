@@ -759,3 +759,48 @@ Nothing was committed or pushed.
 - [SQL Function Extensions](../../python-extensions.md): function-owned packages and registration.
 - [Execution Lifecycle](../../execution-lifecycle.md): session ownership and ordered SQL.
 - [Credential Function Example](../01-mvp/07-credential-function-example.md): original strategy implementation scope.
+
+## Accepted SFTP Serialization Fix (2026-09-30)
+
+The user authorised production adoption after the loopback proof. This supersedes
+this phase's earlier exclusion of SFTP serialization only. `SftpFilesystem`
+selects a small fsspec subclass with a per-client lock around each synchronous
+Paramiko request/response exchange. Directory iteration uses synchronous listing
+through the same lock. Authentication, credential loading, overrides, paths and
+SQL remain unchanged. No global monkeypatch or connection pool is introduced.
+
+The fix covers synchronous filesystem reads and listing. Arbitrary asynchronous
+prefetch and pipelined writes are outside the verified contract. Persistent-worker
+connection cleanup and network timeout policy remain separate unresolved work;
+serialization does not bound a server that stops responding. Future pooling must
+be justified by throughput measurements and separately designed and validated.
+
+Production regression tests must exercise normal SQL registration without the
+experimental SSH hook, with one and four DuckDB threads and repeated traced reads.
+
+### Production Adoption Verification
+
+Tested the uncommitted fix on `6a8dbf84ed8d5d7cee99bbc784e1b3349156696d`
+in the consuming workspace's `quackframe` submodule. Python 3.13.9, DuckDB 1.5.5,
+fsspec 2026.7.0, Paramiko 4.0.0, Pydantic 2.13.5 and pytest 9.1.1.
+
+- Ten normal production-registration runs (five traced, five untraced), four
+  DuckDB threads: all returned exactly 26 file counts / 213,343 rows. Each child
+  completed in 3.04-5.26 seconds, including two CSV executions and cleanup probing.
+  Traces had no overlapping packet readers, unexplained response mismatches,
+  stranded responses or pending waiters. No test client substitution was enabled.
+- Discovery, single-file and wildcard one/four-thread checks passed. Instrumented
+  mixed listing/read/error controls, stalled-server stack capture and child cleanup
+  passed. The normal production missing-file failure returned promptly as well.
+- Core suite excluding Prefect-server and SFTP integration tests: 144 passed.
+  Source/test Ruff and Pyright passed; documentation links and whitespace checked.
+- The first combined run had one obsolete backend-selection unit expectation;
+  it was updated and passed in the core suite. The loopback cases passed.
+- Rechecked session lifetime: both success and failure still leave one active SSH
+  transport until child exit. These two existing regression assertions remain red;
+  raw unmodified-library concurrency diagnostics are also intentionally retained.
+  No production server or Prefect runtime was used. Validate external-server
+  counts and throughput using four threads and a bounded worker before deployment.
+
+Artifacts: `.quackframe/sftp-production-verified/`,
+`.quackframe/sftp-production-failure/`, `.quackframe/core-production-fix/`.

@@ -3,7 +3,8 @@
 SQL workflows can register a standard fsspec filesystem with DuckDB using an
 existing credential Block, then read files in the same execution. SFTP is the
 first filesystem strategy. It uses the shared SSH credential model and the
-ordinary fsspec `SFTPFileSystem`, backed by Paramiko.
+fsspec `SFTPFileSystem` with a small Paramiko adapter that serializes synchronous
+request/response exchanges on each connection.
 
 ## Enable And Register
 
@@ -71,7 +72,10 @@ remain the access boundary. Quackframe adds no host routing or directory wrapper
 This follows the standard [fsspec SFTP backend](https://filesystem-spec.readthedocs.io/en/latest/_modules/fsspec/implementations/sftp.html)
 and [DuckDB filesystem API](https://duckdb.org/docs/stable/guides/python/filesystems).
 Backend host-key policy and connection behavior retain their library defaults;
-Quackframe adds no SSH trust policy, connection pool or transport serialization.
+Quackframe retains those defaults and adds a per-connection lock around synchronous
+SFTP request/response exchanges. Readers take turns using the shared connection;
+DuckDB may still use multiple threads. Directory iteration uses synchronous
+listing through the same lock. There is no connection pool or global SSH patch.
 
 ## Registration And Lifetime
 
@@ -111,19 +115,24 @@ CSV-read hang with four DuckDB threads on DuckDB 1.5.5, fsspec 2026.7.0 and
 Paramiko 4.0.0. Extended traces reproduce response mix-ups with concurrent
 readers sharing a Paramiko client, including without DuckDB or fsspec.
 Independent discovery and one-thread reads return exact results.
-For a caller-controlled local mitigation, execute `SET threads = 1` before the
-read. This has not yet been verified against the external deployment and does
-not resolve the separate connection-cleanup failure after session closure.
+Registration now selects the serialized backend automatically; no SQL changes or
+`SET threads = 1` workaround are required for the verified loopback case. External
+SFTP and Prefect deployment verification remains outstanding. This fix does not
+resolve the separate connection-cleanup failure after session closure or impose a
+network deadline. Use a bounded worker process when a stalled server must not hold
+a job indefinitely. Asynchronous prefetch and pipelined writes are not verified.
 
 The tests use temporary keys, 26 synthetic CSVs, a test credential provider,
 and Quackframe's direct runtime without a Prefect server. Children have hard
 timeouts and stack capture. Run `poetry run pytest tests/test_sftp_integration.py -v`;
-the concurrency and session-cleanup regression assertions currently fail.
+raw-library concurrency diagnostics and session-cleanup assertions still expose
+known upstream/lifetime failures. For the production read regressions, run
+`poetry run pytest tests/test_sftp_integration.py -k "registered_sftp or csv_counts or discovery" -v`.
 The harness itself closes all processes and server resources.
 
 See the [investigation and proposed scope review](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md#loopback-csv-hang-investigation-2026-09-28)
-for evidence and remaining deployment checks. There is no automatic fallback:
-custom transport or lifecycle changes require a separately accepted scope.
+for evidence and remaining deployment checks. There is no automatic fallback or connection pool. The serialization adapter is
+the accepted fix; further transport or lifecycle redesign needs separate review.
 
 ## Related Docs
 

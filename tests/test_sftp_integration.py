@@ -458,12 +458,14 @@ def test_turn_taking_mixed_listing_reads_and_errors(
         assert not summary["pending_waiters"]
 
 
+@pytest.mark.parametrize("turn_taking", [False, True])
 def test_turn_taking_runtime_failure_returns_promptly(
     tmp_path: Path,
     server: LoopbackServer,
+    turn_taking: bool,
 ) -> None:
     result, output = run_probe(
-        tmp_path, server, "failure", 4, turn_taking=True, trace=True
+        tmp_path, server, "failure", 4, turn_taking=turn_taking, trace=True
     )
     assert result is not None, output
     assert result["expected_failure"]
@@ -487,3 +489,23 @@ def test_turn_taking_stalled_server_remains_bounded(
     assert "_read_response" in output
     assert "sftp_turn_taking.py" in output
     assert all(not transport.is_active() for transport in server.transports)
+
+
+@pytest.mark.parametrize("repeat", range(5))
+@pytest.mark.parametrize("trace", [False, True], ids=["untraced", "traced"])
+def test_registered_sftp_serializes_concurrent_reads(
+    tmp_path: Path, server: LoopbackServer, repeat: int, trace: bool
+) -> None:
+    # Normal production selection: no test replacement of SSH or SFTP clients.
+    result, output = run_probe(tmp_path, server, "multi", 4, trace=trace)
+    assert result is not None, f"Production repeat {repeat} timed out:\n{output}"
+    assert result["turn_taking"] == []
+    assert result["rows"] == expected_counts()
+    assert len(set(server.opened_paths)) == FILE_COUNT
+    if trace:
+        summary = json.loads((tmp_path / "trace-summary.json").read_text())
+        assert not summary["overlapping_packet_reads"]
+        assert not summary["unexplained_response_mismatches"]
+        assert not summary["responses_consumed_by_other_pending_waiters"]
+        assert not summary["pending_waiters"]
+        assert not summary["received_without_server_response"]

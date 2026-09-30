@@ -1,4 +1,4 @@
-"""Operation-specific filesystem strategies using standard fsspec backends."""
+"""Operation-specific filesystem strategies using fsspec backends."""
 
 from abc import abstractmethod
 from contextlib import suppress
@@ -25,7 +25,7 @@ class DuckDBFilesystem(CredentialModel):
 
 
 class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
-    """Use shared SSH credentials with fsspec's standard SFTP implementation."""
+    """Use shared SSH credentials with serialized SFTP exchanges."""
 
     filesystem_type: ClassVar[str] = "sftp"
 
@@ -34,19 +34,18 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
 
         host = self._endpoint_host()
         try:
-            # fsspec supplies runtime types but does not ship a py.typed marker.
-            from fsspec.implementations.sftp import (  # pyright: ignore[reportMissingTypeStubs]
-                SFTPFileSystem,
+            from quackframe.sql_functions.register_filesystem.sftp import (
+                SerializedSFTPFileSystem,
             )
         except ImportError:
             raise OptionalDependencyError(
                 "The SFTP filesystem requires 'quackframe[sftp]'"
             ) from None
 
-        # Use an ordinary backend without fsspec's process-wide instance cache.
+        # Keep the exchange lock and connection local to this registration.
         # Authentication and port come from the Block; scope selects the host.
         try:
-            filesystem = SFTPFileSystem(
+            filesystem = SerializedSFTPFileSystem(
                 host=host,
                 username=self.username.get_secret_value(),
                 key_filename=self.key_path,
