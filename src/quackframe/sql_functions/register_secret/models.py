@@ -1,5 +1,6 @@
 """Specialised DuckDB secret registration strategies."""
 
+import logging
 from abc import abstractmethod
 from typing import ClassVar
 
@@ -140,6 +141,12 @@ class SshPrivateKeySecret(credentials.SshPrivateKeyCredentials, DuckDBSecret):
         self, connection: DuckDBPyConnection, alias: str
     ) -> None:
         """Create a temporary SSH secret using bound credential values."""
+
+        if self.host_key_fingerprint and self.host_key_fingerprint.strip():
+            logging.getLogger(__name__).warning(
+                "host_key_fingerprint is not enforced by this SSHFS registration "
+                "path. Use register_filesystem for fingerprint verification."
+            )
 
         connection.execute("INSTALL sshfs FROM community")
         connection.execute("LOAD sshfs")

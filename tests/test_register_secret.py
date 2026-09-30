@@ -340,13 +340,17 @@ def test_azure_rejects_an_invalid_scope(
         credentials.resolve_overrides({"scope": scope})
 
 
-def test_ssh_private_key_scope_override_is_bound() -> None:
+@pytest.mark.parametrize("fingerprint", [None, "", "  ", "SHA256:" + "A" * 43])
+def test_ssh_private_key_scope_override_is_bound(
+    fingerprint: str | None, caplog: pytest.LogCaptureFixture
+) -> None:
     connection = RecordingConnection()
     credentials = SshPrivateKeySecret(
         username=SecretStr("reader"),
         key_path="/run/secrets/sftp-key",
         port=2222,
         scope="sftp://sftp.example.test",
+        host_key_fingerprint=fingerprint,
     )
 
     resolved = credentials.resolve_overrides(
@@ -368,6 +372,10 @@ def test_ssh_private_key_scope_override_is_bound() -> None:
         2222,
         "sftp://sftp.example.test/from_uber/trips/",
     ]
+    assert ("not enforced" in caplog.text) == bool(fingerprint and fingerprint.strip())
+    if fingerprint and fingerprint.strip():
+        assert fingerprint not in caplog.text
+        assert "register_filesystem" in caplog.text
 
 
 def test_ssh_private_key_uses_the_block_scope_without_an_override() -> None:
@@ -389,7 +397,9 @@ def test_ssh_private_key_rejects_a_blank_username() -> None:
         )
 
 
-@pytest.mark.parametrize("field", ["username", "key_path", "port"])
+@pytest.mark.parametrize(
+    "field", ["username", "key_path", "port", "host_key_fingerprint"]
+)
 def test_ssh_private_key_rejects_connection_detail_overrides(field: str) -> None:
     credentials = SshPrivateKeySecret(
         username=SecretStr("reader"),

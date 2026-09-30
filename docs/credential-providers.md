@@ -249,6 +249,14 @@ strategy installs DuckDB's community `sshfs` extension and creates a
 temporary `TYPE SSH` secret using bound values. Availability therefore depends
 on the platforms for which that community extension publishes binaries.
 
+The SSH Block also accepts `host_key_fingerprint: str | None = None`. Only
+`register_filesystem` enforces this optional OpenSSH SHA256 server fingerprint;
+see [Filesystems](filesystems.md). `register_secret` logs a warning when a
+nonblank fingerprint is provided and passes the same four existing fields to
+SSHFS. Missing or blank fingerprints produce no warning. SQL cannot override
+the fingerprint. Existing saved Blocks may omit the field; register the updated
+Block class schema to expose the new field in Prefect when configuring it.
+
 ## Prefect Block Ownership
 
 Quackframe owns the Prefect Block classes expected by its provider. They live

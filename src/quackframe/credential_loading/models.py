@@ -171,6 +171,7 @@ class SshPrivateKeyCredentials(CredentialModel):
     key_path: str = Field(min_length=1)
     port: int = Field(default=22, ge=1, le=65535)
     scope: str = Field(min_length=1)
+    host_key_fingerprint: str | None = None
 
     @field_validator("username")
     @classmethod

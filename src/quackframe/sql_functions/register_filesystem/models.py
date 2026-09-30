@@ -50,12 +50,13 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
                 username=self.username.get_secret_value(),
                 key_filename=self.key_path,
                 port=self.port,
+                host_key_fingerprint=self.host_key_fingerprint,
                 skip_instance_cache=True,
             )
         except Exception:
             raise RuntimeError(
                 "SFTP filesystem could not connect. Check the credential Block, "
-                "private-key file and server access."
+                "private-key file, host-key fingerprint and server access."
             ) from None
 
         try:

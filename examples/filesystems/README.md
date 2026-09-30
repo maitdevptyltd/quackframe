@@ -9,6 +9,11 @@ Prefect through its native settings, and save a Quackframe
 local private-key path, port and `sftp://files.example.test/` scope. Substitute
 your test server in the Block and the SQL query path before running.
 
+Optionally set `host_key_fingerprint` to the server administrator's verified
+OpenSSH `SHA256:...` fingerprint. Registration refuses a mismatched key. Leave
+the field unset or blank to preserve connections without host-key verification.
+The SQL example requires no changes.
+
 From this directory:
 
 ```powershell

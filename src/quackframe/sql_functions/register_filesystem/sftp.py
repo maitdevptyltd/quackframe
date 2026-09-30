@@ -2,6 +2,8 @@
 
 from collections.abc import Iterator
 from contextlib import suppress
+from hmac import compare_digest
+from re import fullmatch
 from threading import RLock
 from typing import Any, cast
 
@@ -12,10 +14,26 @@ from paramiko import (
     AutoAddPolicy,
     Channel,
     Message,
+    MissingHostKeyPolicy,
+    PKey,
     SFTPAttributes,
     SFTPClient,
     SSHClient,
+    SSHException,
 )
+
+
+class FingerprintPolicy(MissingHostKeyPolicy):
+    """Accept only the configured OpenSSH SHA256 server fingerprint."""
+
+    def __init__(self, fingerprint: str) -> None:
+        if fullmatch(r"SHA256:[A-Za-z0-9+/]{43}", fingerprint) is None:
+            raise ValueError("Host-key fingerprint must use SHA256 base64 format")
+        self.fingerprint = fingerprint
+
+    def missing_host_key(self, client: SSHClient, hostname: str, key: PKey) -> None:
+        if not compare_digest(key.fingerprint, self.fingerprint):
+            raise SSHException("SFTP host-key fingerprint does not match")
 
 
 class SerializedSFTPClient(SFTPClient):
@@ -49,11 +67,16 @@ class SerializedSFTPFileSystem(SFTPFileSystem):
     ssh_kwargs: dict[str, Any]
 
     def _connect(self) -> None:
-        # Match fsspec's connection defaults without patching global SSH behavior.
+        # Consume our option before forwarding ordinary connection arguments.
+        # Paramiko checks the server key before attempting user authentication.
+        ssh_kwargs = self.ssh_kwargs.copy()
+        fingerprint = ssh_kwargs.pop("host_key_fingerprint", None)
+        fingerprint = fingerprint.strip() if fingerprint is not None else ""
+        policy = FingerprintPolicy(fingerprint) if fingerprint else AutoAddPolicy()
         self.client = SSHClient()
-        self.client.set_missing_host_key_policy(AutoAddPolicy())
+        self.client.set_missing_host_key_policy(policy)
         try:
-            self.client.connect(self.host, **self.ssh_kwargs)
+            self.client.connect(self.host, **ssh_kwargs)
             transport = self.client.get_transport()
             if transport is None:
                 raise RuntimeError("SFTP transport is unavailable")

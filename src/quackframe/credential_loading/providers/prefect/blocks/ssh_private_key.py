@@ -22,6 +22,13 @@ class SshPrivateKeyCredentials(Block):
     key_path: str = Field(min_length=1)
     port: int = Field(default=22, ge=1, le=65535)
     scope: str = Field(min_length=1)
+    host_key_fingerprint: str | None = Field(
+        default=None,
+        description=(
+            "Optional SHA256 server fingerprint verified by register_filesystem. "
+            "Blank disables verification. register_secret warns and ignores it."
+        ),
+    )
 
     def to_credentials(self, model_type: type[T]) -> T:
         """Construct a compatible strategy directly from this Block's fields."""
@@ -33,4 +40,5 @@ class SshPrivateKeyCredentials(Block):
             key_path=self.key_path,
             port=self.port,
             scope=self.scope,
+            host_key_fingerprint=self.host_key_fingerprint,
         )

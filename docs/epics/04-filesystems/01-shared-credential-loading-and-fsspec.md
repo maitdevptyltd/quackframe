@@ -8,6 +8,18 @@ Related docs: [Credential Providers](../../credential-providers.md), [SQL Functi
 
 ## Outcome And Authority
 
+Accepted addition (2026-09-30): the SSH Block and shared credential model gain
+optional `host_key_fingerprint: str | None = None`. SFTP verifies a supplied
+OpenSSH SHA256 fingerprint before authentication; absent or blank values retain
+automatic acceptance. Malformed or mismatched values fail registration. SSHFS
+secret registration warns when a nonblank fingerprint is supplied but keeps its
+SQL and parameters unchanged. SQL cannot override the fingerprint. This addition
+is implemented and verified: 157 core tests, 14 Prefect provider/Block tests and
+eight loopback fingerprint/discovery/CSV tests passed. The mismatch case confirms
+zero authentication attempts. Ruff, Pyright, documentation links and whitespace
+checks passed. The phase remains In Progress for the existing deployment/lifetime
+gaps; no production server or Prefect server was used for this addition.
+
 Enable SQL to register a standard fsspec filesystem with DuckDB using existing
 credential Blocks, while preserving the existing model-owned strategy pattern.
 The requested separation is loading followed by registration. Shared models

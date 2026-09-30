@@ -55,6 +55,7 @@ class LoopbackServer:
         self.errors: list[Exception] = []
         self.subsystems: list[Thread] = []
         self.opened_paths: list[str] = []
+        self.authentication_attempts = 0
         self.handles: list[SFTPHandle] = []
         self.host_key = RSAKey.generate(2048)
         self.user_key = RSAKey.generate(2048)
@@ -82,6 +83,7 @@ class LoopbackServer:
 
         class Authentication(ServerInterface):
             def check_auth_publickey(self, username: str, key: Any) -> int:
+                owner.authentication_attempts += 1
                 return (
                     AUTH_SUCCESSFUL
                     if username == "reader" and key == owner.user_key
@@ -509,3 +511,45 @@ def test_registered_sftp_serializes_concurrent_reads(
         assert not summary["responses_consumed_by_other_pending_waiters"]
         assert not summary["pending_waiters"]
         assert not summary["received_without_server_response"]
+
+
+@pytest.mark.parametrize("trust", ["matching", "mismatched", "absent"])
+def test_fingerprint_registration_before_authentication(
+    tmp_path: Path, server: LoopbackServer, trust: str
+) -> None:
+    from unittest.mock import Mock
+
+    from duckdb import DuckDBPyConnection
+    from pydantic import SecretStr
+
+    from quackframe.sql_functions.register_filesystem.models import SftpFilesystem
+
+    fingerprint = {
+        "matching": server.host_key.fingerprint,
+        "mismatched": "SHA256:" + "A" * 43,
+        "absent": None,
+    }[trust]
+    credentials = SftpFilesystem(
+        username=SecretStr("reader"),
+        key_path=str(tmp_path / "client_key"),
+        port=server.port,
+        scope="sftp://127.0.0.1",
+        host_key_fingerprint=fingerprint,
+    )
+    connection = Mock(spec=DuckDBPyConnection)
+    if trust == "mismatched":
+        with pytest.raises(RuntimeError, match="host-key fingerprint"):
+            credentials.register_filesystem_protocol(connection)
+        connection.register_filesystem.assert_not_called()
+        assert server.authentication_attempts == 0
+        assert all(not transport.is_authenticated() for transport in server.transports)
+        assert not server.subsystems
+    else:
+        credentials.register_filesystem_protocol(connection)
+        filesystem = connection.register_filesystem.call_args.args[0]
+        try:
+            assert len(filesystem.ls(REMOTE)) == FILE_COUNT + 1
+        finally:
+            filesystem.ftp.close()
+            filesystem.client.close()
+    server.wait_disconnected()

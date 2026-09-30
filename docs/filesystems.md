@@ -71,8 +71,19 @@ remain the access boundary. Quackframe adds no host routing or directory wrapper
 
 This follows the standard [fsspec SFTP backend](https://filesystem-spec.readthedocs.io/en/latest/_modules/fsspec/implementations/sftp.html)
 and [DuckDB filesystem API](https://duckdb.org/docs/stable/guides/python/filesystems).
-Backend host-key policy and connection behavior retain their library defaults;
-Quackframe retains those defaults and adds a per-connection lock around synchronous
+The optional Block field `host_key_fingerprint: str | None = None` pins the
+server key for this connection. Supply the administrator-verified OpenSSH SHA256
+fingerprint (`SHA256:` followed by 43 unpadded base64 characters). Surrounding
+whitespace is ignored. A mismatch or malformed value fails registration before
+authentication; omitted, null or blank values retain automatic acceptance without
+host-key verification. This field cannot be overridden through SQL. Existing
+Blocks without it continue to work. The backend does not load `known_hosts`.
+
+The same Block can still be used by `register_secret`, but that SSHFS path does
+not enforce this field: it logs a warning for a nonblank fingerprint and keeps
+the existing DuckDB secret unchanged.
+
+Quackframe also adds a per-connection lock around synchronous
 SFTP request/response exchanges. Readers take turns using the shared connection;
 DuckDB may still use multiple threads. Directory iteration uses synchronous
 listing through the same lock. There is no connection pool or global SSH patch.

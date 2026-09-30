@@ -248,21 +248,28 @@ def test_prefect_provider_translates_azure_managed_identity_block(
     assert credentials.scope == scope
 
 
-def test_prefect_provider_translates_ssh_private_key_block() -> None:
+@pytest.mark.parametrize("fingerprint", [None, "SHA256:" + "A" * 43])
+@pytest.mark.parametrize("model_type", [SshPrivateKeySecret, SftpFilesystem])
+def test_prefect_provider_translates_ssh_private_key_block(
+    fingerprint: str | None,
+    model_type: type[SshPrivateKeySecret] | type[SftpFilesystem],
+) -> None:
     block = SshPrivateKeyCredentials(
         username=SecretStr("reader"),
         key_path="/run/secrets/sftp-key",
         port=2222,
         scope="sftp://sftp.example.test",
+        host_key_fingerprint=fingerprint,
     )
 
     with patch.object(SshPrivateKeyCredentials, "load", return_value=block) as load:
-        credentials = PrefectCredentialProvider().resolve(
-            "source_files", SshPrivateKeySecret
-        )
+        credentials = PrefectCredentialProvider().resolve("source_files", model_type)
 
     load.assert_called_once_with("source-files")
-    assert isinstance(credentials, SshPrivateKeySecret)
+    assert isinstance(credentials, model_type)
+    assert credentials.host_key_fingerprint == fingerprint
+    resolved = credentials.resolve_overrides({"scope": "sftp://other.test"})
+    assert resolved.host_key_fingerprint == fingerprint
     assert credentials.username.get_secret_value() == "reader"
     assert credentials.key_path == "/run/secrets/sftp-key"
     assert credentials.port == 2222

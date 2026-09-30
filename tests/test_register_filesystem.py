@@ -104,6 +104,7 @@ def test_filesystem_sql_resolves_overrides_without_mutating_credentials(
         {"username": "protected-value"},
         {"key_path": "protected-value"},
         {"port": "protected-value"},
+        {"host_key_fingerprint": "protected-value"},
         {"unknown": "protected-value"},
     ],
 )
@@ -147,6 +148,7 @@ def test_sftp_uses_standard_constructor_and_registers_the_same_object(
         username="protected-reader",
         key_filename="/run/secrets/protected-key",
         port=2222,
+        host_key_fingerprint=None,
         skip_instance_cache=True,
     )
     connection.register_filesystem.assert_called_once_with(constructor.return_value)
