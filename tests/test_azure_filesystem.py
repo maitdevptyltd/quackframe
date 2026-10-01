@@ -248,6 +248,72 @@ def test_sas_connection_string_account() -> None:
     )
 
 
+@pytest.mark.parametrize("sas", [False, True])
+@pytest.mark.parametrize("trailing_slash", ["", "/"])
+def test_standard_service_endpoints_reach_sdk(sas: bool, trailing_slash: str) -> None:
+    endpoints = ";".join(
+        f"{service.title()}Endpoint=https://examplestorage.{service}.core.windows.net"
+        f"{trailing_slash}"
+        for service in ("blob", "queue", "table", "file")
+    )
+    connection = (
+        ("SharedAccessSignature=sv=2025-01-05&sig=protected" if sas else CONNECTION)
+        + ";"
+        + endpoints
+        + ";"
+    )
+    assert azure.connection_account(connection) == "examplestorage"
+    # Real SDK construction is offline and verifies the unmodified string's
+    # endpoint and authentication interpretation, not just our own parser.
+    client = azure.OwnedBlobServiceClient.from_connection_string(connection)
+    try:
+        assert client.account_name == "examplestorage"
+        assert (
+            client.primary_endpoint.split("?", 1)[0]
+            == "https://examplestorage.blob.core.windows.net/"
+        )
+        assert client.credential is not None or "sig=protected" in client.url
+    finally:
+        azure.sync(azure.get_loop(), client.close)
+
+
+@pytest.mark.parametrize(
+    ("connection", "reason"),
+    [
+        ("sensitive", "entry 1 must have the form name=value"),
+        (CONNECTION + "; sensitive=x", "whitespace around its field name"),
+        (CONNECTION + ";sensitive=x", "unsupported field name"),
+        (CONNECTION + ";AccountKey=sensitive", "repeats a field name"),
+        (CONNECTION.replace("YWJjZA==", " "), "empty value"),
+        (CONNECTION.replace("https", "http"), "DefaultEndpointsProtocol"),
+        (CONNECTION.replace("core.windows.net", "sensitive"), "EndpointSuffix"),
+        ("AccountName=examplestorage", "exactly one"),
+        ("AccountKey=sensitive", "supply AccountName"),
+        (CONNECTION.replace("examplestorage", "INVALID"), "3-24"),
+        (CONNECTION + ";BlobEndpoint=https://sensitive", "BlobEndpoint"),
+        (CONNECTION + ";QueueEndpoint=https://sensitive", "QueueEndpoint"),
+        (CONNECTION + ";TableEndpoint=https://sensitive", "TableEndpoint"),
+        (CONNECTION + ";FileEndpoint=https://sensitive", "FileEndpoint"),
+    ],
+)
+def test_connection_errors_explain_rejection_without_values(
+    connection: str,
+    reason: str,
+) -> None:
+    model = AzureConnectionStringFilesystem(
+        connection_string=SecretStr(connection), scope="az://reports/"
+    )
+    with patch.object(
+        azure.OwnedBlobServiceClient, "from_connection_string"
+    ) as factory:
+        with pytest.raises(ValueError, match=reason) as error:
+            model.create_filesystem("reports-key")
+        factory.assert_not_called()
+    assert "sensitive" not in str(error.value)
+    assert "YWJjZA" not in str(error.value)
+    assert error.value.__context__ is None
+
+
 @pytest.mark.parametrize(
     "path",
     [

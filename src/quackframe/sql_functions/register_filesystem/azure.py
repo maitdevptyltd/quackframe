@@ -24,44 +24,73 @@ sync = cast(Callable[..., Any], fsspec_sync)
 
 def connection_account(connection_string: str) -> str:
     """Accept explicit public-cloud connections without echoing secret input."""
+
+    def invalid(reason: str) -> ValueError:
+        return ValueError(f"Azure filesystem connection string: {reason}")
+
+    endpoints = {
+        "blobendpoint": "blob",
+        "queueendpoint": "queue",
+        "tableendpoint": "table",
+        "fileendpoint": "file",
+    }
+    allowed = {
+        "accountname",
+        "accountkey",
+        "sharedaccesssignature",
+        "defaultendpointsprotocol",
+        "endpointsuffix",
+        *endpoints,
+    }
     fields: dict[str, str] = {}
-    try:
-        for part in connection_string.rstrip(";").split(";"):
-            key, value = part.split("=", 1)
-            # The SDK preserves key whitespace. Reject it rather than validate
-            # a different credential field from the one the SDK will receive.
-            if key != key.strip():
-                raise ValueError
-            key = key.lower()
-            if key in fields or not value:
-                raise ValueError
-            fields[key] = value
-        account = fields["accountname"]
-        allowed = {
-            "accountname",
-            "accountkey",
-            "sharedaccesssignature",
-            "defaultendpointsprotocol",
-            "endpointsuffix",
-            "blobendpoint",
-        }
-        if (
-            not fullmatch(r"[a-z0-9]{3,24}", account)
-            or fields.keys() - allowed
-            or fields.get("defaultendpointsprotocol", "https") != "https"
-            or fields.get("endpointsuffix", "core.windows.net") != "core.windows.net"
-            or ("accountkey" in fields) == ("sharedaccesssignature" in fields)
-            or fields.get(
-                "blobendpoint", f"https://{account}.blob.core.windows.net"
-            ).rstrip("/")
-            != f"https://{account}.blob.core.windows.net"
-        ):
-            raise ValueError
-    except (ValueError, KeyError):
-        raise ValueError(
-            "Azure filesystem requires a public-cloud HTTPS connection string "
-            "with an account name and either an account key or SAS"
-        ) from None
+    for position, part in enumerate(connection_string.rstrip(";").split(";"), 1):
+        key, separator, value = part.partition("=")
+        if not separator:
+            raise invalid(f"entry {position} must have the form name=value")
+        # Match the SDK's field parsing, without normalizing secret values.
+        if key != key.strip():
+            raise invalid(f"entry {position} has whitespace around its field name")
+        key = key.lower()
+        if key not in allowed:
+            raise invalid(f"entry {position} uses an unsupported field name")
+        if key in fields:
+            raise invalid(f"entry {position} repeats a field name")
+        if not value.strip():
+            raise invalid(f"entry {position} has an empty value")
+        fields[key] = value
+
+    if fields.get("defaultendpointsprotocol", "https") != "https":
+        raise invalid("DefaultEndpointsProtocol must be https")
+    if fields.get("endpointsuffix", "core.windows.net") != "core.windows.net":
+        raise invalid(
+            "EndpointSuffix must be core.windows.net; other clouds unsupported"
+        )
+    if ("accountkey" in fields) == ("sharedaccesssignature" in fields):
+        raise invalid("supply exactly one of AccountKey or SharedAccessSignature")
+
+    account = fields.get("accountname")
+    if account is None and "sharedaccesssignature" in fields:
+        endpoint = fullmatch(
+            r"https://([a-z0-9]{3,24})\.blob\.core\.windows\.net/?",
+            fields.get("blobendpoint", ""),
+        )
+        if endpoint is not None:
+            account = endpoint[1]
+    if account is None:
+        raise invalid(
+            "supply AccountName, or a public-cloud HTTPS BlobEndpoint for SAS"
+        )
+    if not fullmatch(r"[a-z0-9]{3,24}", account):
+        raise invalid("AccountName must contain 3-24 lowercase letters or digits")
+    for field, service in endpoints.items():
+        if field in fields and fields[field] not in {
+            f"https://{account}.{service}.core.windows.net",
+            f"https://{account}.{service}.core.windows.net/",
+        }:
+            raise invalid(
+                f"{service.title()}Endpoint must be the account's public-cloud "
+                "HTTPS service root, without a port, path, query or fragment"
+            )
     return account
 
 

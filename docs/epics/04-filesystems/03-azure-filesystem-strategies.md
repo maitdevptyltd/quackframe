@@ -96,6 +96,22 @@ The second registration is equivalently expressed positionally as
 
 ## Backend And Authentication
 
+Connection-string compatibility correction (2026-10-01): accept standard matching
+Blob/Queue/Table/File HTTPS service endpoints and derive a missing account name
+from the Blob endpoint for SAS authentication. Preserve the public-cloud boundary
+and pass the original secret unchanged to the SDK. Replace the generic format
+rejection with safe rule-specific or entry-number diagnostics before construction.
+Cover both standard forms with real offline SDK construction and test diagnostic
+redaction and rejection before client creation. Live credential verification
+remains outside these offline checks.
+
+Validation: **188 focused tests passed** across Azure filesystems, filesystem
+writes, secret registration and credential loading. Pyright, maintained-source
+Ruff, Markdown links and whitespace checks passed. Repository-wide Ruff still
+reports existing prototype issues. The full suite and live Azure authentication
+were not rerun for this correction; the phase remains **In Progress** for the
+outstanding live validation below.
+
 Use `adlfs.AzureBlobFileSystem` for both strategies, behind lazy optional imports.
 The upstream project supports Blob Storage and ADLS Gen2 through the Blob API;
 this phase targets file operations, not Data Lake administration or ADLS Gen1.

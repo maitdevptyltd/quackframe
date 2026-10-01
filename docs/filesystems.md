@@ -116,9 +116,19 @@ a container name. Separate aliases still support separate storage accounts.
 Connection strings must identify a public-cloud Azure account and use HTTPS,
 with either an account key or SAS. Standard `DefaultEndpointsProtocol`,
 `AccountName`, `AccountKey`/`SharedAccessSignature`, `EndpointSuffix` and a matching
-public-cloud `BlobEndpoint` are accepted. Custom/service endpoints and emulator
+public-cloud `BlobEndpoint` are accepted. Standard `QueueEndpoint`, `TableEndpoint`
+and `FileEndpoint` fields may also be present when they identify the same account's
+public-cloud HTTPS service roots. SAS strings may omit `AccountName` when
+`BlobEndpoint` identifies the account. The original string is passed to the SDK.
+Custom endpoints and emulator
 connection strings are outside this contract. Values stay in the credential
 provider; do not put them into SQL.
+
+Format errors identify the rejected rule or numbered entry without printing field
+values or unknown field names. These errors happen before client construction;
+they do not indicate failed Azure authentication. Check the named rule in the
+saved Block. A successful `register_secret` does not establish filesystem format
+compatibility: native DuckDB and the filesystem backend use different parsers.
 
 Managed identity uses the configured `account_name` and optional `client_id`.
 Omitting the client ID selects the system-assigned identity; supplying it selects
