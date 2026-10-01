@@ -237,11 +237,7 @@ def test_all_strategies_export_and_read_back(
     monkeypatch.setattr(
         loading, "get_provider", Mock(return_value=Mock(resolve=resolve))
     )
-    root = (
-        "exports://127.0.0.1"
-        if strategy == "sftp"
-        else "exports://examplestorage/reports"
-    )
+    root = "exports://127.0.0.1" if strategy == "sftp" else "exports://reports"
     path = root + (
         "/nested/output" if partitioned else "/result%20%23." + format.lower()
     )
@@ -335,8 +331,7 @@ def test_upload_failure_stops_ordered_execution(
         f"SELECT quackframe.register_filesystem('example', 'exports', '{strategy}');"
     )
     second.write_text(
-        "COPY (SELECT 42 AS value) "
-        "TO 'exports://examplestorage/reports/result.csv' (FORMAT CSV);"
+        "COPY (SELECT 42 AS value) TO 'exports://reports/result.csv' (FORMAT CSV);"
     )
     third.write_text("CREATE TABLE should_not_run AS SELECT 1;")
     database = tmp_path / "result.duckdb"
@@ -411,7 +406,7 @@ def test_azure_directory_creation_never_provisions_containers(
     filesystem = key_model().create_filesystem("exports")
     try:
         with pytest.raises(OSError, match="create the directory"):
-            filesystem.makedirs("exports://examplestorage/reports/output")
+            filesystem.makedirs("exports://reports/output")
         create.assert_not_awaited()
     finally:
         filesystem.close_backend()
@@ -480,7 +475,7 @@ def test_azure_move_and_removal_use_literal_paths(
     filesystem = key_model().create_filesystem("exports")
 
     def url(name: str) -> str:
-        return "exports://examplestorage/reports/" + quote(name, safe="/")
+        return "exports://reports/" + quote(name, safe="/")
 
     try:
         for name in (
@@ -544,10 +539,10 @@ def test_ordered_export_then_read_in_each_runtime(
     )
     second.write_text(
         "COPY (SELECT 42 AS value) "
-        "TO 'exports://examplestorage/reports/result.parquet' (FORMAT PARQUET);"
+        "TO 'exports://reports/result.parquet' (FORMAT PARQUET);"
     )
     third.write_text(
-        "CREATE TABLE result AS SELECT * FROM read_parquet('exports://examplestorage/reports/result.parquet');"
+        "CREATE TABLE result AS SELECT * FROM read_parquet('exports://reports/result.parquet');"
     )
     database = tmp_path / "result.duckdb"
     config = QuackframeConfig.model_validate(

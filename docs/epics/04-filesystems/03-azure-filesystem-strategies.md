@@ -74,7 +74,7 @@ SELECT quackframe.register_filesystem(
     'prefect', 'azure-reports-key', 'azure_connection_string'
 );
 SELECT * FROM read_parquet(
-    'azure-reports-key://examplestorage/reports/daily/*.parquet'
+    'azure-reports-key://reports/daily/*.parquet'
 );
 ```
 
@@ -86,7 +86,7 @@ SELECT quackframe.register_filesystem(
     protocol := 'reports-mi',
     overrides := MAP {'scope': 'az://reports/'}
 );
-SELECT * FROM read_csv('reports-mi://examplestorage/reports/daily/*.csv');
+SELECT * FROM read_csv('reports-mi://reports/daily/*.csv');
 ```
 
 The second registration is equivalently expressed positionally as
@@ -105,8 +105,8 @@ See the [adlfs project](https://github.com/fsspec/adlfs) and
 Connection-string strategy:
 
 - Construct the backend with the resolved connection string explicitly.
-- Derive the account identity used for path validation from the configured
-  connection, without exposing the string or authentication components.
+- Derive the account identity used for backend construction and scope validation
+  from the configured connection, without exposing authentication components.
 - Initially support Azure public-cloud HTTPS connections that identify an
   account. Validate the supported connection-string forms before publication;
   do not silently accept an endpoint configuration outside the agreed boundary.
@@ -132,16 +132,25 @@ client ID, token or backend options.
 
 ## Scope And Path Semantics
 
-Read shape:
+On 2026-10-01 the user authorised replacing account-bearing filesystem URLs
+with `protocol://container/blob-name` for both Azure strategies. The path change
+is implemented. The registration already fixes the storage account through its
+connection string or managed-identity configuration; the caller still selects
+the container and full blob path. Remote permissions control access. This change
+does not alter the strategy pattern, registration signature, authentication or
+credential scope syntax. There is one current URL format, with no legacy parser.
+
+Read and write shape:
 
 ```text
-protocol://account/container/absolute-blob-name
+protocol://container/absolute-blob-name
 ```
 
-The protocol selects one backend. The authority is an account name, not an
-arbitrary hostname; it must match the account fixed by that registration. The
-backend receives `container/absolute-blob-name`. It must never reinterpret a read
-URL as instructions to connect to a different account or choose other credentials.
+The protocol selects one backend and its credential-bound storage account. The
+authority is the container name, and the backend receives
+`container/absolute-blob-name`. URLs cannot change the account or credentials.
+Containers remain caller-selected and are accessible only when remote permissions
+allow. Container-root URLs are valid for listing and partitioned exports.
 
 Accept these scope forms after the inherited validation and filesystem-specific
 parsing:
@@ -167,9 +176,10 @@ a way that silently changes existing `register_secret` behaviour.
 Preserve blob-name case and slash structure without local-filesystem path
 normalisation. Decode URL escapes once. Encoded wildcard characters identify
 literal names, while raw glob syntax selects objects. Discovery results,
-`info`/`ls` names and DuckDB filename metadata must retain the selected protocol,
-account and container and be reusable in subsequent reads. Explicitly test names
-containing spaces, percent signs, Unicode, `#`, `?` and literal wildcard characters.
+`info` names and DuckDB filename metadata retain the selected protocol and
+container and remain reusable in subsequent reads and writes. Directory listings
+return relative entry names for DuckDB to join to the requested directory.
+Explicitly test spaces, percent signs, Unicode, `#`, `?` and literal wildcards.
 
 ## Ownership And Dependencies
 
@@ -220,8 +230,8 @@ introduce a separate SAS-token SQL option.
 
 ## Delivery And Acceptance
 
-1. Review the proposed SQL names, account-bearing read URLs, scope semantics and
-   public-cloud boundary before implementation. Resolve any changes in this file.
+1. Review the proposed SQL names, container-first filesystem URLs, scope semantics
+   and public-cloud boundary before implementation. Resolve changes in this file.
 2. Verify backend authentication precedence, supported connection-string forms,
    path handling and asynchronous cleanup against the selected dependency versions.
    Record findings and exact versions here before committing to adapter details.
@@ -241,7 +251,7 @@ Acceptance checklist:
       protocols and duplicate/reserved registrations preserve existing resources.
 - [ ] Two Azure registrations with distinct credentials/accounts, both Azure types
       together, and Azure plus SFTP remain independent in one session.
-- [x] Host/account mismatches and hostile URL forms cannot redirect the backend;
+- [x] Hostile URL forms cannot redirect the credential-bound backend;
       ambient settings cannot change the selected authentication.
 - [x] Glob-to-read round trips, metadata and CSV/Parquet reads retain protocol and
       account identity across ordered SQL files, including special blob names.
@@ -339,3 +349,26 @@ tree passed 130 focused tests, Pyright, source/test Ruff, Markdown links and
 - [Named Protocols](02-aliased-filesystem-registrations.md): isolation and lifecycle rules.
 - [Execution Lifecycle](../../execution-lifecycle.md): session ownership and cleanup.
 - [Filesystem Examples](../../../examples/filesystems/README.md): runnable examples to extend.
+
+
+### Container-First URL Validation (2026-10-01)
+
+The account argument was removed from the shared Azure path translator. Both
+strategies still construct their backend from the configured account; filesystem
+URLs supply only the container and blob path. Scope validation and authentication
+are unchanged. The SQL registration signature and strategy registry are unchanged.
+
+All **111 focused Azure and filesystem-write tests pass**, including real DuckDB
+and adlfs reads, glob/discovery round trips, CSV/Parquet exports, append, overwrite,
+encoded names, container-root paths, account isolation and direct/Prefect execution.
+Type checking, maintained-source lint, local Markdown links and whitespace checks
+pass. Tests prove that a container named like an account cannot redirect the
+backend to that account. No legacy account-prefix parsing is retained.
+
+The broader regression run passed **324 tests**, excluding the unchanged standalone
+SFTP integration/diagnostic module. SFTP write tests remain included. The standalone
+module's known raw-library concurrency failures were recorded in the write phase
+and were not rerun for this Azure-only change.
+
+The phase remains `In Progress` for its previously recorded live Azure validation
+requirements; those are separate from completion of this URL change.

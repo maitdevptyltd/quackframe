@@ -50,6 +50,12 @@ Registration itself does not prove permission to write. Read-only credentials
 remain valid for reading; attempted writes must fail safely when access is denied.
 Registration must not create a probe file or require write permission up front.
 
+On 2026-10-01 the user also authorised container-first Azure URLs for both
+strategies: `protocol://container/blob-name`. The storage account is taken from
+the existing credentials/configuration and never repeated in filesystem URLs.
+The container remains explicit. The [Azure phase](03-azure-filesystem-strategies.md)
+owns this path change; the write contract and strategy pattern remain unchanged.
+
 ## Public Contract
 
 Keep the existing signature, credential models, provider selection, named protocol
@@ -71,7 +77,7 @@ SELECT quackframe.register_filesystem(
     'prefect', 'output-blobs', 'azure_connection_string'
 );
 COPY (SELECT 42 AS value)
-TO 'output-blobs://examplestorage/reports/result.csv'
+TO 'output-blobs://reports/result.csv'
 (FORMAT CSV, HEADER);
 ```
 

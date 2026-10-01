@@ -192,7 +192,7 @@ def test_scope_does_not_prepend_a_root_or_restrict_containers(scope: str) -> Non
     filesystem = key_model(scope).create_filesystem("reports-key")
     try:
         assert (
-            filesystem.to_backend("reports-key://examplestorage/another/full/name.csv")
+            filesystem.to_backend("reports-key://another/full/name.csv")
             == "another/full/name.csv"
         )
     finally:
@@ -251,18 +251,20 @@ def test_sas_connection_string_account() -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "reports-files://another/reports/file.csv",
-        "reports-files://user@examplestorage/reports/file.csv",
-        "reports-files://examplestorage:443/reports/file.csv",
-        "reports-files://examplestorage/reports/file.csv?sig=protected",
-        "reports-files://examplestorage/reports/file.csv#fragment",
-        "reports-files://examplestorage/",
-        "reports-files://examplestorage/reports%2fanother/file.csv",
-        "other-files://examplestorage/reports/file.csv",
+        "reports-files://bad--container/file.csv",
+        "reports-files://user@reports/file.csv",
+        "reports-files://reports:443/file.csv",
+        "reports-files://reports/file.csv?sig=protected",
+        "reports-files://reports/file.csv#fragment",
+        "reports-files:///file.csv",
+        "reports-files://reports%2fanother/file.csv",
+        "reports-files://Reports/file.csv",
+        "reports-files://reports.blob.core.windows.net/file.csv",
+        "other-files://reports/file.csv",
     ],
 )
 def test_read_urls_cannot_redirect_the_backend(path: str) -> None:
-    to_backend, _, _ = azure.azure_paths("reports-files", "examplestorage")
+    to_backend, _, _ = azure.azure_paths("reports-files")
     with pytest.raises(ValueError):
         to_backend(path)
 
@@ -283,16 +285,14 @@ def test_read_urls_cannot_redirect_the_backend(path: str) -> None:
     ],
 )
 def test_discovery_paths_round_trip_without_normalization(name: str) -> None:
-    to_backend, from_backend, _ = azure.azure_paths("reports-files", "examplestorage")
+    to_backend, from_backend, _ = azure.azure_paths("reports-files")
+    assert from_backend(name) == "reports-files://" + azure.quote(name, safe="/")
     assert to_backend(from_backend(name)) == name
 
 
 def test_encoded_wildcards_stay_literal_in_globs() -> None:
-    _, _, to_glob = azure.azure_paths("reports-files", "examplestorage")
-    assert (
-        to_glob("reports-files://examplestorage/reports/a%2A*.csv")
-        == "reports/a[*]*.csv"
-    )
+    _, _, to_glob = azure.azure_paths("reports-files")
+    assert to_glob("reports-files://reports/a%2A*.csv") == "reports/a[*]*.csv"
 
 
 def test_partial_backend_construction_closes_client() -> None:
@@ -444,7 +444,7 @@ def test_both_strategies_read_through_real_duckdb_and_adlfs(
                 ).fetchone() == (True,)
                 paths = connection.execute(
                     "SELECT file FROM glob(?)",
-                    [f"{protocol}://examplestorage/reports/*.csv"],
+                    [f"{protocol}://reports/*.csv"],
                 ).fetchall()
                 assert len(paths) == 3
                 assert any("%23%3F" in row[0] for row in paths)
@@ -461,7 +461,7 @@ def test_both_strategies_read_through_real_duckdb_and_adlfs(
                 ).fetchone() == (b"value\n42\n",)
                 assert connection.execute(
                     "SELECT value FROM read_parquet(?)",
-                    [f"{protocol}://examplestorage/reports/data.parquet"],
+                    [f"{protocol}://reports/data.parquet"],
                 ).fetchone() == (42,)
             assert len(azure_data) == 2
             assert all(not client.closed for client in azure_data)
@@ -491,8 +491,21 @@ def test_accounts_and_backend_lifetimes_are_independent() -> None:
         assert second.backend.service_client.account_name == "otherstorage"
         first.close_backend()
         assert not second.backend.service_client.closed
-        with pytest.raises(ValueError, match="account"):
+        assert (
+            first.to_backend("first-account://reports/file.csv") == "reports/file.csv"
+        )
+        assert (
+            second.to_backend("second-account://reports/file.csv") == "reports/file.csv"
+        )
+        assert (
+            second.to_backend("second-account://another/file.csv") == "another/file.csv"
+        )
+        # A URL cannot select an account: its authority is always a container.
+        assert (
             second.to_backend("second-account://examplestorage/reports/file.csv")
+            == "examplestorage/reports/file.csv"
+        )
+        assert second.backend.service_client.account_name == "otherstorage"
     finally:
         first.close_backend()
         second.close_backend()
@@ -536,7 +549,7 @@ def test_ordered_azure_files_close_clients_after_success_or_sql_failure(
     second = tmp_path / "read.sql"
     second.write_text(
         "CREATE TABLE result AS SELECT * FROM read_csv("
-        "'reports-key://examplestorage/reports/first.csv');"
+        "'reports-key://reports/first.csv');"
         + ("SELECT error('deliberate');" if fail else ""),
         encoding="utf-8",
     )
@@ -580,3 +593,11 @@ def test_existing_prefect_blocks_construct_filesystem_strategies(kind: str) -> N
     assert resolved.scope == "az://reports/"
     with pytest.raises(ValueError, match="override"):
         model.resolve_overrides({"client_id": "other"})
+
+
+@pytest.mark.parametrize(
+    "path", ["reports-files://reports", "reports-files://reports/"]
+)
+def test_container_root_paths(path: str) -> None:
+    to_backend, _, _ = azure.azure_paths("reports-files")
+    assert to_backend(path).rstrip("/") == "reports"

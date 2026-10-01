@@ -42,7 +42,8 @@ Create either an `AzureConnectionStringCredentials` Block named
 `azure-reports-key`, or an `AzureManagedIdentityCredentials` Block named
 `azure-reports-identity`. Configure account `examplestorage` (inside the connection
 string for the former) and scope `az://reports/`. Substitute your actual account
-in the Block and SQL before running.
+in the Block before running. SQL paths select the container and blob, for example
+`azure-reports-key://reports/daily/*.parquet`; they do not include the storage account.
 
 ```powershell
 poetry run quackframe run sql/read-azure-key.sql
@@ -63,7 +64,8 @@ For SFTP, configure an `output-files` Block for a writable destination and run
 [write-files.sql](sql/write-files.sql). Its parent `/exports` directory must exist.
 For Azure, configure the `azure-reports-key` Block above and run
 [write-azure.sql](sql/write-azure.sql); the `reports` container must already exist.
-Substitute your own endpoint/account and an intended output path first.
+Substitute your SFTP endpoint and intended output paths first. For Azure, set
+the account in the Block and the container in the SQL path.
 
 ```powershell
 poetry run quackframe run sql/write-files.sql

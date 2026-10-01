@@ -5,4 +5,4 @@ SELECT quackframe.register_filesystem(
     protocol := 'reports-mi'
 );
 
-SELECT * FROM read_csv('reports-mi://examplestorage/reports/daily/*.csv');
+SELECT * FROM read_csv('reports-mi://reports/daily/*.csv');

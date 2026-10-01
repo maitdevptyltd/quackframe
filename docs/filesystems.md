@@ -23,7 +23,7 @@ TO 'output-files://files.example.test/exports/result.parquet' (FORMAT PARQUET);
 ```
 
 Both Azure strategies accept the same `COPY ... TO` operations with paths such as
-`output-blobs://examplestorage/reports/result.parquet`. Paths are explicit; scope
+`output-blobs://reports/result.parquet`. Paths are explicit; scope
 never prepends a destination root. Azure containers must already exist.
 For a single SFTP file, its parent directory must already exist. Partitioned
 exports create their required directories and accept nested output paths.
@@ -72,7 +72,7 @@ SELECT quackframe.register_filesystem(
     'prefect', 'azure-reports-key', 'azure_connection_string'
 );
 SELECT * FROM read_parquet(
-    'azure-reports-key://examplestorage/reports/daily/*.parquet'
+    'azure-reports-key://reports/daily/*.parquet'
 );
 ```
 
@@ -86,7 +86,7 @@ SELECT quackframe.register_filesystem(
     protocol := 'reports-mi',
     overrides := MAP {'scope': 'az://reports/'}
 );
-SELECT * FROM read_csv('reports-mi://examplestorage/reports/daily/*.csv');
+SELECT * FROM read_csv('reports-mi://reports/daily/*.csv');
 ```
 
 Positional and named forms are equivalent. For example, the second registration
@@ -94,18 +94,24 @@ can be written as `register_filesystem('prefect', 'azure-reports-identity',
 'azure_managed_identity', 'reports-mi', MAP {'scope': 'az://reports/'})` and selects
 the same `reports-mi://` paths.
 
-Read paths use `protocol://account/container/blob-name`. The account must match
-the registration. Every read includes the container and complete blob name;
-scope never prepends a directory or restricts access to a prefix. Other containers
+Read and write paths use `protocol://container/blob-name`. The registration
+selects the storage account from its connection string or configured
+`account_name`; URLs never select or repeat the account. Every path includes the
+container and complete blob name; scope never prepends a directory or restricts
+access to a prefix. Other containers
 on the account remain available when Azure permissions allow. Unlike native
 DuckDB secret scope matching, scope does not select credentials for each read.
 
 Scopes accept `az://container/prefix/`, `azure://container/prefix/`, or
 `abfss://container@account.dfs.core.windows.net/prefix/`. A trailing slash is
 required and any explicit account must match. Only scope can be overridden in
-SQL. Read URLs reject authentication, ports, query strings and fragments;
+SQL. Filesystem URLs reject authentication, ports, query strings and fragments;
 URL-encode literal special characters in blob names. Discovery returns reusable,
 encoded protocol-qualified paths.
+
+Replace older `protocol://account/container/blob-name` paths with the container-first
+form above. There is no legacy account-prefix detection: the authority is always
+a container name. Separate aliases still support separate storage accounts.
 
 Connection strings must identify a public-cloud Azure account and use HTTPS,
 with either an account key or SAS. Standard `DefaultEndpointsProtocol`,

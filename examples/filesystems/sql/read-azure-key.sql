@@ -3,5 +3,5 @@ SELECT quackframe.register_filesystem(
 );
 
 SELECT * FROM read_parquet(
-    'azure-reports-key://examplestorage/reports/daily/*.parquet'
+    'azure-reports-key://reports/daily/*.parquet'
 );

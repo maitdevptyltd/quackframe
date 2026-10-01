@@ -269,7 +269,7 @@ def create_azure_filesystem(
     try:
         client = cast(OwnedBlobServiceClient, sync(loop, construct))
         backend = ExplicitAzureFileSystem(client, account, skip_instance_cache=True)
-        to_backend, from_backend, to_glob = azure_paths(protocol, account)
+        to_backend, from_backend, to_glob = azure_paths(protocol)
         return ProtocolFileSystem(
             backend,
             protocol,
@@ -291,27 +291,28 @@ def create_azure_filesystem(
 
 def azure_paths(
     protocol: str,
-    account: str,
 ) -> tuple[Callable[[str], str], Callable[[str], str], Callable[[str], str]]:
-    """Translate explicit account URLs and preserve reusable discovery results."""
+    """Select a container and blob within the account owned by the registration."""
 
     def to_backend(path: str, *, glob_pattern: bool = False) -> str:
         try:
             url = urlsplit(path)
             if (
                 url.scheme != protocol
-                or url.netloc != account
+                or url.username is not None
+                or url.port is not None
                 or url.query
                 or url.fragment
-                or not url.path.startswith("/")
+                or (url.path and not url.path.startswith("/"))
             ):
                 raise ValueError
+            _validate_container(unquote(url.netloc))
         except ValueError:
             raise ValueError(
-                "Azure filesystem URL must match its registered account"
+                "Azure filesystem URL must use its registered protocol and a valid "
+                "container, without authentication, port, query or fragment"
             ) from None
-        value = url.path[1:]
-        _validate_container(unquote(value.split("/", 1)[0]))
+        value = url.netloc + url.path
         if glob_pattern:
             value = sub(
                 r"%(?:2[aA]|3[fF]|5[bBdD])",
@@ -321,6 +322,6 @@ def azure_paths(
         return unquote(value)
 
     def from_backend(path: str) -> str:
-        return f"{protocol}://{account}/{quote(path, safe='/')}"
+        return f"{protocol}://{quote(path, safe='/')}"
 
     return to_backend, from_backend, lambda path: to_backend(path, glob_pattern=True)
