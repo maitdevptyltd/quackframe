@@ -214,6 +214,22 @@ operations needed to deliver the export behaviours listed above.
 
 ## Implementation Evidence (2026-10-01)
 
+Azure filename compatibility follow-up: preserve literal `=` in discovered paths
+and reader filenames for partition extraction. Continue escaping percent signs,
+URL delimiters and literal glob characters, with one decode on read. Implemented
+regression coverage exercises partitioned BLOB/CSV exports, discovery,
+filename-based account/date extraction and special-character round-tripping for
+both Azure credential strategies. The focused Azure/write suite passes **135
+tests**; Pyright, source/test/example Ruff, Markdown links and whitespace checks
+pass. The phase remains **In Progress** pending the existing live-service
+evidence below; this follow-up uses controlled Azure SDK responses.
+
+The follow-up full suite reports **395 passed, 4 failed, 1 teardown error**.
+The failures are the previously recorded four-thread raw Paramiko/fsspec
+diagnostic timeouts. The mismatched-fingerprint SFTP test had a connection-reset
+error during server teardown and passed independently on rerun. Repository-wide
+Ruff still reports existing prototype issues under `MAD.Utilities.DuckDB`.
+
 Production changes remain inside `sql_functions/register_filesystem`. The public
 function, strategy registry, credential models, providers, runner and runtime
 adapters retain their existing contracts.

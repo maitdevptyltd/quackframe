@@ -351,6 +351,7 @@ def azure_paths(
         return unquote(value)
 
     def from_backend(path: str) -> str:
-        return f"{protocol}://{quote(path, safe='/')}"
+        # Keep partition separators visible without decoding literal percent escapes.
+        return f"{protocol}://{quote(path, safe='/=')}"
 
     return to_backend, from_backend, lambda path: to_backend(path, glob_pattern=True)

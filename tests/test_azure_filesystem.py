@@ -347,12 +347,14 @@ def test_read_urls_cannot_redirect_the_backend(path: str) -> None:
         "reports/double//slash.csv",
         "reports/Upper.CSV",
         "reports/literal%2F.csv",
+        "reports/account=example/file_date=2026-09-16/data.csv",
+        "reports/literal%3D.csv",
         "$web/index.html",
     ],
 )
 def test_discovery_paths_round_trip_without_normalization(name: str) -> None:
     to_backend, from_backend, _ = azure.azure_paths("reports-files")
-    assert from_backend(name) == "reports-files://" + azure.quote(name, safe="/")
+    assert from_backend(name) == "reports-files://" + azure.quote(name, safe="/=")
     assert to_backend(from_backend(name)) == name
 
 

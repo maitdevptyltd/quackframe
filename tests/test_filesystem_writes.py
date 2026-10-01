@@ -204,6 +204,77 @@ def writable_sftp(tmp_path: Path) -> Iterator[LoopbackServer]:
 
 
 @pytest.mark.parametrize(
+    "strategy", ["azure_connection_string", "azure_managed_identity"]
+)
+@pytest.mark.parametrize("format", ["BLOB", "CSV"])
+def test_azure_partition_filenames_round_trip(
+    strategy: str,
+    format: str,
+    blob_store: dict[str, bytes],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def resolve(reference: str, model_type: Any) -> Any:
+        return (
+            key_model()
+            if model_type is AzureConnectionStringFilesystem
+            else model_type(account_name="examplestorage", scope="az://reports/")
+        )
+
+    monkeypatch.setattr(
+        loading, "get_provider", Mock(return_value=Mock(resolve=resolve))
+    )
+    # These roots must remain distinct even when a name looks URL-encoded.
+    roots = {
+        "literal=": "literal=",
+        "literal%253D": "literal%3D",
+        "special%20%23%3F%2A%5B1%5D%25%C3%A9": "special #?*[1]%é",
+    }
+    with duckdb.connect() as connection, SessionResources(connection) as resources:
+        install_functions(connection, ("register_filesystem",), resources)
+        connection.execute(
+            "SELECT quackframe.register_filesystem('example', 'exports', ?)",
+            [strategy],
+        )
+        for value, (encoded, raw) in enumerate(roots.items()):
+            path = "exports://reports/" + encoded
+            payload = f"value\n{value}\n" if format == "BLOB" else str(value)
+            payload_type = "BLOB" if format == "BLOB" else "VARCHAR"
+            connection.execute(
+                f"COPY (SELECT $payload::{payload_type} AS payload, "
+                "'example' AS account, DATE '2026-09-16' AS file_date) TO $path "
+                f"(FORMAT {format}, PARTITION_BY (account, file_date), "
+                "FILE_EXTENSION 'csv')",
+                {"payload": payload, "path": path},
+            )
+            paths = connection.execute(
+                "SELECT file FROM glob(?)", [path + "/**/*.csv"]
+            ).fetchall()
+            assert len(paths) == 1
+            filename = paths[0][0]
+            prefix = path + "/account=example/file_date=2026-09-16/"
+            assert filename.startswith(prefix)
+            backend_name = "reports/" + raw + "/" + filename[len(path) + 1 :]
+            assert backend_name in blob_store
+
+            for source in (path + "/**/*.csv", [filename]):
+                assert connection.execute(
+                    "SELECT regexp_extract(filename, '/account=([^/]+)/', 1), "
+                    "CAST(regexp_extract(filename, '/file_date=([^/]+)/', 1) "
+                    "AS DATE)::VARCHAR, filename "
+                    "FROM read_csv(?, filename=true, hive_partitioning=false)",
+                    [source],
+                ).fetchall() == [("example", "2026-09-16", filename)]
+                assert connection.execute(
+                    "SELECT filename, content FROM read_blob(?)", [source]
+                ).fetchall() == [(filename, blob_store[backend_name])]
+                assert connection.execute(
+                    "SELECT * FROM read_csv(?, "
+                    "hive_partitioning=false)",
+                    [source],
+                ).fetchall() == [(value,)]
+
+
+@pytest.mark.parametrize(
     "strategy", ["sftp", "azure_connection_string", "azure_managed_identity"]
 )
 @pytest.mark.parametrize("format", ["CSV", "PARQUET"])

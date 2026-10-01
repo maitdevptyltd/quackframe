@@ -107,7 +107,11 @@ Scopes accept `az://container/prefix/`, `azure://container/prefix/`, or
 required and any explicit account must match. Only scope can be overridden in
 SQL. Filesystem URLs reject authentication, ports, query strings and fragments;
 URL-encode literal special characters in blob names. Discovery returns reusable,
-encoded protocol-qualified paths.
+encoded protocol-qualified paths. Literal `=` remains visible so partition
+directories such as `file_date=2026-09-16` can be extracted directly from
+`read_csv` and `read_blob` filenames. Percent signs, URL delimiters and wildcard
+characters remain escaped; a literal `%3D` in a blob name becomes `%253D`,
+distinct from `=`. Reads decode paths once.
 
 Replace older `protocol://account/container/blob-name` paths with the container-first
 form above. There is no legacy account-prefix detection: the authority is always
