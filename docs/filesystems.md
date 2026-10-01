@@ -1,154 +1,255 @@
 # Filesystems
 
-SQL workflows can register a standard fsspec filesystem with DuckDB using an
-existing credential Block, then read files in the same execution. SFTP is the
-first filesystem strategy. It uses the shared SSH credential model and the
-fsspec `SFTPFileSystem` with a small Paramiko adapter that serializes synchronous
-request/response exchanges on each connection.
+Register independently configured filesystems in one DuckDB session and select
+one explicitly with its protocol in every path. SFTP is the first production
+strategy; each registration owns its own credentials, endpoint and connection.
 
 ## Enable And Register
 
-Install the `sftp` extra for the filesystem and the `prefect` extra when using
-Prefect Blocks. From a Quackframe development checkout:
+Install the optional backend and credential-provider dependencies:
 
 ```powershell
 poetry install --extras "prefect sftp"
 ```
 
-A consuming project declares `quackframe[prefect,sftp]` and explicitly enables
-the SQL function:
+A consuming project declares `quackframe[prefect,sftp]` and enables the function:
 
 ```toml
 [tool.quackframe.functions]
 enabled = ["register_filesystem"]
 ```
 
-The provider, reference and filesystem type are required. The optional
-`overrides` argument is `MAP(VARCHAR, VARCHAR)`; there is no secret alias.
+Argument order is `provider, reference, filesystem_type, protocol, overrides`.
+The last two arguments are optional and default to NULL. Omitted `protocol`
+uses the credential reference verbatim. `overrides` is `MAP(VARCHAR, VARCHAR)`.
+Registration returns `true` on success and raises on failure. Run registration
+as a setup statement before discovery or reads.
 
-```sql
-SELECT quackframe.register_filesystem('prefect', 'source_files', 'sftp');
+Positional, named and mixed arguments are equally supported. These examples are
+independent alternatives, each starting in a fresh session. Unless overridden,
+the credential references configure `files.example.test` as their endpoint.
 
-SELECT * FROM read_csv('sftp://files.example.test/reports/*.csv');
-```
-
-The call returns `true` on success and raises an error on failure. Named
-arguments are `provider`, `reference`, `filesystem_type` and `overrides`:
+Omitting `protocol` uses the reference: `supplier-nz-files://`.
 
 ```sql
 SELECT quackframe.register_filesystem(
-    provider := 'prefect',
-    reference := 'source_files',
-    filesystem_type := 'sftp',
-    overrides := MAP {'scope': 'sftp://files.example.test/reports/'}
+    'prefect', 'supplier-nz-files', 'sftp'
 );
+
+SELECT * FROM read_csv('supplier-nz-files://files.example.test/reports/daily-*.csv');
 ```
 
-Use one registration per DuckDB instance. These examples show alternative
-calls, rather than two registrations to execute together. See the
-[runnable example](../examples/filesystems/README.md) for a complete layout.
+An explicit fourth positional argument selects `supplier-au://`.
+
+```sql
+-- Positional form.
+SELECT quackframe.register_filesystem(
+    'prefect', 'supplier-au-files', 'sftp', 'supplier-au'
+);
+
+SELECT * FROM read_csv('supplier-au://files.example.test/reports/daily-*.csv');
+```
+
+Named arguments produce exactly the same `supplier-au://` registration and read.
+This is equivalent to the preceding snippet; do not execute both in one session.
+
+```sql
+-- Equivalent named form.
+SELECT quackframe.register_filesystem(
+    provider := 'prefect',
+    reference := 'supplier-au-files',
+    filesystem_type := 'sftp',
+    protocol := 'supplier-au'
+);
+
+SELECT * FROM read_csv('supplier-au://files.example.test/reports/daily-*.csv');
+```
+
+An override changes the endpoint to `alternate.example.test`; the explicitly
+selected protocol remains `supplier-au://`. This example uses positional arguments
+throughout, including the fifth-argument override map.
+
+```sql
+SELECT quackframe.register_filesystem(
+    'prefect', 'supplier-au-files', 'sftp', 'supplier-au',
+    MAP {'scope': 'sftp://alternate.example.test/'}
+);
+
+SELECT * FROM read_csv('supplier-au://alternate.example.test/reports/daily-*.csv');
+```
+
+Mixing positional and named arguments can retain the default
+`supplier-au-files://` protocol while supplying an override without a NULL
+placeholder for the fourth argument.
+
+```sql
+SELECT quackframe.register_filesystem(
+    'prefect', 'supplier-au-files', 'sftp',
+    overrides := MAP {'scope': 'sftp://alternate.example.test/'}
+);
+
+SELECT * FROM read_csv('supplier-au-files://alternate.example.test/reports/daily-*.csv');
+```
+
+For a variable-based workflow, the same default `supplier-nz-files://` protocol
+can be prepended to a host-and-path glob. Discovery must return paths retaining
+that protocol so the subsequent read selects the same registration.
+
+```sql
+SELECT quackframe.register_filesystem(
+    'prefect', 'supplier-nz-files', 'sftp'
+);
+
+SET VARIABLE source_glob = 'files.example.test/reports/daily-*.csv';
+SET VARIABLE smart_path = concat(
+    'supplier-nz-files://', getvariable('source_glob')
+);
+
+SELECT * FROM glob(getvariable('smart_path'));
+SELECT * FROM read_csv(getvariable('smart_path'));
+```
+
+## Multiple Registrations
+
+Two credential references can connect to the same server with different accounts:
+
+```sql
+SELECT quackframe.register_filesystem('prefect', 'supplier-nz-files', 'sftp');
+SELECT quackframe.register_filesystem(
+    'prefect', 'supplier-au-files', 'sftp', 'supplier-au'
+);
+
+SELECT * FROM read_csv('supplier-nz-files://files.example.test/reports/*.csv')
+UNION ALL
+SELECT * FROM read_csv('supplier-au://files.example.test/reports/*.csv');
+```
+
+The protocols select distinct backends. There is no default connection, host-based
+credential selection, pooling or global fsspec instance reuse. Additional backend
+types must be explicitly implemented and allowlisted; installing a package does
+not enable arbitrary filesystem strategies.
 
 ## Credentials And Paths
 
-`sftp` selects `SftpFilesystem`, whose inherited `credential_type` is
-`ssh_private_key`. The Prefect provider loads the existing
-`SshPrivateKeyCredentials` Block once and constructs this concrete strategy.
-Username, key path and port remain Block-owned; only `scope` may be overridden.
-The local private-key file must be readable by the executing process.
+SFTP uses shared `ssh_private_key` credentials. The provider supplies username,
+private-key path, port and optional fingerprint. Only `scope` can be overridden
+through SQL. Prefect Blocks are one optional provider; the runtime need not be
+Prefect. The private-key file must be readable by the executing process.
 
-After shared override resolution, the SFTP strategy requires an `sftp://` or
-`ssh://` URI with a host. Embedded authentication, query strings, fragments and
-a URI port conflicting with the Block's port are rejected. An omitted URI port
-uses the Block port, which defaults to 22. Both an endpoint-only scope and a
-scope containing a directory are accepted.
+Scope must be an `sftp://` or `ssh://` URI with a host and no authentication,
+query or fragment. Its optional port must agree with the credential port, which
+defaults to 22. Scope selects the endpoint; its directory is not prepended to
+read paths and is not an access restriction.
 
-The scope selects the connection host. Its directory is not prepended to query
-paths and is not an access restriction. Full query URLs use the backend's
-standard protocol and absolute remote path. fsspec strips the URL authority
-when resolving paths on the already-connected backend; a different hostname in
-a query does not create or select another SSH connection. Server permissions
-remain the access boundary. Quackframe adds no host routing or directory wrapper.
+Read paths are `protocol://host/absolute/remote/path`. The hostname and effective
+port must match the configured endpoint. An omitted read port uses the configured
+port. A different hostname is rejected; it never creates or selects another
+connection. Embedded authentication, query strings and fragments are rejected.
+Server permissions remain the access boundary.
 
-This follows the standard [fsspec SFTP backend](https://filesystem-spec.readthedocs.io/en/latest/_modules/fsspec/implementations/sftp.html)
-and [DuckDB filesystem API](https://duckdb.org/docs/stable/guides/python/filesystems).
-The optional Block field `host_key_fingerprint: str | None = None` pins the
-server key for this connection. Supply the administrator-verified OpenSSH SHA256
-fingerprint (`SHA256:` followed by 43 unpadded base64 characters). Surrounding
-whitespace is ignored. A mismatch or malformed value fails registration before
-authentication; omitted, null or blank values retain automatic acceptance without
-host-key verification. This field cannot be overridden through SQL. Existing
-Blocks without it continue to work. The backend does not load `known_hosts`.
+`glob`, file metadata and reader filenames retain the selected protocol and
+configured endpoint. Non-default ports appear explicitly in discovered paths.
+Discovered filenames are URL-encoded: `report#1.csv` becomes `report%231.csv`.
+Reads decode the path once; encoded wildcard characters stay literal, while raw
+glob operators such as `*.csv` still select multiple files.
 
-The same Block can still be used by `register_secret`, but that SSHFS path does
-not enforce this field: it logs a warning for a nonblank fingerprint and keeps
-the existing DuckDB secret unchanged.
+Paths from `glob` can be passed directly to `read_blob` or `read_csv`, including
+in later ordered SQL files. No directory-root wrapper is applied.
 
-Quackframe also adds a per-connection lock around synchronous
-SFTP request/response exchanges. Readers take turns using the shared connection;
-DuckDB may still use multiple threads. Directory iteration uses synchronous
-listing through the same lock. There is no connection pool or global SSH patch.
+## Protocol Names And Collisions
+
+Names must match `[a-z][a-z0-9+.-]*`. Hyphens remain intact. If a provider reference
+contains underscores or uppercase letters, pass an explicit valid protocol.
+There is no automatic name rewriting and no `alias` synonym. `register_secret`
+continues using its existing SQL identifier `alias` rules.
+
+Protocols must be unique across all types in the shared DuckDB instance.
+Repeated registration fails even with identical configuration. Known fsspec and
+DuckDB native schemes are reserved; existing external registrations are checked
+before credential loading. DuckDB's Python API does not expose secondary schemes
+of arbitrary external wrappers. To prevent ambiguous reads, registration rejects
+any pre-existing external Python filesystem not owned by the shared
+`SessionResources` context. Register all Python filesystems through that owner;
+do not mutate its registrations externally. Native DuckDB readers are unaffected.
+Registration
+failures leave existing backends intact and close any newly acquired resources.
+There is no automatic replacement, unregister SQL function or rollback on SQL
+transaction rollback. Protocols and paths must not contain secrets.
+
+## Fingerprint Verification And Concurrent Reads
+
+An optional `host_key_fingerprint` pins the server's OpenSSH SHA256 key
+(`SHA256:` plus 43 unpadded base64 characters). Surrounding whitespace is ignored.
+Malformed or mismatched fingerprints fail before authentication. Reconnects use
+the same policy. Missing, null or blank fingerprints retain automatic acceptance;
+this backend does not load `known_hosts`. SQL cannot override the fingerprint.
+The separate SSHFS `register_secret` path still warns about nonblank fingerprints
+without enforcing them.
+
+Each SFTP client serializes synchronous request/response exchanges with its own
+lock. Directory iteration uses synchronous listing through that lock. DuckDB
+can still use multiple threads, and independent registrations have independent
+locks. The named protocol wrapper delegates to this existing verified adapter.
+Asynchronous prefetch, pipelined writes and network deadlines are outside the
+verified read contract. Use a bounded worker process to limit stalled-server jobs.
 
 ## Registration And Lifetime
 
-The function registers the filesystem through a short-lived duplicate
-connection. DuckDB retains the backend for the shared database instance after
-that duplicate closes, so later ordered SQL files can use it. A new database
-instance needs a new registration.
+Quackframe's runner owns a `SessionResources` context tied to its root DuckDB
+connection. Filesystem registration obtains duplicate handles from that root,
+so registration performed through a short-lived child does not own the backend's
+lifetime. Each registration keeps a handle for eventual unregistration.
 
-DuckDB lists the standard backend as `sftp`; it accepts both `sftp://` and
-`ssh://` query URLs. DuckDB 1.5.5
-rejects a second registration of an already registered filesystem. Quackframe
-does not silently replace the existing backend or maintain an endpoint registry;
-the failed new registration closes its newly created SFTP and SSH clients.
+After SQL work finishes, cleanup unregisters each filesystem, closes its backend
+clients and releases its duplicate handle. The main connection and temporary
+storage close afterward. Success, SQL failure and setup failure use the same
+cleanup path. Every cleanup is attempted; a cleanup failure raises a safe error,
+or adds a safe note to an existing primary exception. No garbage-collection or
+process-exit cleanup is required for the owned clients.
 
-Construction uses `skip_instance_cache=True`, avoiding reuse through fsspec's
-global instance cache. After successful registration, DuckDB retains the
-filesystem object and backend resource cleanup follows DuckDB/fsspec/Paramiko
-behavior. Quackframe has no separate session finalizer or transport manager.
-Loopback integration tests now establish that closing the DuckDB session can
-leave an SSH transport active. Process exit releases that connection, but
-persistent-worker cleanup remains unresolved; see the verification boundary below.
+For manually installed SQL functions, the caller must provide the owner:
 
-Selecting a missing provider or backend gives an actionable installation error.
-Core and secret-only execution do not import fsspec or Paramiko. Registration
-failures omit backend diagnostics that could include credentials or key paths.
+```python
+import duckdb
+from quackframe import SessionResources
+from quackframe.sql_functions.installer import install_functions
 
-## Verification Boundary
+with duckdb.connect() as connection, SessionResources(connection) as resources:
+    install_functions(connection, ("register_filesystem",), resources)
+    connection.execute(
+        "SELECT quackframe.register_filesystem('prefect', 'source-files', 'sftp')"
+    )
+    rows = connection.execute(
+        "SELECT * FROM read_csv('source-files://files.example.test/reports/*.csv')"
+    ).fetchall()
+```
 
-Automated checks cover SQL signatures, NULL and empty override maps, immutable
-credential resolution, rejected authentication overrides, one Block load per
-call, registration failure cleanup and optional-dependency absence. An
-additional test provider and strategy exercise the unchanged loading and SQL
-paths, including a DuckDB CSV glob read in a later ordered file.
+Keep the root connection open until resource cleanup completes. Finish all reads,
+including work on duplicate handles, before leaving the resource context. Share
+that owner when installing functions on duplicates of the same instance. Do not
+use an owner from a different instance. Filesystem protocols do not persist in
+a database file and must be registered again for each run.
 
-Real [loopback SFTP tests](../tests/test_sftp_integration.py) reproduce a wildcard
-CSV-read hang with four DuckDB threads on DuckDB 1.5.5, fsspec 2026.7.0 and
-Paramiko 4.0.0. Extended traces reproduce response mix-ups with concurrent
-readers sharing a Paramiko client, including without DuckDB or fsspec.
-Independent discovery and one-thread reads return exact results.
-Registration now selects the serialized backend automatically; no SQL changes or
-`SET threads = 1` workaround are required for the verified loopback case. External
-SFTP and Prefect deployment verification remains outstanding. This fix does not
-resolve the separate connection-cleanup failure after session closure or impose a
-network deadline. Use a bounded worker process when a stalled server must not hold
-a job indefinitely. Asynchronous prefetch and pipelined writes are not verified.
+## Migration And Verification
 
-The tests use temporary keys, 26 synthetic CSVs, a test credential provider,
-and Quackframe's direct runtime without a Prefect server. Children have hard
-timeouts and stack capture. Run `poetry run pytest tests/test_sftp_integration.py -v`;
-raw-library concurrency diagnostics and session-cleanup assertions still expose
-known upstream/lifetime failures. For the production read regressions, run
-`poetry run pytest tests/test_sftp_integration.py -k "registered_sftp or csv_counts or discovery" -v`.
-The harness itself closes all processes and server resources.
+Before release, named protocols replace standard `sftp://` and `ssh://` reads.
+Three-argument calls now register the reference as the protocol. Change read
+URLs accordingly. Fourth-position override maps move to fifth position, with a
+protocol or NULL in fourth position, or use named `overrides := MAP {...}`.
+There is no fallback assigning bare `sftp://` reads to the first registration.
 
-See the [investigation and proposed scope review](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md#loopback-csv-hang-investigation-2026-09-28)
-for evidence and remaining deployment checks. There is no automatic fallback or connection pool. The serialization adapter is
-the accepted fix; further transport or lifecycle redesign needs separate review.
+Unit tests exercise SQL forms, isolation, collisions, credential validation and
+failure cleanup. Real loopback regressions cover discovery, CSV reads with one
+and four threads, fingerprints before authentication, multiple endpoints,
+coexisting filesystem types and cleanup while the worker remains alive. External
+server and deployed Prefect verification remain environment-specific checks.
+Raw-library concurrency diagnostics retain their original upstream failure cases.
 
 ## Related Docs
 
+- [Named Protocol Scope](epics/04-filesystems/02-aliased-filesystem-registrations.md): implementation decisions and validation.
+- [Previous Filesystem Phase](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): historical concurrency and lifetime evidence.
 - [Credential Providers](credential-providers.md): shared models and provider contracts.
-- [SQL Function Extensions](python-extensions.md): explicit enablement and installation.
+- [SQL Function Extensions](python-extensions.md): explicit enablement and binding.
 - [Execution Lifecycle](execution-lifecycle.md): ordered execution and session ownership.
-- [Filesystem Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md):
-  implementation constraints and acceptance evidence.
+- [Runnable Example](../examples/filesystems/README.md): direct runtime with an optional Prefect credential provider.

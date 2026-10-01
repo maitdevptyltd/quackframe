@@ -158,10 +158,11 @@ Specialised strategies own their operations:
 - `register_secret/models.py` implements `register_duckdb_secret(connection, alias)`,
   retaining extension loading and parameter-bound temporary-secret SQL.
 - `register_filesystem/models.py` implements
-  `register_filesystem_protocol(connection)`, owning backend requirements,
-  constructor arguments and DuckDB filesystem registration.
+  `create_filesystem(protocol)`, owning backend requirements, construction,
+  endpoint/path translation and cleanup. The function registers the resulting
+  adapter with DuckDB and the session resource owner.
 
-Neither registration method is required by the shared credential model. SQL
+Neither operation is required by the shared credential model. SQL
 identifier validation lives in `sql_functions/validation.py`; the unchanged
 Azure URI validation lives in `credential_loading/validation.py`.
 

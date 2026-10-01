@@ -203,7 +203,7 @@ def main() -> None:
             raise
         assert error.sql_file == root / "probe.sql"
         assert error.statement_number == 3
-        assert "missing.csv" in error.reason
+        assert "requested file" in error.reason or "missing.csv" in error.reason
         failed = True
     assert failed == (settings["case"] == "failure")
     assert LoopbackProvider.calls == 1
@@ -213,7 +213,7 @@ def main() -> None:
     )
 
     with duckdb.connect(str(database)) as connection:
-        assert not connection.filesystem_is_registered("sftp")
+        assert not connection.filesystem_is_registered("temporary-local-key")
         rows = connection.execute("SELECT * FROM result ORDER BY 1").fetchall()
         if settings["case"] == "failure":
             assert connection.execute(

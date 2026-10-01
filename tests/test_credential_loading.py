@@ -101,6 +101,7 @@ import duckdb
 from pydantic import SecretStr
 from quackframe.credential_loading.providers import registry
 from quackframe.errors import OptionalDependencyError
+from quackframe.resources import SessionResources
 from quackframe.sql_functions.installer import install_functions
 from quackframe.sql_functions.register_filesystem.models import SftpFilesystem
 from quackframe.sql_functions.register_secret.models import MssqlSecret
@@ -115,8 +116,8 @@ registry.PROVIDER_REGISTRY += (registry.ProviderRegistration(
     missing_dependency="example", missing_dependency_message="Install example",
 ),)
 
-with duckdb.connect() as connection:
-    install_functions(connection, ("register_secret", "register_filesystem"))
+with duckdb.connect() as connection, SessionResources(connection) as resources:
+    install_functions(connection, ("register_secret", "register_filesystem"), resources)
     with patch.object(MssqlSecret, "register_duckdb_secret") as register:
         assert connection.execute(
             "SELECT quackframe.register_secret('local', 'login', 'mssql')"
@@ -126,7 +127,7 @@ with duckdb.connect() as connection:
     strategy = SftpFilesystem(username=SecretStr("reader"), key_path="/key",
                               scope="sftp://example.test/")
     try:
-        strategy.register_filesystem_protocol(connection)
+        strategy.create_filesystem("example-files")
     except OptionalDependencyError as error:
         assert "quackframe[sftp]" in str(error)
         assert "protected" not in str(error)
@@ -150,3 +151,60 @@ assert not (blocked & sys.modules.keys())
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize("missing", ["fsspec", "paramiko", "fsspec,paramiko"])
+def test_core_tests_collect_and_run_without_backend_dependencies(
+    missing: str,
+) -> None:
+    script = r"""
+import importlib.abc
+import sys
+
+blocked = set(sys.argv[1].split(','))
+class MissingBackend(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname.split('.')[0] in blocked:
+            raise ModuleNotFoundError(
+                "Backend intentionally unavailable", name=fullname
+            )
+        return None
+sys.meta_path.insert(0, MissingBackend())
+
+try:
+    import fsspec
+except ModuleNotFoundError:
+    fsspec_available = False
+else:
+    fsspec_available = True
+
+import pytest
+class Outcomes:
+    passed = set()
+    skipped = set()
+    def pytest_runtest_logreport(self, report):
+        if report.when == 'call' and report.passed:
+            self.passed.add(report.nodeid)
+        if report.skipped:
+            self.skipped.add(report.nodeid)
+outcomes = Outcomes()
+arguments = ['tests/test_register_filesystem.py', 'tests/test_resources.py',
+    '-q', '-p', 'no:cacheprovider',
+    '-k', 'not ordered_files']
+assert pytest.main(arguments, plugins=[outcomes]) == 0
+assert any('unknown_type' in node for node in outcomes.passed)
+assert any('resource_cleanup_attempts' in node for node in outcomes.passed)
+assert any('sftp_constructor' in node for node in outcomes.skipped)
+if fsspec_available:
+    assert any('sql_forms' in node for node in outcomes.passed)
+else:
+    assert any('sql_forms' in node for node in outcomes.skipped)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, missing],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr

@@ -38,7 +38,7 @@ from sftp_trace import PacketTrace, summarize_trace
 FILE_COUNT = 26
 BASE_ROWS = 8192
 REMOTE = "/from_test/trips"
-URL = f"sftp://127.0.0.1{REMOTE}"
+URL = f"temporary-local-key://127.0.0.1{REMOTE}"
 PATTERN = f"{URL}/daily_trips-2026_09_*.csv"
 
 
@@ -153,6 +153,10 @@ class LoopbackServer:
                 transport.add_server_key(self.host_key)
                 transport.set_subsystem_handler("sftp", self.handler, Files)
                 transport.start_server(server=Authentication())
+            except EOFError:
+                # A rejected host key can close the socket before start_server
+                # returns. This is an expected unauthenticated disconnect.
+                client.close()
             except Exception as error:
                 self.errors.append(error)
                 client.close()
@@ -326,11 +330,12 @@ def run_probe(
     return json.loads((tmp_path / "result.json").read_text()), output
 
 
-def expected_counts(single: bool = False) -> list[list[object]]:
-    # fsspec resolves remote paths on the registered connection and DuckDB
-    # reports them with the scheme but without the input URL authority.
+def expected_counts(
+    single: bool = False, port: int | None = None
+) -> list[list[object]]:
+    prefix = "sftp://" if port is None else f"temporary-local-key://127.0.0.1:{port}"
     return [
-        [f"sftp://{REMOTE}/daily_trips-2026_09_{day:02}.csv", BASE_ROWS + day]
+        [f"{prefix}{REMOTE}/daily_trips-2026_09_{day:02}.csv", BASE_ROWS + day]
         for day in range(1, (1 if single else FILE_COUNT) + 1)
     ]
 
@@ -338,7 +343,7 @@ def expected_counts(single: bool = False) -> list[list[object]]:
 def test_discovery_independently(tmp_path: Path, server: LoopbackServer) -> None:
     result, output = run_probe(tmp_path, server, "glob", 4)
     assert result is not None, output
-    assert result["rows"] == [[row[0]] for row in expected_counts()]
+    assert result["rows"] == [[row[0]] for row in expected_counts(port=server.port)]
 
 
 @pytest.mark.parametrize(
@@ -349,7 +354,7 @@ def test_csv_counts(
 ) -> None:
     result, output = run_probe(tmp_path, server, case, threads)
     assert result is not None, f"SFTP CSV read exceeded hard timeout:\n{output}"
-    assert result["rows"] == expected_counts(single=case == "single")
+    assert result["rows"] == expected_counts(single=case == "single", port=server.port)
     assert len(set(server.opened_paths)) == (1 if case == "single" else FILE_COUNT)
 
 
@@ -361,7 +366,7 @@ def test_runtime_closes_connections(
 ) -> None:
     result, output = run_probe(tmp_path, server, case, 1)
     assert result is not None, output
-    assert result["rows"] == expected_counts(single=True)
+    assert result["rows"] == expected_counts(single=True, port=server.port)
     assert result["active_transports_after_run"] == 0, (
         "DuckDB session closed but an SSH transport remains alive before process exit"
     )
@@ -404,7 +409,9 @@ def test_layer_diagnostics(
             assert not summary["overlapping_packet_reads"]
             assert not summary["pending_waiters"]
     assert result is not None, f"{layer} exceeded hard timeout:\n{output}"
-    assert result["rows"] == expected_counts()
+    assert result["rows"] == expected_counts(
+        port=server.port if layer == "duckdb" else None
+    )
     if layer != "duckdb":
         assert result["active_transports_after_run"] == 0
 
@@ -421,7 +428,7 @@ def test_turn_taking_four_thread_csv_reads(
         tmp_path, server, "multi", 4, turn_taking=True, trace=trace
     )
     assert result is not None, f"Turn-taking repeat {repeat} timed out:\n{output}"
-    assert result["rows"] == expected_counts()
+    assert result["rows"] == expected_counts(port=server.port)
     assert len(set(server.opened_paths)) == FILE_COUNT
     stats = result["turn_taking"]
     assert len(stats) == 1
@@ -471,11 +478,10 @@ def test_turn_taking_runtime_failure_returns_promptly(
     )
     assert result is not None, output
     assert result["expected_failure"]
-    assert result["rows"] == expected_counts(single=True)
+    assert result["rows"] == expected_counts(single=True, port=server.port)
     summary = json.loads((tmp_path / "trace-summary.json").read_text())
     assert not summary["pending_waiters"]
-    # Lifetime is deliberately still measured by the unchanged probe; this
-    # candidate only proves serialization and does not repair runtime cleanup.
+    assert result["active_transports_after_run"] == 0
 
 
 def test_turn_taking_stalled_server_remains_bounded(
@@ -502,7 +508,7 @@ def test_registered_sftp_serializes_concurrent_reads(
     result, output = run_probe(tmp_path, server, "multi", 4, trace=trace)
     assert result is not None, f"Production repeat {repeat} timed out:\n{output}"
     assert result["turn_taking"] == []
-    assert result["rows"] == expected_counts()
+    assert result["rows"] == expected_counts(port=server.port)
     assert len(set(server.opened_paths)) == FILE_COUNT
     if trace:
         summary = json.loads((tmp_path / "trace-summary.json").read_text())
@@ -517,9 +523,6 @@ def test_registered_sftp_serializes_concurrent_reads(
 def test_fingerprint_registration_before_authentication(
     tmp_path: Path, server: LoopbackServer, trust: str
 ) -> None:
-    from unittest.mock import Mock
-
-    from duckdb import DuckDBPyConnection
     from pydantic import SecretStr
 
     from quackframe.sql_functions.register_filesystem.models import SftpFilesystem
@@ -536,20 +539,102 @@ def test_fingerprint_registration_before_authentication(
         scope="sftp://127.0.0.1",
         host_key_fingerprint=fingerprint,
     )
-    connection = Mock(spec=DuckDBPyConnection)
     if trust == "mismatched":
         with pytest.raises(RuntimeError, match="host-key fingerprint"):
-            credentials.register_filesystem_protocol(connection)
-        connection.register_filesystem.assert_not_called()
+            credentials.create_filesystem("fingerprint")
         assert server.authentication_attempts == 0
         assert all(not transport.is_authenticated() for transport in server.transports)
         assert not server.subsystems
     else:
-        credentials.register_filesystem_protocol(connection)
-        filesystem = connection.register_filesystem.call_args.args[0]
+        filesystem = credentials.create_filesystem("fingerprint")
         try:
-            assert len(filesystem.ls(REMOTE)) == FILE_COUNT + 1
+            assert (
+                len(filesystem.ls(f"fingerprint://127.0.0.1{REMOTE}")) == FILE_COUNT + 1
+            )
         finally:
-            filesystem.ftp.close()
-            filesystem.client.close()
+            filesystem.close_backend()
     server.wait_disconnected()
+
+
+def test_two_endpoints_and_another_type_share_one_session(
+    tmp_path: Path, server: LoopbackServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import Mock
+
+    import duckdb
+    from test_register_filesystem import MemoryFilesystem
+
+    from quackframe.credential_loading import loading
+    from quackframe.resources import SessionResources
+    from quackframe.sql_functions.installer import install_functions
+    from quackframe.sql_functions.register_filesystem import models
+
+    other_root = tmp_path / "other-remote"
+    other_root.mkdir()
+    (other_root / "report.csv").write_text("value\n99\n")
+    other = LoopbackServer(other_root)
+    other_key = tmp_path / "other_key"
+    other.user_key.write_private_key_file(str(other_key))
+    other.thread.start()
+
+    def resolve(reference: str, model_type: Any) -> Any:
+        if reference == "memory-files":
+            return model_type()
+        target = server if reference == "first-files" else other
+        key = tmp_path / "client_key" if target is server else other_key
+        return model_type(
+            username="reader",
+            key_path=str(key),
+            port=target.port,
+            scope="sftp://127.0.0.1",
+            host_key_fingerprint=target.host_key.fingerprint,
+        )
+
+    provider = Mock()
+    provider.resolve.side_effect = resolve
+    monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
+    monkeypatch.setitem(models.FILESYSTEM_MODELS, "test_memory", MemoryFilesystem)
+    try:
+        with duckdb.connect() as connection:
+            with SessionResources(connection) as resources:
+                install_functions(connection, ("register_filesystem",), resources)
+                for reference, kind in [
+                    ("first-files", "sftp"),
+                    ("second-files", "sftp"),
+                    ("memory-files", "test_memory"),
+                ]:
+                    connection.execute(
+                        "SELECT quackframe.register_filesystem('example', ?, ?)",
+                        [reference, kind],
+                    )
+                paths = connection.execute(
+                    f"SELECT file FROM glob('first-files://127.0.0.1{REMOTE}/daily_trips-2026_09_01.csv')"
+                ).fetchall()
+                assert paths == [
+                    (
+                        f"first-files://127.0.0.1:{server.port}{REMOTE}/daily_trips-2026_09_01.csv",
+                    )
+                ]
+                assert (
+                    connection.execute(
+                        "SELECT octet_length(content) FROM read_blob(?)",
+                        [[paths[0][0]]],
+                    ).fetchall()[0][0]
+                    > 0
+                )
+                assert connection.execute(
+                    "SELECT * FROM read_csv('second-files://127.0.0.1/report.csv')"
+                ).fetchall() == [(99,)]
+                assert connection.execute(
+                    "SELECT * FROM read_csv('memory-files:///report.csv')"
+                ).fetchall() == [(42,)]
+                with pytest.raises(duckdb.Error, match="registered endpoint"):
+                    connection.execute(
+                        "SELECT * FROM read_csv('second-files://wrong.test/report.csv')"
+                    )
+            assert connection.list_filesystems() == []
+        server.wait_disconnected()
+        other.wait_disconnected()
+        assert all(not t.is_active() for t in server.transports + other.transports)
+    finally:
+        other.close()

@@ -1,22 +1,22 @@
-"""Filesystem SQL, shared loading and standard backend registration behaviour."""
+"""Protocol routing, resource ownership and credential resolution regressions."""
+
+from __future__ import annotations
 
 from collections.abc import Mapping
-from io import BytesIO
 from pathlib import Path
-from stat import S_IFREG
-from types import SimpleNamespace
-from typing import ClassVar, Self, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Self, TypeVar
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 import duckdb
 import pytest
-from duckdb import DuckDBPyConnection
 from pydantic import SecretStr
 
 from quackframe import QuackframeConfig, run
 from quackframe.credential_loading import loading
 from quackframe.credential_loading.models import CredentialModel
 from quackframe.credential_loading.providers import registry
+from quackframe.resources import SessionResources
 from quackframe.sql_functions.installer import install_functions
 from quackframe.sql_functions.register_filesystem import models
 from quackframe.sql_functions.register_filesystem.function import register_filesystem
@@ -25,6 +25,9 @@ from quackframe.sql_functions.register_filesystem.models import (
     SftpFilesystem,
 )
 from quackframe.sql_functions.register_secret.models import SshPrivateKeySecret
+
+if TYPE_CHECKING:
+    from quackframe.sql_functions.register_filesystem.adapter import ProtocolFileSystem
 
 T = TypeVar("T", bound=CredentialModel)
 
@@ -40,53 +43,192 @@ def sftp_credentials(
     )
 
 
+class MemoryFilesystem(DuckDBFilesystem):
+    credential_type: ClassVar[str] = "test_memory"
+    filesystem_type: ClassVar[str] = "test_memory"
+    value: int = 42
+    allowed_overrides: ClassVar[frozenset[str]] = frozenset({"value"})
+    closed: ClassVar[list[str]] = []
+
+    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
+        self.validate_override_keys(overrides)
+        return self.model_copy(
+            update={"value": int(overrides.get("value", self.value))}
+        )
+
+    def create_filesystem(self, protocol: str) -> ProtocolFileSystem:
+        from fsspec.implementations.memory import (  # pyright: ignore[reportMissingTypeStubs]
+            MemoryFileSystem,
+        )
+
+        from quackframe.sql_functions.register_filesystem.adapter import (
+            ProtocolFileSystem,
+        )
+
+        backend = MemoryFileSystem(skip_instance_cache=True)
+        root = "/" + uuid4().hex
+        backend.pipe_file(  # pyright: ignore[reportUnknownMemberType]
+            root + "/report.csv", f"value\n{self.value}\n".encode()
+        )
+
+        def to_backend(path: str) -> str:
+            prefix = protocol + ":///"
+            if not path.startswith(prefix):
+                raise ValueError("Invalid memory URL")
+            return root + "/" + path[len(prefix) :]
+
+        def close() -> None:
+            self.closed.append(protocol)
+            backend.rm(root, recursive=True)  # pyright: ignore[reportUnknownMemberType]
+
+        return ProtocolFileSystem(
+            backend,
+            protocol,
+            to_backend,
+            lambda path: protocol + "://" + path.removeprefix(root),
+            close,
+            skip_instance_cache=True,
+        )
+
+
+class ExampleProvider:
+    calls: ClassVar[int] = 0
+
+    def resolve(self, reference: str, model_type: type[T]) -> T:
+        type(self).calls += 1
+        return model_type()
+
+
+@pytest.fixture
+def sftp_dependencies() -> None:
+    pytest.importorskip("fsspec")
+    pytest.importorskip("paramiko")
+
+
+@pytest.fixture
+def memory_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("fsspec")
+    ExampleProvider.calls = 0
+    MemoryFilesystem.closed.clear()
+    monkeypatch.setattr(
+        registry,
+        "PROVIDER_REGISTRY",
+        (
+            registry.ProviderRegistration(
+                name="example",
+                module_name=__name__,
+                implementation_name="ExampleProvider",
+                missing_dependency="example",
+                missing_dependency_message="Install example support",
+            ),
+        ),
+    )
+    monkeypatch.setitem(models.FILESYSTEM_MODELS, "test_memory", MemoryFilesystem)
+
+
 @pytest.mark.parametrize(
-    ("arguments", "expected_scope"),
+    "arguments",
     [
-        ("'example', 'source_files', 'sftp'", "sftp://files.example.test/reports/"),
-        (
-            "'example', 'source_files', 'sftp', NULL",
-            "sftp://files.example.test/reports/",
-        ),
-        (
-            "'example', 'source_files', 'sftp', MAP {}",
-            "sftp://files.example.test/reports/",
-        ),
-        (
-            "provider := 'example', reference := 'source_files', "
-            "filesystem_type := 'sftp', "
-            "overrides := MAP {'scope': 'sftp://other.example.test/'}",
-            "sftp://other.example.test/",
-        ),
+        "'example', 'source-files', 'test_memory'",
+        "'example', 'ignored', 'test_memory', 'source-files'",
+        "'example', 'source-files', 'test_memory', NULL, NULL",
+        "'example', 'source-files', 'test_memory', NULL, MAP {}",
+        "provider := 'example', reference := 'ignored', "
+        "filesystem_type := 'test_memory', "
+        "protocol := 'source-files'",
+        "'example', 'source-files', 'test_memory', overrides := MAP {}",
     ],
 )
-def test_filesystem_sql_resolves_overrides_without_mutating_credentials(
-    monkeypatch: pytest.MonkeyPatch, arguments: str, expected_scope: str
+def test_sql_forms_read_and_discover_the_selected_protocol(
+    memory_provider: None, arguments: str
 ) -> None:
-    original = sftp_credentials()
-    provider = Mock()
-    provider.resolve.return_value = original
-    monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
-    registered: list[SftpFilesystem] = []
-
-    def register(model: SftpFilesystem, connection: DuckDBPyConnection) -> None:
-        assert connection.execute("SELECT 1").fetchone() == (1,)
-        registered.append(model)
-
-    monkeypatch.setattr(SftpFilesystem, "register_filesystem_protocol", register)
     with duckdb.connect() as connection:
-        install_functions(connection, ("register_filesystem",))
-        result = connection.execute(
-            f"SELECT quackframe.register_filesystem({arguments})"
-        ).fetchone()
+        with SessionResources(connection) as resources:
+            install_functions(connection, ("register_filesystem",), resources)
+            assert connection.execute(
+                f"SELECT quackframe.register_filesystem({arguments})"
+            ).fetchone() == (True,)
+            paths = connection.execute(
+                "SELECT file FROM glob('source-files:///*.csv')"
+            ).fetchall()
+            assert paths == [("source-files:///report.csv",)]
+            assert connection.execute(
+                "SELECT value, filename FROM read_csv(?, filename=true)",
+                [[p[0] for p in paths]],
+            ).fetchall() == [(42, "source-files:///report.csv")]
+            assert connection.execute(
+                "SELECT filename, content FROM read_blob(?)", [[p[0] for p in paths]]
+            ).fetchall() == [("source-files:///report.csv", b"value\n42\n")]
+        assert connection.list_filesystems() == []
+    assert MemoryFilesystem.closed == ["source-files"]
+    assert ExampleProvider.calls == 1
 
-    assert result == (True,)
-    provider.resolve.assert_called_once_with("source_files", SftpFilesystem)
-    assert len(registered) == 1
-    assert type(registered[0]) is SftpFilesystem
-    assert registered[0].scope == expected_scope
-    assert registered[0].key_path == original.key_path
-    assert original.scope == "sftp://files.example.test/reports/"
+
+def test_independent_instances_and_collision_preserve_existing_reads(
+    memory_provider: None,
+) -> None:
+    with duckdb.connect() as connection, SessionResources(connection) as resources:
+        register_filesystem(resources, "example", "first", "test_memory")
+        register_filesystem(
+            resources,
+            "example",
+            "first",
+            "test_memory",
+            "second",
+            {"value": "99"},
+        )
+        with pytest.raises(ValueError, match="already registered"):
+            register_filesystem(resources, "example", "first", "test_memory")
+        with connection.duplicate() as duplicate:
+            assert duplicate.execute(
+                "SELECT * FROM read_csv(['first:///report.csv', "
+                "'second:///report.csv']) "
+                "ORDER BY value"
+            ).fetchall() == [(42,), (99,)]
+    assert sorted(MemoryFilesystem.closed) == ["first", "second"]
+
+
+@pytest.mark.parametrize(
+    "protocol",
+    [
+        "",
+        "UPPER",
+        "has_under",
+        "1bad",
+        "sftp",
+        "ssh",
+        "s3",
+        "https",
+        "file",
+        "az",
+        "memory",
+    ],
+)
+def test_invalid_and_reserved_protocols_fail_before_loading(
+    monkeypatch: pytest.MonkeyPatch, protocol: str
+) -> None:
+    if protocol in {"sftp", "ssh", "s3", "https", "file", "az", "memory"}:
+        pytest.importorskip("fsspec")
+    provider = Mock()
+    monkeypatch.setattr(loading, "get_provider", provider)
+    with (
+        duckdb.connect() as connection,
+        SessionResources(connection) as resources,
+        pytest.raises(ValueError),
+    ):
+        register_filesystem(resources, "example", "reference", "sftp", protocol)
+    provider.assert_not_called()
+
+
+def test_unknown_type_fails_before_loading(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = Mock()
+    monkeypatch.setattr(loading, "get_provider", provider)
+    with (
+        SessionResources(Mock()) as resources,
+        pytest.raises(ValueError, match="Unsupported filesystem type"),
+    ):
+        register_filesystem(resources, "example", "reference", "unknown")
+    provider.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -108,10 +250,10 @@ def test_filesystem_sql_resolves_overrides_without_mutating_credentials(
         {"unknown": "protected-value"},
     ],
 )
+@pytest.mark.usefixtures("sftp_dependencies")
 def test_invalid_overrides_fail_safely_before_backend_construction(
     monkeypatch: pytest.MonkeyPatch, overrides: dict[str, str]
 ) -> None:
-    pytest.importorskip("fsspec.implementations.sftp")
     provider = Mock()
     provider.resolve.return_value = sftp_credentials()
     monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
@@ -121,9 +263,16 @@ def test_invalid_overrides_fail_safely_before_backend_construction(
             "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
         ) as constructor,
         duckdb.connect() as connection,
+        SessionResources(connection) as resources,
         pytest.raises(ValueError) as captured,
     ):
-        register_filesystem(connection, "example", "source_files", "sftp", overrides)
+        register_filesystem(
+            resources,
+            "example",
+            "source-files",
+            "sftp",
+            overrides=overrides,
+        )
 
     constructor.assert_not_called()
     assert "protected" not in str(captured.value)
@@ -133,16 +282,12 @@ def test_invalid_overrides_fail_safely_before_backend_construction(
 @pytest.mark.parametrize(
     "scope", ["sftp://files.example.test:2222/reports/", "ssh://files.example.test/"]
 )
-def test_sftp_uses_standard_constructor_and_registers_the_same_object(
-    scope: str,
-) -> None:
-    pytest.importorskip("fsspec.implementations.sftp")
-    connection = Mock(spec=DuckDBPyConnection)
+@pytest.mark.usefixtures("sftp_dependencies")
+def test_sftp_constructor_and_endpoint_mapping(scope: str) -> None:
     with patch(
         "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
     ) as constructor:
-        sftp_credentials(scope).register_filesystem_protocol(connection)
-
+        filesystem = sftp_credentials(scope).create_filesystem("supplier")
     constructor.assert_called_once_with(
         host="files.example.test",
         username="protected-reader",
@@ -151,32 +296,31 @@ def test_sftp_uses_standard_constructor_and_registers_the_same_object(
         host_key_fingerprint=None,
         skip_instance_cache=True,
     )
-    connection.register_filesystem.assert_called_once_with(constructor.return_value)
-    constructor.return_value.client.close.assert_not_called()
-    constructor.return_value.ftp.close.assert_not_called()
-
-
-def test_failed_registration_closes_unowned_clients_and_hides_backend_errors() -> None:
-    pytest.importorskip("fsspec.implementations.sftp")
-    connection = Mock(spec=DuckDBPyConnection)
-    connection.register_filesystem.side_effect = RuntimeError("protected-value")
-    with (
-        patch(
-            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
-        ) as constructor,
-        pytest.raises(RuntimeError, match="could not be registered") as captured,
-    ):
-        constructor.return_value.ftp.close.side_effect = RuntimeError("close-failure")
-        sftp_credentials().register_filesystem_protocol(connection)
-
-    constructor.return_value.ftp.close.assert_called_once()
+    assert (
+        filesystem.to_backend("supplier://files.example.test/reports/a.csv")
+        == "/reports/a.csv"
+    )
+    assert (
+        filesystem.from_backend("/reports/a.csv")
+        == "supplier://files.example.test:2222/reports/a.csv"
+    )
+    for path in [
+        "supplier://other.test/a",
+        "supplier://files.example.test:22/a",
+        "supplier://user@files.example.test/a",
+        "supplier://files.example.test/a?secret=x",
+        "other://files.example.test/a",
+    ]:
+        with pytest.raises(ValueError, match="registered endpoint"):
+            filesystem.to_backend(path)
+    constructor.return_value.ftp.close.side_effect = RuntimeError("close failure")
+    with pytest.raises(RuntimeError):
+        filesystem.close_backend()
     constructor.return_value.client.close.assert_called_once()
-    assert "protected-value" not in str(captured.value)
-    assert "close-failure" not in str(captured.value)
 
 
+@pytest.mark.usefixtures("sftp_dependencies")
 def test_failed_sftp_connection_has_safe_diagnostics() -> None:
-    pytest.importorskip("fsspec.implementations.sftp")
     with (
         patch(
             "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem",
@@ -184,123 +328,23 @@ def test_failed_sftp_connection_has_safe_diagnostics() -> None:
         ),
         pytest.raises(RuntimeError, match="could not connect") as captured,
     ):
-        sftp_credentials().register_filesystem_protocol(Mock(spec=DuckDBPyConnection))
-
+        sftp_credentials().create_filesystem("supplier")
     assert "protected-key" not in str(captured.value)
 
 
-def test_serialized_sftp_backend_registers_both_protocols() -> None:
-    pytest.importorskip("fsspec.implementations.sftp")
-    with (
-        patch(
-            "quackframe.sql_functions.register_filesystem.sftp.SSHClient"
-        ) as client_type,
-        patch(
-            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPClient.from_transport"
-        ) as channel,
-        duckdb.connect() as connection,
-    ):
-        content = b"value\n42\n"
-        ftp = channel.return_value
-        ftp.stat.return_value = SimpleNamespace(
-            st_mode=S_IFREG,
-            st_size=len(content),
-            st_uid=0,
-            st_gid=0,
-            st_atime=0,
-            st_mtime=0,
-        )
-
-        def open_file(*args: object, **kwargs: object) -> BytesIO:
-            return BytesIO(content)
-
-        ftp.open.side_effect = open_file
-        sftp_credentials().register_filesystem_protocol(connection)
-
-        assert connection.list_filesystems() == ["sftp"]
-        for scheme in ("sftp", "ssh"):
-            assert connection.execute(
-                "SELECT value FROM read_csv(?)",
-                [f"{scheme}://files.example.test/report.csv"],
-            ).fetchone() == (42,)
-        client_type.return_value.connect.assert_called_once_with(
-            "files.example.test",
-            username="protected-reader",
-            key_filename="/run/secrets/protected-key",
-            port=2222,
-        )
-        channel.assert_called_once_with(
-            client_type.return_value.get_transport.return_value
-        )
-        client_type.return_value.open_sftp.assert_not_called()
-
-
-def test_unknown_filesystem_fails_before_provider_loading(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("fail", [False, True])
+def test_ordered_files_cleanup_on_success_and_failure(
+    memory_provider: None, tmp_path: Path, fail: bool
 ) -> None:
-    get_provider = Mock()
-    monkeypatch.setattr(loading, "get_provider", get_provider)
-    with pytest.raises(ValueError, match="Unsupported filesystem type"):
-        register_filesystem(Mock(), "example", "source_files", "unknown")
-    get_provider.assert_not_called()
-
-
-class MemoryFilesystem(DuckDBFilesystem):
-    """Exercise a second strategy through the unchanged SQL and provider paths."""
-
-    credential_type: ClassVar[str] = "test_memory"
-    filesystem_type: ClassVar[str] = "test_memory"
-
-    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
-        self.validate_override_keys(overrides)
-        return self.model_copy()
-
-    def register_filesystem_protocol(self, connection: DuckDBPyConnection) -> None:
-        from fsspec.implementations.memory import (  # pyright: ignore[reportMissingTypeStubs]
-            MemoryFileSystem,
-        )
-
-        filesystem = MemoryFileSystem(skip_instance_cache=True)
-        filesystem.pipe_file(  # pyright: ignore[reportUnknownMemberType]
-            "/quackframe-test/report.csv", b"value\n42\n"
-        )
-        connection.register_filesystem(filesystem)
-
-
-class ExampleProvider:
-    def resolve(self, reference: str, model_type: type[T]) -> T:
-        assert reference == "example_reference"
-        return model_type()
-
-
-def install_example_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    registration = registry.ProviderRegistration(
-        name="example",
-        module_name=__name__,
-        implementation_name="ExampleProvider",
-        missing_dependency="example",
-        missing_dependency_message="Install example support",
-    )
-    monkeypatch.setattr(registry, "PROVIDER_REGISTRY", (registration,))
-    monkeypatch.setitem(models.FILESYSTEM_MODELS, "test_memory", MemoryFilesystem)
-
-
-def test_added_provider_and_strategy_work_across_ordered_sql_files(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    pytest.importorskip("fsspec")
-    install_example_provider(monkeypatch)
     first = tmp_path / "register.sql"
     first.write_text(
-        "SELECT quackframe.register_filesystem('example', "
-        "'example_reference', 'test_memory');",
-        encoding="utf-8",
+        "SELECT quackframe.register_filesystem('example', 'source-files', "
+        "'test_memory');"
     )
     second = tmp_path / "read.sql"
     second.write_text(
-        "CREATE TABLE result AS SELECT * FROM "
-        "read_csv('memory:///quackframe-test/*.csv');",
-        encoding="utf-8",
+        "CREATE TABLE result AS SELECT * FROM read_csv('source-files:///*.csv');"
+        + ("SELECT error('deliberate');" if fail else "")
     )
     database = tmp_path / "result.duckdb"
     config = QuackframeConfig.model_validate(
@@ -310,29 +354,15 @@ def test_added_provider_and_strategy_work_across_ordered_sql_files(
             "database": {"mode": "persistent", "path": database},
         }
     )
-
-    run([first, second], config=config)
-
+    if fail:
+        with pytest.raises(RuntimeError, match="deliberate"):
+            run([first, second], config=config)
+    else:
+        run([first, second], config=config)
+    assert MemoryFilesystem.closed == ["source-files"]
     with duckdb.connect(str(database)) as connection:
-        assert connection.execute("SELECT value FROM result").fetchall() == [(42,)]
-        assert not connection.filesystem_is_registered("memory")
-
-
-def test_repeated_registration_preserves_duckdb_backend_behavior(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pytest.importorskip("fsspec")
-    install_example_provider(monkeypatch)
-    with duckdb.connect() as connection:
-        register_filesystem(connection, "example", "example_reference", "test_memory")
-        # DuckDB owns collision handling; Quackframe adds no endpoint registry.
-        with pytest.raises(duckdb.Error, match="already been registered"):
-            register_filesystem(
-                connection, "example", "example_reference", "test_memory"
-            )
-        assert connection.execute(
-            "SELECT value FROM read_csv('memory:///quackframe-test/report.csv')"
-        ).fetchone() == (42,)
+        assert connection.list_filesystems() == []
+        assert connection.execute("SELECT * FROM result").fetchall() == [(42,)]
 
 
 def test_ssh_strategies_preserve_concrete_type_and_share_override_behavior() -> None:
@@ -342,5 +372,245 @@ def test_ssh_strategies_preserve_concrete_type_and_share_override_behavior() -> 
         assert type(resolved) is type(model)
         assert resolved is not model
         assert model.scope == "sftp://files.example.test/reports/"
-        assert resolved.scope == "sftp://other.example.test/"
         assert resolved.username == model.username
+
+
+def test_failed_duckdb_registration_closes_new_backend(memory_provider: None) -> None:
+    connection = Mock()
+    duplicate = connection.duplicate.return_value
+    duplicate.filesystem_is_registered.return_value = False
+    duplicate.list_filesystems.return_value = []
+    duplicate.register_filesystem.side_effect = RuntimeError("protected-value")
+    with (
+        SessionResources(connection) as resources,
+        pytest.raises(RuntimeError, match="could not be registered") as captured,
+    ):
+        register_filesystem(resources, "example", "source-files", "test_memory")
+    assert MemoryFilesystem.closed == ["source-files"]
+    duplicate.close.assert_called_once()
+    assert "protected-value" not in str(captured.value)
+
+
+def test_external_registration_collision_is_preserved(memory_provider: None) -> None:
+    external = MemoryFilesystem(value=7).create_filesystem("external")
+    with duckdb.connect() as connection, SessionResources(connection) as resources:
+        connection.register_filesystem(external)
+        try:
+            with pytest.raises(ValueError, match="already registered"):
+                register_filesystem(resources, "example", "external", "test_memory")
+            assert connection.execute(
+                "SELECT * FROM read_csv('external:///report.csv')"
+            ).fetchone() == (7,)
+            assert ExampleProvider.calls == 0
+        finally:
+            connection.unregister_filesystem("external")
+            external.close_backend()
+
+
+def test_concurrent_duplicate_protocol_connects_only_once(
+    memory_provider: None,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    with duckdb.connect() as connection, SessionResources(connection) as resources:
+
+        def register(_: int) -> bool:
+            with connection.duplicate():
+                try:
+                    return register_filesystem(
+                        resources, "example", "concurrent", "test_memory"
+                    )
+                except ValueError:
+                    return False
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            assert sorted(executor.map(register, range(2))) == [False, True]
+        assert ExampleProvider.calls == 1
+        assert connection.execute(
+            "SELECT * FROM read_csv('concurrent:///report.csv')"
+        ).fetchone() == (42,)
+
+
+def test_resource_bound_install_requires_owner_before_catalog_changes() -> None:
+    with duckdb.connect() as connection:
+        with pytest.raises(RuntimeError, match="SessionResources"):
+            install_functions(connection, ("register_filesystem",))
+        assert connection.execute(
+            "SELECT count(*) FROM information_schema.schemata "
+            "WHERE schema_name='quackframe'"
+        ).fetchone() == (0,)
+
+
+@pytest.mark.usefixtures("sftp_dependencies")
+def test_sftp_credentials_are_isolated_on_same_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from io import BytesIO
+
+    def resolve(reference: str, model_type: type[SftpFilesystem]) -> SftpFilesystem:
+        return model_type(
+            username=SecretStr(reference), key_path="/key", scope="sftp://files.test"
+        )
+
+    provider = Mock()
+    provider.resolve.side_effect = resolve
+    monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
+    clients: list[Mock] = []
+
+    def backend(**kwargs: object) -> Mock:
+        content = b"value\n1\n" if kwargs["username"] == "first" else b"value\n2\n"
+        client = Mock()
+
+        def open_file(*args: object, **kwargs: object) -> BytesIO:
+            return BytesIO(content)
+
+        client.open.side_effect = open_file
+        client.glob.return_value = ["/report.csv"]
+        client.info.return_value = {
+            "name": "/report.csv",
+            "size": len(content),
+            "type": "file",
+        }
+        clients.append(client)
+        return client
+
+    with (
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem",
+            side_effect=backend,
+        ),
+        duckdb.connect() as connection,
+        SessionResources(connection) as resources,
+    ):
+        register_filesystem(resources, "example", "first", "sftp")
+        register_filesystem(resources, "example", "second", "sftp")
+        assert connection.execute(
+            "SELECT * FROM read_csv(['first://files.test/report.csv', "
+            "'second://files.test/report.csv']) ORDER BY value"
+        ).fetchall() == [(1,), (2,)]
+    for client in clients:
+        client.ftp.close.assert_called_once()
+        client.client.close.assert_called_once()
+
+
+@pytest.mark.usefixtures("sftp_dependencies")
+def test_sql_scope_override_loads_once_without_mutating_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = sftp_credentials()
+    provider = Mock()
+    provider.resolve.return_value = original
+    monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
+    with (
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+        ) as constructor,
+        duckdb.connect() as connection,
+        SessionResources(connection) as resources,
+    ):
+        install_functions(connection, ("register_filesystem",), resources)
+        assert connection.execute(
+            "SELECT quackframe.register_filesystem('example', 'source-files', "
+            "'sftp', overrides := MAP {'scope': 'sftp://other.test/'})"
+        ).fetchone() == (True,)
+        constructor.assert_called_once_with(
+            host="other.test",
+            username="protected-reader",
+            key_filename="/run/secrets/protected-key",
+            port=2222,
+            host_key_fingerprint=None,
+            skip_instance_cache=True,
+        )
+    provider.resolve.assert_called_once_with("source-files", SftpFilesystem)
+    assert original.scope == "sftp://files.example.test/reports/"
+    constructor.return_value.ftp.close.assert_called_once()
+    constructor.return_value.client.close.assert_called_once()
+
+
+def test_external_secondary_protocol_cannot_capture_new_reads(
+    memory_provider: None,
+) -> None:
+    external = MemoryFilesystem(value=7).create_filesystem("external")
+    external.protocol = ("external", "hidden")  # pyright: ignore[reportAttributeAccessIssue]
+    with duckdb.connect() as connection, SessionResources(connection) as resources:
+        connection.register_filesystem(external)
+        try:
+            assert not connection.filesystem_is_registered("hidden")
+            with pytest.raises(ValueError, match="cannot be verified"):
+                register_filesystem(resources, "example", "hidden", "test_memory")
+            assert ExampleProvider.calls == 0
+        finally:
+            connection.unregister_filesystem("external")
+            external.close_backend()
+
+
+@pytest.mark.usefixtures("sftp_dependencies")
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "report#1.csv",
+        "report%2F1.csv",
+        "report?1.csv",
+        "report*1.csv",
+        "report[1].csv",
+        "report space.csv",
+        "rapport-é.csv",
+    ],
+)
+def test_discovered_sftp_filenames_round_trip_through_duckdb(
+    monkeypatch: pytest.MonkeyPatch,
+    filename: str,
+) -> None:
+    from urllib.parse import quote
+
+    from fsspec.implementations.memory import (  # pyright: ignore[reportMissingTypeStubs]
+        MemoryFileSystem,
+    )
+
+    backend = MemoryFileSystem(skip_instance_cache=True)
+    root = "/" + uuid4().hex
+    content = b"value\n42\n"
+    backend.pipe_file(root + "/" + filename, content)  # pyright: ignore[reportUnknownMemberType]
+
+    # These would also match if decoded ?/*/brackets became glob operators.
+    for decoy in ["reportX1.csv", "report1.csv"]:
+        backend.pipe_file(root + "/" + decoy, b"value\n99\n")  # pyright: ignore[reportUnknownMemberType]
+
+    client = Mock(
+        open=backend.open,  # pyright: ignore[reportUnknownMemberType]
+        glob=backend.glob,  # pyright: ignore[reportUnknownMemberType]
+        info=backend.info,  # pyright: ignore[reportUnknownMemberType]
+    )
+
+    provider = Mock()
+    provider.resolve.return_value = sftp_credentials()
+    monkeypatch.setattr(loading, "get_provider", Mock(return_value=provider))
+
+    expected = (
+        "source://files.example.test:2222" + root + "/" + quote(filename, safe="")
+    )
+
+    try:
+        with (
+            patch(
+                "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem",
+                return_value=client,
+            ),
+            duckdb.connect() as connection,
+            SessionResources(connection) as resources,
+        ):
+            register_filesystem(resources, "example", "source", "sftp")
+
+            discovered = connection.execute(
+                "SELECT file FROM glob(?)",
+                ["source://files.example.test" + root + "/*.csv"],
+            ).fetchall()
+            assert (expected,) in discovered
+            assert connection.execute(
+                "SELECT filename, content FROM read_blob(?)", [[expected]]
+            ).fetchall() == [(expected, content)]
+            assert connection.execute(
+                "SELECT value, filename FROM read_csv(?, filename=true)", [[expected]]
+            ).fetchall() == [(42, expected)]
+    finally:
+        backend.rm(root, recursive=True)  # pyright: ignore[reportUnknownMemberType]

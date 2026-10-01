@@ -205,10 +205,12 @@ Filesystem access uses the same provider references through a separate enabled
 SQL function:
 
 ```sql
-SELECT quackframe.register_filesystem('prefect', 'source_files', 'sftp');
+SELECT quackframe.register_filesystem('prefect', 'source-files', 'sftp');
+SELECT * FROM read_csv('source-files://files.example.test/reports/*.csv');
 ```
 
-It accepts an optional `overrides` map and has no alias argument. See
+Its optional fourth argument is `protocol`, defaulting to the reference; fifth
+is `overrides`. Both positional and named arguments are supported. See
 [Filesystems](filesystems.md) for installation, query paths and backend ownership.
 
 ## Entry-point Invariants

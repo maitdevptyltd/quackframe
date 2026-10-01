@@ -26,6 +26,7 @@ from the main documentation.
 ## Epic 04: Filesystems
 
 - [01 Shared Credential Loading And fsspec](04-filesystems/01-shared-credential-loading-and-fsspec.md)
+- [02 Named Filesystem Protocol Registrations](04-filesystems/02-aliased-filesystem-registrations.md): named protocols and independent backend lifetimes.
 
 ## Status Rules
 

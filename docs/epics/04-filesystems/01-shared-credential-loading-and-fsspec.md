@@ -1,12 +1,19 @@
 # Shared Credential Loading And fsspec Filesystems
 
 Status: **In Progress**
-Last updated: 2026-09-30
+Last updated: 2026-10-01
 Epic: 04 Filesystems
 Phase: 01
 Related docs: [Credential Providers](../../credential-providers.md), [SQL Function Extensions](../../python-extensions.md)
 
 ## Outcome And Authority
+
+The [named-protocol phase](02-aliased-filesystem-registrations.md) supersedes this
+phase's standard-protocol SQL registration and unresolved managed-session cleanup.
+Its explicit resource owner closes registered clients on success and failure.
+The earlier investigation below remains historical evidence; fingerprint and
+synchronous exchange-serialization behaviour are preserved. External-server
+verification and network deadline policy remain separate concerns.
 
 Accepted addition (2026-09-30): the SSH Block and shared credential model gain
 optional `host_key_fingerprint: str | None = None`. SFTP verifies a supplied

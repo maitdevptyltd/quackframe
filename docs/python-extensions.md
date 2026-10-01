@@ -175,9 +175,18 @@ change through the connection currently executing the UDF. The prototype avoids
 a runner-owned request queue by opening a short-lived duplicate connection to
 the same database instance inside the connection-aware function.
 
-`register_secret` and `register_filesystem` use duplicate-connection execution. The function owns this
-behaviour; the core runner has no deferred-operation queue or function-specific
-branch. Compatibility is tested against the pinned DuckDB MVP version.
+`register_secret` uses a short-lived duplicate connection. Resource-aware functions
+such as `register_filesystem` declare `bind_resources=True`: their first Python
+argument is a `SessionResources` owner containing the root connection. The
+installer injects this owner outside the SQL signature; ordinary connection-bound
+and pure functions retain their existing contracts. Binding modes are exclusive.
+
+The runner supplies one resource owner per session and closes it after SQL work,
+before closing the root connection. Callers installing resource-aware functions
+manually must supply an explicit owner and keep its root connection alive.
+Filesystem registration retains root-derived duplicate handles until cleanup,
+then unregisters backends and closes their clients and handles. The core runner
+has no deferred-operation queue or function-specific branch. Compatibility is tested against the pinned DuckDB MVP version.
 
 ## Persistent Database Consideration
 

@@ -2,10 +2,13 @@
 
 from abc import abstractmethod
 from contextlib import suppress
-from typing import ClassVar
-from urllib.parse import urlsplit
+from glob import escape
+from re import sub
+from typing import TYPE_CHECKING, ClassVar
+from urllib.parse import quote, unquote, urlsplit
 
-from duckdb import DuckDBPyConnection
+if TYPE_CHECKING:
+    from quackframe.sql_functions.register_filesystem.adapter import ProtocolFileSystem
 
 from quackframe.credential_loading.models import (
     CredentialModel,
@@ -20,8 +23,8 @@ class DuckDBFilesystem(CredentialModel):
     filesystem_type: ClassVar[str]
 
     @abstractmethod
-    def register_filesystem_protocol(self, connection: DuckDBPyConnection) -> None:
-        """Construct and register one standard filesystem object."""
+    def create_filesystem(self, protocol: str) -> "ProtocolFileSystem":
+        """Construct one independently owned backend with protocol path mapping."""
 
 
 class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
@@ -29,11 +32,14 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
 
     filesystem_type: ClassVar[str] = "sftp"
 
-    def register_filesystem_protocol(self, connection: DuckDBPyConnection) -> None:
-        """Validate the endpoint, construct the backend, and register its protocols."""
+    def create_filesystem(self, protocol: str) -> "ProtocolFileSystem":
+        """Connect once and expose validated URLs for this endpoint only."""
 
         host = self._endpoint_host()
         try:
+            from quackframe.sql_functions.register_filesystem.adapter import (
+                ProtocolFileSystem,
+            )
             from quackframe.sql_functions.register_filesystem.sftp import (
                 SerializedSFTPFileSystem,
             )
@@ -59,16 +65,62 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
                 "private-key file, host-key fingerprint and server access."
             ) from None
 
-        try:
-            connection.register_filesystem(filesystem)
-        except Exception:
-            # A rejected registration never transfers ownership to DuckDB.
-            # Close the backend's ordinary clients without masking the failure.
-            with suppress(Exception):
+        def close() -> None:
+            try:
                 filesystem.ftp.close()
-            with suppress(Exception):
+            finally:
                 filesystem.client.close()
-            raise RuntimeError("SFTP filesystem could not be registered") from None
+
+        authority = f"[{host}]" if ":" in host else host
+        if self.port != 22:
+            authority = f"{authority}:{self.port}"
+
+        def to_backend(path: str, *, glob_pattern: bool = False) -> str:
+            try:
+                url = urlsplit(path)
+                valid = (
+                    url.scheme == protocol
+                    and url.hostname == host
+                    and url.port in (None, self.port)
+                    and url.username is None
+                    and url.password is None
+                    and not url.query
+                    and not url.fragment
+                )
+            except ValueError:
+                raise ValueError(
+                    "Filesystem URL must match its registered endpoint"
+                ) from None
+            if not valid:
+                raise ValueError("Filesystem URL must match its registered endpoint")
+            remote_path = url.path or "/"
+            if glob_pattern:
+                # Encoded wildcard characters belong to literal filenames.
+                # Escape them before decoding; raw SQL glob operators stay active.
+                remote_path = sub(
+                    r"%(?:2[aA]|3[fF]|5[bBdD])",
+                    lambda match: escape(chr(int(match.group()[1:], 16))),
+                    remote_path,
+                )
+            return unquote(remote_path)
+
+        def from_backend(path: str) -> str:
+            return f"{protocol}://{authority}/{quote(path.lstrip('/'), safe='/')}"
+
+        try:
+            return ProtocolFileSystem(
+                filesystem,
+                protocol,
+                to_backend,
+                from_backend,
+                close,
+                to_glob=lambda path: to_backend(path, glob_pattern=True),
+                skip_instance_cache=True,
+            )
+        except BaseException:
+            with suppress(Exception):
+                close()
+            raise
 
     def _endpoint_host(self) -> str:
         """Reject endpoint authentication or a port that conflicts with the Block."""

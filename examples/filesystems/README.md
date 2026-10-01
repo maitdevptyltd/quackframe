@@ -20,12 +20,16 @@ From this directory:
 poetry run quackframe run sql/read-files.sql
 ```
 
-The first statement registers the backend; the second reads remote CSV files.
+The first statement registers protocol `source-files`; the second reads remote
+CSVs through `source-files://files.example.test/reports/*.csv`. The protocol
+defaults to the credential reference. An explicit fourth positional argument or
+`protocol := 'another-source'` selects a different protocol.
 The function is explicitly enabled in [pyproject.toml](pyproject.toml), and no
 Prefect runtime or DuckDB SSH extension is required. Credential values belong
 in the Block, and the private-key file remains on the executing machine.
 
 The scope's directory does not restrict access or rewrite query paths. Use
 absolute remote paths and test the standard backend's globbing, concurrent
-reads and cleanup against your server. See [Filesystems](../../docs/filesystems.md)
+reads against your server. Quackframe explicitly closes registered clients at
+the end of the run. See [Filesystems](../../docs/filesystems.md)
 for protocol collision and lifetime behavior.

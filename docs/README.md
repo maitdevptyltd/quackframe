@@ -33,6 +33,7 @@ service integrations.
   implemented runtime-root `.env` loading for Quackframe-owned settings.
 
 - [Shared Credential Loading And fsspec Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): implemented shared credential loading and SFTP registration.
+- [Named Filesystem Protocol Scope](epics/04-filesystems/02-aliased-filesystem-registrations.md): multiple independently configured filesystems selected by named protocols, with explicit cleanup.
 
 ## Knowledge Map
 

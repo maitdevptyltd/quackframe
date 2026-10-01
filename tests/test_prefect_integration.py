@@ -24,6 +24,7 @@ from quackframe.credential_loading.providers.prefect.provider import (  # noqa: 
     PrefectCredentialProvider,
 )
 from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
+from quackframe.resources import SessionResources  # noqa: E402
 from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
 from quackframe.sql_functions.installer import install_functions  # noqa: E402
 from quackframe.sql_functions.register_filesystem.models import (  # noqa: E402
@@ -294,6 +295,8 @@ def test_prefect_provider_failure_does_not_include_underlying_error() -> None:
 def test_both_sql_functions_load_one_block_each_and_construct_the_requested_strategy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.importorskip("fsspec")
+    pytest.importorskip("paramiko")
     block = SshPrivateKeyCredentials(
         username=SecretStr("reader"),
         key_path="/run/secrets/key",
@@ -306,16 +309,22 @@ def test_both_sql_functions_load_one_block_each_and_construct_the_requested_stra
     with (
         patch.object(SshPrivateKeyCredentials, "load", return_value=block) as load,
         patch.object(SshPrivateKeySecret, "register_duckdb_secret") as secret,
-        patch.object(SftpFilesystem, "register_filesystem_protocol") as filesystem,
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+        ) as filesystem,
         duckdb.connect() as connection,
+        SessionResources(connection) as resources,
     ):
-        install_functions(connection, ("register_secret", "register_filesystem"))
+        install_functions(
+            connection, ("register_secret", "register_filesystem"), resources
+        )
         assert connection.execute(
             "SELECT quackframe.register_secret('prefect', 'source_files', "
             "'ssh_private_key', overrides := MAP {'scope': 'sftp://other.test/'});"
         ).fetchone() == (True,)
         assert connection.execute(
-            "SELECT quackframe.register_filesystem('prefect', 'source_files', 'sftp');"
+            "SELECT quackframe.register_filesystem('prefect', 'source_files', "
+            "'sftp', 'source-files');"
         ).fetchone() == (True,)
 
     assert load.call_count == 2
