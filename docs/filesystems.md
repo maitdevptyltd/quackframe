@@ -1,8 +1,88 @@
 # Filesystems
 
 Register independently configured filesystems in one DuckDB session and select
-one explicitly with its protocol in every path. SFTP is the first production
-strategy; each registration owns its own credentials, endpoint and connection.
+one explicitly with its protocol in every path. SFTP and Azure Blob/ADLS Gen2
+strategies each own their credentials, endpoint and connection.
+
+## Azure Blob And ADLS Gen2
+
+The existing `AzureConnectionStringCredentials` and
+`AzureManagedIdentityCredentials` Blocks also support filesystem registration.
+Select `azure_connection_string` or `azure_managed_identity` as the filesystem
+type. No new Block or credential provider is needed.
+
+Install `quackframe[prefect,azure]` in a consuming project, or run
+`poetry install --extras "prefect azure"` in this repository. Enable
+`register_filesystem` in `[tool.quackframe.functions].enabled` as shown below.
+The direct runtime works with these Prefect-backed credentials.
+
+For a connection-string Block named `azure-reports-key`, with account
+`examplestorage` and scope `az://reports/`:
+
+```sql
+SELECT quackframe.register_filesystem(
+    'prefect', 'azure-reports-key', 'azure_connection_string'
+);
+SELECT * FROM read_parquet(
+    'azure-reports-key://examplestorage/reports/daily/*.parquet'
+);
+```
+
+For a managed-identity Block named `azure-reports-identity`:
+
+```sql
+SELECT quackframe.register_filesystem(
+    provider := 'prefect',
+    reference := 'azure-reports-identity',
+    filesystem_type := 'azure_managed_identity',
+    protocol := 'reports-mi',
+    overrides := MAP {'scope': 'az://reports/'}
+);
+SELECT * FROM read_csv('reports-mi://examplestorage/reports/daily/*.csv');
+```
+
+Positional and named forms are equivalent. For example, the second registration
+can be written as `register_filesystem('prefect', 'azure-reports-identity',
+'azure_managed_identity', 'reports-mi', MAP {'scope': 'az://reports/'})` and selects
+the same `reports-mi://` paths.
+
+Read paths use `protocol://account/container/blob-name`. The account must match
+the registration. Every read includes the container and complete blob name;
+scope never prepends a directory or restricts access to a prefix. Other containers
+on the account remain available when Azure permissions allow. Unlike native
+DuckDB secret scope matching, scope does not select credentials for each read.
+
+Scopes accept `az://container/prefix/`, `azure://container/prefix/`, or
+`abfss://container@account.dfs.core.windows.net/prefix/`. A trailing slash is
+required and any explicit account must match. Only scope can be overridden in
+SQL. Read URLs reject authentication, ports, query strings and fragments;
+URL-encode literal special characters in blob names. Discovery returns reusable,
+encoded protocol-qualified paths.
+
+Connection strings must identify a public-cloud Azure account and use HTTPS,
+with either an account key or SAS. Standard `DefaultEndpointsProtocol`,
+`AccountName`, `AccountKey`/`SharedAccessSignature`, `EndpointSuffix` and a matching
+public-cloud `BlobEndpoint` are accepted. Custom/service endpoints and emulator
+connection strings are outside this contract. Values stay in the credential
+provider; do not put them into SQL.
+
+Managed identity uses the configured `account_name` and optional `client_id`.
+Omitting the client ID selects the system-assigned identity; supplying it selects
+a user-assigned identity. Execute on a host that supports that identity and grant
+appropriate storage data permissions. There is no fallback to Azure CLI,
+environment credentials, anonymous access or another identity. Workload identity
+federation is a separate, unsupported mode. Ambient adlfs storage settings cannot
+replace either strategy's selected client.
+
+Registration constructs and publishes a backend; authentication and access checks
+may occur on the first discovery/read. Both strategies support file discovery,
+CSV/Parquet/blob reads and metadata through adlfs. Writes, ACL administration,
+ADLS Gen1 and Azure Files are outside this feature. Each registration closes its
+Azure client and owned identity transport when the session owner finishes.
+
+Local regression tests exercise real DuckDB and adlfs with simulated remote
+responses. Live Blob/ADLS Gen2 accounts and managed identities have not yet been
+validated; see the [Azure phase](epics/04-filesystems/03-azure-filesystem-strategies.md).
 
 ## Enable And Register
 

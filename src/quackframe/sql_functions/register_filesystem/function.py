@@ -59,7 +59,8 @@ def register_filesystem(
         )
     except ImportError:
         raise OptionalDependencyError(
-            f"Filesystem registration requires 'quackframe[{filesystem_type}]'"
+            "Filesystem registration requires "
+            f"'quackframe[{model_type.extra_dependency_bundle}]'"
         ) from None
     if selected in _NATIVE_PROTOCOLS or selected in available_protocols():
         raise ValueError("Filesystem protocol is reserved by an existing backend")

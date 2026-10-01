@@ -98,4 +98,14 @@ class ProtocolFileSystem(AbstractFileSystem):
         return [self.from_backend(entry) for entry in entries]
 
     def modified(self, path: str) -> Any:
-        return self.info(path)["mtime"]
+        details = self.info(path)
+        if "mtime" in details:
+            return details["mtime"]
+        # Backends such as Azure expose their timestamp through modified()
+        # rather than the SFTP metadata key.
+        try:
+            return self.backend.modified(self.to_backend(path))
+        except Exception:
+            raise OSError(
+                "Registered filesystem could not inspect the requested timestamp"
+            ) from None

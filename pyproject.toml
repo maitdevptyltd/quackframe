@@ -17,6 +17,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+azure = [
+    "fsspec>=2026.7,<2027",
+    "adlfs>=2026.8,<2027",
+    "azure-identity>=1.25,<2",
+    "azure-storage-blob>=12.26,<13",
+]
 sftp = [
     "fsspec>=2026.7,<2027",
     "paramiko>=4,<5",

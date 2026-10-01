@@ -1,4 +1,4 @@
-# SFTP Filesystem Example
+# Filesystem Examples
 
 Read remote CSV files through DuckDB's standard fsspec integration while using
 the direct runtime and an existing Prefect SSH credential Block.
@@ -33,3 +33,24 @@ absolute remote paths and test the standard backend's globbing, concurrent
 reads against your server. Quackframe explicitly closes registered clients at
 the end of the run. See [Filesystems](../../docs/filesystems.md)
 for protocol collision and lifetime behavior.
+
+## Azure Reads
+
+For the Azure examples, add the `azure` extra to this example's Quackframe
+dependency and install it with Poetry. Keep `register_filesystem` enabled.
+Create either an `AzureConnectionStringCredentials` Block named
+`azure-reports-key`, or an `AzureManagedIdentityCredentials` Block named
+`azure-reports-identity`. Configure account `examplestorage` (inside the connection
+string for the former) and scope `az://reports/`. Substitute your actual account
+in the Block and SQL before running.
+
+```powershell
+poetry run quackframe run sql/read-azure-key.sql
+poetry run quackframe run sql/read-azure-identity.sql
+```
+
+These are independent examples using the direct runtime. Managed-identity reads
+require an Azure host with the selected identity and storage data permissions.
+The Block's optional `client_id` selects a user-assigned identity; leaving it unset
+selects the system-assigned identity. See [Azure filesystems](../../docs/filesystems.md#azure-blob-and-adls-gen2)
+for supported connection strings and path semantics.

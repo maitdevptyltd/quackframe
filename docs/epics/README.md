@@ -27,6 +27,7 @@ from the main documentation.
 
 - [01 Shared Credential Loading And fsspec](04-filesystems/01-shared-credential-loading-and-fsspec.md)
 - [02 Named Filesystem Protocol Registrations](04-filesystems/02-aliased-filesystem-registrations.md): named protocols and independent backend lifetimes.
+- [03 Azure Filesystem Strategies](04-filesystems/03-azure-filesystem-strategies.md): planned Blob and ADLS Gen2 reads using existing Azure credential Blocks.
 
 ## Status Rules
 

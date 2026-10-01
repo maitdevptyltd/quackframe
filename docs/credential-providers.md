@@ -195,6 +195,12 @@ SQL type-name selection belongs to each SQL function's strategy registry.
 Providers construct the requested model directly, and register through
 `credential_loading.providers.registry` without editing either SQL wrapper.
 
+The existing Azure connection-string and managed-identity Blocks also construct
+`AzureConnectionStringFilesystem` and `AzureManagedIdentityFilesystem` for
+`register_filesystem`. Their fields and `scope` override allowlists are unchanged;
+see [Azure filesystem usage](filesystems.md#azure-blob-and-adls-gen2) for backend
+dependencies, named paths and authentication boundaries.
+
 ## Prefect Provider
 
 The Prefect provider loads named Prefect Blocks for both SQL registration

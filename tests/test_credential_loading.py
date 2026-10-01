@@ -87,7 +87,10 @@ import sys
 from unittest.mock import patch
 
 missing = sys.argv[1]
-blocked = {"prefect", "fsspec", "paramiko"} if missing == "all" else {missing}
+blocked = (
+    {"prefect", "fsspec", "paramiko", "adlfs", "azure"}
+    if missing == "all" else {missing}
+)
 
 class MissingIntegrations(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
@@ -206,5 +209,55 @@ else:
         text=True,
         check=False,
         timeout=60,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize("missing", ["fsspec", "adlfs", "azure"])
+def test_azure_optional_dependencies_have_actionable_errors(missing: str) -> None:
+    script = r"""
+import importlib.abc
+import sys
+from unittest.mock import patch
+
+class MissingAzure(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname.split('.')[0] == sys.argv[1]:
+            raise ModuleNotFoundError('protected', name=fullname)
+        return None
+sys.meta_path.insert(0, MissingAzure())
+
+import duckdb
+from quackframe.errors import OptionalDependencyError
+from quackframe.resources import SessionResources
+from quackframe.sql_functions.installer import install_functions
+from quackframe.sql_functions.register_filesystem.function import register_filesystem
+from quackframe.sql_functions.register_filesystem.models import (
+    AzureManagedIdentityFilesystem,
+)
+
+model = AzureManagedIdentityFilesystem(account_name='examplestorage', scope='az://reports/')
+with duckdb.connect() as connection, SessionResources(connection) as resources:
+    install_functions(connection, ('register_filesystem',), resources)
+    with patch(
+        'quackframe.sql_functions.register_filesystem.function.load_credentials',
+        return_value=model,
+    ):
+        try:
+            register_filesystem(
+                resources, 'example', 'reports-files', 'azure_managed_identity'
+            )
+        except OptionalDependencyError as error:
+            assert 'quackframe[azure]' in str(error)
+            assert 'protected' not in str(error)
+        else:
+            raise AssertionError('Missing Azure dependency should fail')
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, missing],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr

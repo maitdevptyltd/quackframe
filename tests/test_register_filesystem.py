@@ -44,6 +44,7 @@ def sftp_credentials(
 
 
 class MemoryFilesystem(DuckDBFilesystem):
+    extra_dependency_bundle: ClassVar[str] = "test_memory"
     credential_type: ClassVar[str] = "test_memory"
     filesystem_type: ClassVar[str] = "test_memory"
     value: int = 42
