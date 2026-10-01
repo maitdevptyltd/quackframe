@@ -35,6 +35,7 @@ service integrations.
 - [Shared Credential Loading And fsspec Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): implemented shared credential loading and SFTP registration.
 - [Named Filesystem Protocol Scope](epics/04-filesystems/02-aliased-filesystem-registrations.md): multiple independently configured filesystems selected by named protocols, with explicit cleanup.
 - [Azure Filesystem Scope](epics/04-filesystems/03-azure-filesystem-strategies.md): strategies using existing Azure connection-string and managed-identity credentials, with validation status.
+- [Filesystem Write Scope](epics/04-filesystems/04-filesystem-write-support.md): write contract, implementation and validation for every registered filesystem strategy.
 
 ## Knowledge Map
 

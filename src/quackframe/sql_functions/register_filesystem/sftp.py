@@ -1,4 +1,4 @@
-"""SFTP exchanges serialized per connection for concurrent DuckDB readers."""
+"""SFTP exchanges serialized per connection for DuckDB reads and writes."""
 
 from collections.abc import Iterator
 from contextlib import suppress
@@ -18,9 +18,11 @@ from paramiko import (
     PKey,
     SFTPAttributes,
     SFTPClient,
+    SFTPFile,
     SSHClient,
     SSHException,
 )
+from paramiko.sftp import CMD_CLOSE
 
 
 class FingerprintPolicy(MissingHostKeyPolicy):
@@ -66,6 +68,12 @@ class SerializedSFTPFileSystem(SFTPFileSystem):
     host: str
     ssh_kwargs: dict[str, Any]
 
+    def _open(
+        self, path: str, mode: str = "rb", block_size: int | None = None, **kwargs: Any
+    ) -> Any:
+        file = super()._open(path, mode, block_size, **kwargs)  # pyright: ignore[reportUnknownMemberType]
+        return SerializedSFTPFile(file, self.ftp)
+
     def _connect(self) -> None:
         # Consume our option before forwarding ordinary connection arguments.
         # Paramiko checks the server key before attempting user authentication.
@@ -88,3 +96,40 @@ class SerializedSFTPFileSystem(SFTPFileSystem):
             with suppress(Exception):
                 self.client.close()
             raise
+
+
+class SerializedSFTPFile:
+    """Serialize file exchanges, including writes that bypass client._request."""
+
+    def __init__(self, file: SFTPFile, client: SerializedSFTPClient) -> None:
+        self._file = file
+        self._client = client
+
+    def __getattr__(self, name: str) -> Any:
+        attribute = getattr(self._file, name)
+        if not callable(attribute):
+            return attribute
+
+        def invoke(*args: Any, **kwargs: Any) -> Any:
+            with self._client._exchange_lock:  # pyright: ignore[reportPrivateUsage]
+                return attribute(*args, **kwargs)
+
+        return invoke
+
+    def close(self) -> None:
+        with self._client._exchange_lock:  # pyright: ignore[reportPrivateUsage]
+            if self._file.closed:
+                return
+            # Paramiko's close suppresses server/transport errors. Export success
+            # must include the server's close acknowledgement, so own this step.
+            file = cast(Any, self._file)
+            try:
+                try:
+                    file.flush()
+                except BaseException:
+                    with suppress(Exception):
+                        self._client._request(CMD_CLOSE, file.handle)  # pyright: ignore[reportPrivateUsage]
+                    raise
+                self._client._request(CMD_CLOSE, file.handle)  # pyright: ignore[reportPrivateUsage]
+            finally:
+                file._closed = True

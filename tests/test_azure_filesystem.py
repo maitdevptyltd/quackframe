@@ -29,6 +29,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobProperties
 
 from quackframe.sql_functions.register_filesystem import azure
+from quackframe.sql_functions.register_filesystem.adapter import SafeFile
 
 CONNECTION = (
     "DefaultEndpointsProtocol=https;AccountName=examplestorage;"
@@ -324,7 +325,7 @@ def test_client_construction_failure_closes_identity() -> None:
 
 def test_deferred_file_errors_are_sanitized() -> None:
     reader = Mock(read=Mock(side_effect=RuntimeError("protected-token")))
-    wrapped = azure.SafeAzureReader(reader)
+    wrapped = SafeFile(reader)
     with pytest.raises(OSError, match="file operation failed") as error:
         wrapped.read()
     assert "protected" not in str(error.value)
@@ -469,7 +470,7 @@ def test_both_strategies_read_through_real_duckdb_and_adlfs(
 
 def test_safe_reader_preserves_seek_and_context_manager() -> None:
     original = BytesIO(b"abcdef")
-    with azure.SafeAzureReader(original) as reader:
+    with SafeFile(original) as reader:
         assert reader.read(2) == b"ab"
         reader.seek(4)
         assert reader.read() == b"ef"

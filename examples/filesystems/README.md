@@ -54,3 +54,24 @@ require an Azure host with the selected identity and storage data permissions.
 The Block's optional `client_id` selects a user-assigned identity; leaving it unset
 selects the system-assigned identity. See [Azure filesystems](../../docs/filesystems.md#azure-blob-and-adls-gen2)
 for supported connection strings and path semantics.
+
+## Writes
+
+All three strategies support writing with their existing registration. Remote
+permissions determine which operations the configured account can perform.
+For SFTP, configure an `output-files` Block for a writable destination and run
+[write-files.sql](sql/write-files.sql). Its parent `/exports` directory must exist.
+For Azure, configure the `azure-reports-key` Block above and run
+[write-azure.sql](sql/write-azure.sql); the `reports` container must already exist.
+Substitute your own endpoint/account and an intended output path first.
+
+```powershell
+poetry run quackframe run sql/write-files.sql
+poetry run quackframe run sql/write-azure.sql
+```
+
+The examples replace their single output file if it exists. To use managed
+identity, change the Azure registration to `azure_managed_identity` and select
+its Block reference; the output SQL is otherwise unchanged. See
+[write semantics](../../docs/filesystems.md#reads-writes-and-access-control) for
+partitioned output, permissions, failure recovery and validation limits.

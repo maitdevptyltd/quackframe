@@ -207,6 +207,10 @@ Included: Blob and ADLS Gen2 discovery, metadata, CSV/Parquet/blob reads, both
 existing authentication models, multiple independent registrations, safe errors,
 and deterministic cleanup across direct and optional Prefect runtimes.
 
+The original exclusions below describe this read-focused phase.
+[Filesystem Write Support](04-filesystem-write-support.md) now owns the approved
+read/write contract and implementation for all strategies.
+
 Excluded: new credential stores or Block fields; MSSQL filesystem access; writes,
 deletes, copies and ACL administration; ADLS Gen1; Azure Files/SMB; arbitrary fsspec
 options in SQL; custom endpoints, sovereign clouds and production emulator support.

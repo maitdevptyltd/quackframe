@@ -157,7 +157,7 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
 class AzureConnectionStringFilesystem(
     AzureConnectionStringCredentials, DuckDBFilesystem
 ):
-    """Use the existing Azure connection credential for named Blob reads."""
+    """Use the existing Azure connection credential for named Blob reads and writes."""
 
     filesystem_type: ClassVar[str] = "azure_connection_string"
     extra_dependency_bundle: ClassVar[str] = "azure"
@@ -182,7 +182,7 @@ class AzureConnectionStringFilesystem(
 
 
 class AzureManagedIdentityFilesystem(AzureManagedIdentityCredentials, DuckDBFilesystem):
-    """Use only the selected managed identity for named Blob reads."""
+    """Use only the selected managed identity for named Blob reads and writes."""
 
     filesystem_type: ClassVar[str] = "azure_managed_identity"
     extra_dependency_bundle: ClassVar[str] = "azure"

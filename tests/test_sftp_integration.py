@@ -43,7 +43,7 @@ PATTERN = f"{URL}/daily_trips-2026_09_*.csv"
 
 
 class LoopbackServer:
-    """Serve a temporary read-only tree and account for every accepted socket."""
+    """Serve a temporary permission-controlled tree and track accepted sockets."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -51,6 +51,7 @@ class LoopbackServer:
         self.handler = SFTPServer
         self.stop = Event()
         self.stall_reads = False
+        self.writable = False
         self.transports: list[Transport] = []
         self.errors: list[Exception] = []
         self.subsystems: list[Thread] = []
@@ -95,6 +96,7 @@ class LoopbackServer:
 
         class ReadHandle(SFTPHandle):
             readfile: BinaryIO
+            writefile: BinaryIO
 
             def read(self, offset: int, length: int) -> bytes | int:
                 if owner.stall_reads:
@@ -102,6 +104,15 @@ class LoopbackServer:
                 return super().read(offset, length)
 
         class Files(SFTPServerInterface):
+            def posix_rename(self, oldpath: str, newpath: str) -> int:
+                if not owner.writable:
+                    return 3
+                try:
+                    self.target(oldpath).replace(self.target(newpath))
+                    return 0
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
             def session_started(self) -> None:
                 owner.subsystems.append(current_thread())
 
@@ -126,12 +137,48 @@ class LoopbackServer:
                 except OSError as error:
                     return SFTPServer.convert_errno(error.errno or 13)
 
+            def mkdir(self, path: str, attr: Any) -> int:
+                if not owner.writable:
+                    return 3
+                try:
+                    self.target(path).mkdir()
+                    return 0
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
+            def remove(self, path: str) -> int:
+                if not owner.writable:
+                    return 3
+                try:
+                    self.target(path).unlink()
+                    return 0
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
+            def rmdir(self, path: str) -> int:
+                if not owner.writable:
+                    return 3
+                try:
+                    self.target(path).rmdir()
+                    return 0
+                except OSError as error:
+                    return SFTPServer.convert_errno(error.errno or 13)
+
             def open(self, path: str, flags: int, attr: Any) -> SFTPHandle | int:
-                if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC):
+                writing = flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC)
+                if writing and not owner.writable:
                     return 3  # SFTP_PERMISSION_DENIED
                 try:
                     handle = ReadHandle(flags)
-                    handle.readfile = self.target(path).open("rb")
+                    if writing:
+                        handle.writefile = os.fdopen(
+                            os.open(
+                                self.target(path), flags | getattr(os, "O_BINARY", 0)
+                            ),
+                            "wb",
+                        )
+                    else:
+                        handle.readfile = self.target(path).open("rb")
                     owner.handles.append(handle)
                     owner.opened_paths.append(path)
                     return handle
@@ -631,6 +678,27 @@ def test_two_endpoints_and_another_type_share_one_session(
                 with pytest.raises(duckdb.Error, match="registered endpoint"):
                     connection.execute(
                         "SELECT * FROM read_csv('second-files://wrong.test/report.csv')"
+                    )
+                server.writable = other.writable = True
+                for protocol, value in [("first-files", 17), ("second-files", 29)]:
+                    connection.execute(
+                        "CREATE OR REPLACE TEMP TABLE export_data AS SELECT ? AS value",
+                        [value],
+                    )
+                    connection.execute(
+                        "COPY export_data TO ? (FORMAT CSV)",
+                        [f"{protocol}://127.0.0.1/written.csv"],
+                    )
+                    assert connection.execute(
+                        "SELECT value FROM read_csv(?)",
+                        [f"{protocol}://127.0.0.1/written.csv"],
+                    ).fetchall() == [(value,)]
+                assert (server.root / "written.csv").read_text() == "value\n17\n"
+                assert (other.root / "written.csv").read_text() == "value\n29\n"
+                with pytest.raises(duckdb.Error, match="registered endpoint"):
+                    connection.execute(
+                        "COPY (SELECT 1) TO 'second-files://wrong.test/written.csv' "
+                        "(FORMAT CSV)"
                     )
             assert connection.list_filesystems() == []
         server.wait_disconnected()

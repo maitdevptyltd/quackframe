@@ -4,6 +4,54 @@ Register independently configured filesystems in one DuckDB session and select
 one explicitly with its protocol in every path. SFTP and Azure Blob/ADLS Gen2
 strategies each own their credentials, endpoint and connection.
 
+## Reads, Writes And Access Control
+
+Every registered strategy supports reads and writes: `sftp`,
+`azure_connection_string` and `azure_managed_identity`. The person configuring
+credentials and remote permissions controls access. Azure authorization rules
+and the SFTP account's filesystem permissions and server restrictions remain
+authoritative. There is no separate Quackframe write-enable option. Read-only
+credentials can register and read; denied operations fail without exposing
+backend credential details. Registration does not probe write permissions.
+
+Use the same named protocol for DuckDB exports:
+
+```sql
+SELECT quackframe.register_filesystem('prefect', 'output-files', 'sftp');
+COPY (SELECT 42 AS value)
+TO 'output-files://files.example.test/exports/result.parquet' (FORMAT PARQUET);
+```
+
+Both Azure strategies accept the same `COPY ... TO` operations with paths such as
+`output-blobs://examplestorage/reports/result.parquet`. Paths are explicit; scope
+never prepends a destination root. Azure containers must already exist.
+For a single SFTP file, its parent directory must already exist. Partitioned
+exports create their required directories and accept nested output paths.
+
+With DuckDB 1.5.5, a single-file export replaces an existing destination, using a
+temporary file and move where DuckDB requires it. SFTP replacement uses the
+server's POSIX rename extension. Azure replacement streams through the selected
+client, waits for completion and then removes the temporary source; it is not an
+atomic rename and may require read and delete permissions as well as write.
+
+Partitioned CSV/Parquet exports support `PARTITION_BY`, `APPEND` and `OVERWRITE`.
+`APPEND` adds new files; it does not append bytes to existing files. `OVERWRITE`
+removes existing output under the selected destination before writing and thus
+requires deletion permissions. An empty partitioned query produces no data files.
+Use dedicated output directories and select export options deliberately.
+
+Successful exports finish writing before later SQL files run. Failed exports
+stop subsequent SQL files and can leave partial output or temporary files.
+Quackframe provides neither remote rollback nor automatic retry. Inspect the
+failure and destination before deciding how to recover; session cleanup releases
+clients without deleting existing output as a recovery action.
+
+Local tests exercise writable and read-only loopback SFTP, real DuckDB/adlfs
+exports with controlled Azure service responses, multi-block uploads, append,
+replacement, partition overwrite and upload failures. Live Azure Blob/ADLS Gen2
+and deployed managed-identity writes still require environment validation; see
+[write-support evidence](epics/04-filesystems/04-filesystem-write-support.md).
+
 ## Azure Blob And ADLS Gen2
 
 The existing `AzureConnectionStringCredentials` and
@@ -76,8 +124,8 @@ replace either strategy's selected client.
 
 Registration constructs and publishes a backend; authentication and access checks
 may occur on the first discovery/read. Both strategies support file discovery,
-CSV/Parquet/blob reads and metadata through adlfs. Writes, ACL administration,
-ADLS Gen1 and Azure Files are outside this feature. Each registration closes its
+CSV/Parquet/blob reads, CSV/Parquet exports and metadata through adlfs. ACL
+administration, ADLS Gen1 and Azure Files are outside this feature. Each registration closes its
 Azure client and owned identity transport when the session owner finishes.
 
 Local regression tests exercise real DuckDB and adlfs with simulated remote
@@ -327,6 +375,7 @@ Raw-library concurrency diagnostics retain their original upstream failure cases
 
 ## Related Docs
 
+- [Filesystem Write Scope](epics/04-filesystems/04-filesystem-write-support.md): write contract, implementation evidence and remaining live-service validation.
 - [Named Protocol Scope](epics/04-filesystems/02-aliased-filesystem-registrations.md): implementation decisions and validation.
 - [Previous Filesystem Phase](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): historical concurrency and lifetime evidence.
 - [Credential Providers](credential-providers.md): shared models and provider contracts.

@@ -175,38 +175,60 @@ class ExplicitAzureFileSystem(AzureBlobFileSystem):
         container, _, blob = self._strip_protocol(path).partition(delimiter)
         return container, blob, None
 
-    def _open(self, path: str, mode: str = "rb", *args: Any, **kwargs: Any) -> Any:
-        if mode != "rb":
-            raise ValueError("Azure filesystem registrations support reads only")
-        return SafeAzureReader(
-            super()._open(path, mode, *args, **kwargs)  # pyright: ignore[reportUnknownMemberType]
-        )
+    async def _mkdir(
+        self,
+        path: str,
+        create_parents: bool = True,
+        delimiter: str = "/",
+        **kwargs: Any,
+    ) -> None:
+        # Export directories are virtual Blob prefixes; never provision containers.
+        container, _, _ = self.split_path(path, delimiter=delimiter)
+        if not await self._container_exists(container):  # pyright: ignore[reportUnknownMemberType]
+            raise PermissionError("Azure output container must already exist")
 
+    def mkdir(self, path: str, create_parents: bool = True, **kwargs: Any) -> None:
+        sync(get_loop(), self._mkdir, path, create_parents=create_parents, **kwargs)
 
-class SafeAzureReader:
-    """Sanitize deferred SDK errors after fsspec has returned an open file."""
+    def makedirs(self, path: str, exist_ok: bool = False) -> None:
+        self.mkdir(path, exist_ok=exist_ok)
 
-    def __init__(self, reader: Any) -> None:
-        self._reader = reader
+    def rmdir(self, path: str, delimiter: str = "/", **kwargs: Any) -> None:
+        # Blob prefixes disappear when empty. Export cleanup must never delete
+        # the container itself, even when it was the selected output root.
+        self.invalidate_cache(path)  # pyright: ignore[reportUnknownMemberType]
 
-    def __getattr__(self, name: str) -> Any:
-        attribute = getattr(self._reader, name)
-        if not callable(attribute):
-            return attribute
+    async def _cp_file(self, path1: str, path2: str, **kwargs: Any) -> None:
+        # adlfs starts a server-side copy without waiting for completion. Stream
+        # through our selected client so a move cannot delete its source early,
+        # and private sources never need an anonymous URL or generated SAS.
+        container1, blob1, _ = self.split_path(path1)
+        container2, blob2, _ = self.split_path(path2)
+        async with (
+            self._owned_client.get_blob_client(container1, blob1) as source,
+            self._owned_client.get_blob_client(container2, blob2) as target,
+        ):
+            download = await source.download_blob()
+            await target.upload_blob(download.chunks(), overwrite=True)
+        self.invalidate_cache(path1)  # pyright: ignore[reportUnknownMemberType]
+        self.invalidate_cache(path2)  # pyright: ignore[reportUnknownMemberType]
 
-        def invoke(*args: Any, **kwargs: Any) -> Any:
-            try:
-                return attribute(*args, **kwargs)
-            except Exception:
-                raise OSError("Azure filesystem file operation failed") from None
-
-        return invoke
-
-    def __enter__(self) -> "SafeAzureReader":
-        return self
-
-    def __exit__(self, *args: Any) -> None:
-        self.close()
+    def mv(
+        self,
+        path1: str,
+        path2: str,
+        recursive: bool = False,
+        maxdepth: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if recursive:
+            raise NotImplementedError("Azure export moves require a single file")
+        if path1 == path2:
+            return
+        # Generic fsspec moves expand glob characters even in decoded literal
+        # filenames. DuckDB supplies exact paths, including temporary outputs.
+        sync(get_loop(), self._cp_file, path1, path2)
+        sync(get_loop(), self._rm_file, path1)  # pyright: ignore[reportUnknownMemberType]
 
 
 def create_azure_filesystem(
