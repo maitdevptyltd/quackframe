@@ -268,8 +268,7 @@ def test_azure_partition_filenames_round_trip(
                     "SELECT filename, content FROM read_blob(?)", [source]
                 ).fetchall() == [(filename, blob_store[backend_name])]
                 assert connection.execute(
-                    "SELECT * FROM read_csv(?, "
-                    "hive_partitioning=false)",
+                    "SELECT * FROM read_csv(?, hive_partitioning=false)",
                     [source],
                 ).fetchall() == [(value,)]
 
