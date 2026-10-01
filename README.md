@@ -1,6 +1,6 @@
 # Quackframe
 
-Extend and execute DuckDB SQL workflows through a small Python runtime.
+Governed, observable DuckDB workflows for SQL developers—powered by Python.
 
 Quackframe executes explicitly ordered SQL files in one shared DuckDB session.
 Use it directly from the command line or Python, or install the optional Prefect
