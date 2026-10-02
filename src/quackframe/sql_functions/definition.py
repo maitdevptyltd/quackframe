@@ -13,6 +13,7 @@ from typing import Literal
 from duckdb import DuckDBPyConnection
 
 from quackframe.errors import FunctionDefinitionError, OptionalDependencyError
+from quackframe.resources import SessionResources
 
 DuckDBNullHandling = Literal["default", "special"]
 _FUNCTION_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -29,6 +30,7 @@ class SqlFunction:
     name: str
     callable: Callable[..., object]
     bind_connection: bool = False
+    bind_resources: bool = False
     side_effects: bool = False
     null_handling: DuckDBNullHandling = "default"
     required_modules: tuple[str, ...] = ()
@@ -43,15 +45,13 @@ class SqlFunction:
     def sql_parameters(self) -> tuple[Parameter, ...]:
         """Return the Python parameters that SQL callers can provide.
 
-        Connection-aware functions receive the active DuckDB connection from
-        Quackframe, so their first Python parameter is not part of the public
-        SQL arguments.
+        Bound functions receive a connection or SessionResources owner from
+        Quackframe. Their first parameter is omitted from the SQL signature.
         """
 
         parameters = tuple(signature(self.callable).parameters.values())
-        if self.bind_connection:
-            # Quackframe supplies the active DuckDB connection itself. Remove
-            # that first parameter so SQL callers can never provide it.
+        if self.bind_connection or self.bind_resources:
+            # The connection or resource owner belongs to the invocation, not SQL.
             if not parameters:
                 raise FunctionDefinitionError(
                     f"Connection-bound function '{self.name}' has no parameters"
@@ -88,6 +88,8 @@ class SqlFunction:
     def validate(self) -> None:
         """Reject unsupported names, arguments, and required packages early."""
 
+        if self.bind_connection and self.bind_resources:
+            raise FunctionDefinitionError("Select one function binding mode")
         if _FUNCTION_NAME.fullmatch(self.name) is None:
             raise FunctionDefinitionError(f"Invalid SQL function name: {self.name}")
         _ = self.sql_parameters
@@ -97,9 +99,18 @@ class SqlFunction:
                     f"SQL function '{self.name}' requires 'quackframe[{module_name}]'"
                 )
 
-    def bind(self, connection: DuckDBPyConnection) -> Callable[..., object]:
-        """Inject the active connection when the function requests ownership."""
+    def bind(
+        self, connection: DuckDBPyConnection, resources: SessionResources | None = None
+    ) -> Callable[..., object]:
+        """Inject the connection or resource owner outside the SQL signature."""
 
+        if self.bind_resources:
+            if resources is None:
+                raise FunctionDefinitionError(
+                    "Resource-bound functions require a SessionResources owner"
+                )
+            resources.ensure_open()
+            return partial(self.callable, resources)
         if self.bind_connection:
             return partial(self.callable, connection)
         return self.callable

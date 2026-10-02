@@ -1,13 +1,13 @@
-"""Register and lazily load credential providers for ``register_secret``."""
+"""Register and lazily load credential providers for SQL credential consumers."""
 
 from dataclasses import dataclass
 from importlib import import_module
 from typing import cast
 
-from quackframe.errors import OptionalDependencyError
-from quackframe.sql_functions.register_secret.providers.protocol import (
+from quackframe.credential_loading.providers.protocol import (
     CredentialProvider,
 )
+from quackframe.errors import OptionalDependencyError
 
 
 @dataclass(frozen=True)
@@ -41,9 +41,7 @@ class ProviderRegistration:
 PROVIDER_REGISTRY: tuple[ProviderRegistration, ...] = (
     ProviderRegistration(
         name="prefect",
-        module_name=(
-            "quackframe.sql_functions.register_secret.providers.prefect.provider"
-        ),
+        module_name=("quackframe.credential_loading.providers.prefect.provider"),
         implementation_name="PrefectCredentialProvider",
         missing_dependency="prefect",
         missing_dependency_message=(

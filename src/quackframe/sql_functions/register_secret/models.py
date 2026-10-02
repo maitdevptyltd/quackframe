@@ -1,100 +1,34 @@
-"""Provider-independent DuckDB secrets returned by credential providers."""
+"""Specialised DuckDB secret registration strategies."""
 
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from collections.abc import Mapping
-from typing import ClassVar, Self
+import logging
+from abc import abstractmethod
+from typing import ClassVar
 
 from duckdb import DuckDBPyConnection
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    SecretStr,
-    ValidationError,
-    field_validator,
-)
 
-from quackframe.sql_functions.register_secret.validation import validate_azure_scope
+from quackframe.credential_loading import models as credentials
 
 
-class DuckDBSecret(BaseModel, ABC):
-    """Describe a credential that Quackframe can register with DuckDB.
+class DuckDBSecret(credentials.CredentialModel):
+    """Register a resolved credential as one temporary DuckDB secret."""
 
-    A credential provider converts stored values into one of these models. The
-    SQL function can then apply safe overrides and register the secret without
-    checking which kind of credential it received.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    allowed_overrides: ClassVar[frozenset[str]] = frozenset()
     secret_type: ClassVar[str]
 
-    def validate_override_keys(self, overrides: Mapping[str, str]) -> None:
-        """Reject fields that this secret type does not explicitly allow."""
-
-        unknown = sorted(set(overrides) - self.allowed_overrides)
-        if unknown:
-            raise ValueError(
-                f"Unsupported {self.secret_type} override field(s): "
-                f"{', '.join(unknown)}"
-            )
-
     @abstractmethod
-    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
-        """Return a fully validated secret with safe call-specific changes."""
-
-    @abstractmethod
-    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
-        """Load required extensions and create one temporary DuckDB secret."""
+    def register_duckdb_secret(
+        self, connection: DuckDBPyConnection, alias: str
+    ) -> None:
+        """Load required extensions and register parameter-bound credentials."""
 
 
-class MssqlSecret(DuckDBSecret):
-    """Hold MSSQL credentials and own their DuckDB registration behaviour.
-
-    Only ``database``, ``port``, and ``use_encrypt`` may be changed by reviewed
-    SQL. Authentication fields always come from the selected provider.
-    """
+class MssqlSecret(credentials.MssqlCredentials, DuckDBSecret):
+    """Register MssqlCredentials as a temporary DuckDB secret."""
 
     secret_type: ClassVar[str] = "mssql"
-    allowed_overrides: ClassVar[frozenset[str]] = frozenset(
-        {"database", "port", "use_encrypt"}
-    )
 
-    host: str = Field(min_length=1)
-    user: SecretStr
-    password: SecretStr
-    database: str | None = None
-    port: int = Field(default=1433, ge=1, le=65535)
-    use_encrypt: bool = True
-
-    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
-        """Parse MSSQL overrides and require a database after merging."""
-
-        self.validate_override_keys(overrides)
-        updates: dict[str, object] = {}
-        if "database" in overrides:
-            updates["database"] = overrides["database"]
-        if "port" in overrides:
-            try:
-                updates["port"] = int(overrides["port"])
-            except ValueError:
-                raise ValueError("port override must be an integer") from None
-        if "use_encrypt" in overrides:
-            updates["use_encrypt"] = self._parse_boolean(overrides["use_encrypt"])
-
-        try:
-            resolved = self.model_copy(update=updates)
-            resolved = type(self).model_validate(resolved.model_dump())
-        except ValidationError:
-            raise ValueError("MSSQL credential fields are invalid") from None
-        if not resolved.database:
-            raise ValueError("MSSQL database is required in the block or overrides")
-        return resolved
-
-    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
+    def register_duckdb_secret(
+        self, connection: DuckDBPyConnection, alias: str
+    ) -> None:
         """Create a temporary MSSQL secret using bound credential values."""
 
         if not self.database:
@@ -126,50 +60,17 @@ class MssqlSecret(DuckDBSecret):
             ],
         )
 
-    @staticmethod
-    def _parse_boolean(value: str) -> bool:
-        """Parse the SQL values accepted for an encryption override."""
 
-        normalized = value.strip().casefold()
-        if normalized in {"true", "1", "yes"}:
-            return True
-        if normalized in {"false", "0", "no"}:
-            return False
-        raise ValueError("use_encrypt override must be true or false")
-
-
-class AzureConnectionStringSecret(DuckDBSecret):
-    """Hold an Azure connection string and own its scoped registration.
-
-    Reviewed SQL may choose only the non-sensitive storage ``scope``. The
-    connection string always comes from the selected credential provider.
-    """
+class AzureConnectionStringSecret(
+    credentials.AzureConnectionStringCredentials, DuckDBSecret
+):
+    """Register AzureConnectionStringCredentials as a temporary DuckDB secret."""
 
     secret_type: ClassVar[str] = "azure_connection_string"
-    allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
 
-    connection_string: SecretStr
-    scope: str | None = None
-
-    @field_validator("connection_string")
-    @classmethod
-    def connection_string_must_not_be_blank(cls, value: SecretStr) -> SecretStr:
-        """Reject empty provider values before DuckDB extension work begins."""
-
-        if not value.get_secret_value().strip():
-            raise ValueError("Connection string must not be blank")
-        return value
-
-    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
-        """Apply and validate the optional Azure storage scope override."""
-
-        self.validate_override_keys(overrides)
-        scope = overrides.get("scope", self.scope)
-        if scope is None:
-            raise ValueError("Azure scope is required in the block or overrides")
-        return self.model_copy(update={"scope": validate_azure_scope(scope)})
-
-    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
+    def register_duckdb_secret(
+        self, connection: DuckDBPyConnection, alias: str
+    ) -> None:
         """Create a scoped temporary Azure secret using bound values."""
 
         if self.scope is None:
@@ -192,35 +93,16 @@ class AzureConnectionStringSecret(DuckDBSecret):
         )
 
 
-class AzureManagedIdentitySecret(DuckDBSecret):
-    """Register Azure storage access using the execution environment's identity."""
+class AzureManagedIdentitySecret(
+    credentials.AzureManagedIdentityCredentials, DuckDBSecret
+):
+    """Register AzureManagedIdentityCredentials as a temporary DuckDB secret."""
 
     secret_type: ClassVar[str] = "azure_managed_identity"
-    allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
 
-    account_name: str = Field(min_length=1)
-    client_id: str | None = None
-    scope: str | None = None
-
-    @field_validator("account_name", "client_id")
-    @classmethod
-    def identity_fields_must_not_be_blank(cls, value: str | None) -> str | None:
-        """Reject blank account or identity values before extension work begins."""
-
-        if value is not None and not value.strip():
-            raise ValueError("Azure account name and client ID must not be blank")
-        return value
-
-    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
-        """Apply the storage scope without allowing changes to the identity."""
-
-        self.validate_override_keys(overrides)
-        scope = overrides.get("scope", self.scope)
-        if scope is None:
-            raise ValueError("Azure scope is required in the block or overrides")
-        return self.model_copy(update={"scope": validate_azure_scope(scope)})
-
-    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
+    def register_duckdb_secret(
+        self, connection: DuckDBPyConnection, alias: str
+    ) -> None:
         """Create a scoped temporary Azure managed-identity secret."""
 
         if self.scope is None:
@@ -250,41 +132,21 @@ class AzureManagedIdentitySecret(DuckDBSecret):
         )
 
 
-class SshPrivateKeySecret(DuckDBSecret):
-    """Hold private-key SSH credentials for DuckDB's ``sshfs`` extension.
-
-    Reviewed SQL may narrow the credential to a remote ``scope``. The username,
-    key path, and port always come from the selected provider.
-    """
+class SshPrivateKeySecret(credentials.SshPrivateKeyCredentials, DuckDBSecret):
+    """Register SshPrivateKeyCredentials as a temporary DuckDB secret."""
 
     secret_type: ClassVar[str] = "ssh_private_key"
-    allowed_overrides: ClassVar[frozenset[str]] = frozenset({"scope"})
 
-    username: SecretStr
-    key_path: str = Field(min_length=1)
-    port: int = Field(default=22, ge=1, le=65535)
-    scope: str = Field(min_length=1)
-
-    @field_validator("username")
-    @classmethod
-    def username_must_not_be_blank(cls, value: SecretStr) -> SecretStr:
-        """Reject empty provider values before DuckDB extension work begins."""
-
-        if not value.get_secret_value().strip():
-            raise ValueError("Username must not be blank")
-        return value
-
-    def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
-        """Apply the optional SSH scope override."""
-
-        self.validate_override_keys(overrides)
-        scope = overrides.get("scope", self.scope)
-        values = self.model_dump()
-        values["scope"] = scope
-        return type(self).model_validate(values)
-
-    def register(self, connection: DuckDBPyConnection, alias: str) -> None:
+    def register_duckdb_secret(
+        self, connection: DuckDBPyConnection, alias: str
+    ) -> None:
         """Create a temporary SSH secret using bound credential values."""
+
+        if self.host_key_fingerprint and self.host_key_fingerprint.strip():
+            logging.getLogger(__name__).warning(
+                "host_key_fingerprint is not enforced by this SSHFS registration "
+                "path. Use register_filesystem for fingerprint verification."
+            )
 
         connection.execute("INSTALL sshfs FROM community")
         connection.execute("LOAD sshfs")
@@ -308,7 +170,22 @@ class SshPrivateKeySecret(DuckDBSecret):
             ],
         )
 
-MssqlCredentials = MssqlSecret
-AzureConnectionStringCredentials = AzureConnectionStringSecret
-AzureManagedIdentityCredentials = AzureManagedIdentitySecret
-SshPrivateKeyCredentials = SshPrivateKeySecret
+
+SECRET_MODELS: dict[str, type[DuckDBSecret]] = {
+    model.secret_type: model
+    for model in (
+        MssqlSecret,
+        AzureConnectionStringSecret,
+        AzureManagedIdentitySecret,
+        SshPrivateKeySecret,
+    )
+}
+
+
+def get_secret_model(secret_type: str) -> type[DuckDBSecret]:
+    """Select one explicitly supported secret strategy before loading it."""
+
+    try:
+        return SECRET_MODELS[secret_type]
+    except KeyError:
+        raise ValueError(f"Unsupported secret type: {secret_type}") from None

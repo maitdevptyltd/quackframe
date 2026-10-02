@@ -11,6 +11,7 @@ from duckdb.func import FunctionNullHandling
 from duckdb.sqltypes import BIGINT, BOOLEAN, DOUBLE, VARCHAR
 
 from quackframe.errors import FunctionDefinitionError, safe_error_reason
+from quackframe.resources import SessionResources
 from quackframe.sql_functions.definition import SqlFunction
 from quackframe.sql_functions.registry import resolve_functions
 
@@ -25,6 +26,7 @@ _DUCKDB_SCALAR_TYPES: dict[Any, Any] = {
 def install_functions(
     connection: DuckDBPyConnection,
     enabled_names: tuple[str, ...],
+    resources: SessionResources | None = None,
 ) -> None:
     """Install every enabled function through the same shared path.
 
@@ -37,6 +39,7 @@ def install_functions(
     prepared: list[tuple[SqlFunction, list[Any], Any]] = []
     for definition in definitions:
         definition.validate()
+        definition.bind(connection, resources)
         parameter_types, return_type = _duckdb_signature(definition)
         prepared.append((definition, parameter_types, return_type))
 
@@ -44,11 +47,10 @@ def install_functions(
         connection.execute("BEGIN TRANSACTION")
         connection.execute('CREATE SCHEMA IF NOT EXISTS "quackframe"')
         for definition, parameter_types, return_type in prepared:
-            # Quackframe supplies the connection to functions that need it.
-            # SQL callers see only the remaining, ordinary arguments.
+            # Bind the invocation-owned context outside the SQL signature.
             connection.create_function(  # pyright: ignore[reportUnknownMemberType]
                 definition.private_name,
-                definition.bind(connection),
+                definition.bind(connection, resources),
                 parameters=parameter_types,
                 return_type=return_type,
                 side_effects=definition.side_effects,

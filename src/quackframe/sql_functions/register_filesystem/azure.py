@@ -1,0 +1,357 @@
+"""Azure path translation and explicitly owned asynchronous Blob clients."""
+
+from collections.abc import Callable
+from contextlib import suppress
+from glob import escape
+from re import fullmatch, sub
+from typing import Any, cast
+from urllib.parse import quote, unquote, urlsplit
+from weakref import finalize
+
+from adlfs import AzureBlobFileSystem  # pyright: ignore[reportMissingTypeStubs]
+from azure.identity.aio import ManagedIdentityCredential
+from azure.storage.blob.aio import BlobServiceClient
+from fsspec.asyn import get_loop  # pyright: ignore[reportMissingTypeStubs]
+from fsspec.asyn import (  # pyright: ignore[reportMissingTypeStubs]
+    sync as fsspec_sync,  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
+)
+
+from quackframe.sql_functions.register_filesystem.adapter import ProtocolFileSystem
+
+# fsspec's synchronous bridge has no usable result annotation.
+sync = cast(Callable[..., Any], fsspec_sync)
+
+
+def connection_account(connection_string: str) -> str:
+    """Accept explicit public-cloud connections without echoing secret input."""
+
+    def invalid(reason: str) -> ValueError:
+        return ValueError(f"Azure filesystem connection string: {reason}")
+
+    endpoints = {
+        "blobendpoint": "blob",
+        "queueendpoint": "queue",
+        "tableendpoint": "table",
+        "fileendpoint": "file",
+    }
+    allowed = {
+        "accountname",
+        "accountkey",
+        "sharedaccesssignature",
+        "defaultendpointsprotocol",
+        "endpointsuffix",
+        *endpoints,
+    }
+    fields: dict[str, str] = {}
+    for position, part in enumerate(connection_string.rstrip(";").split(";"), 1):
+        key, separator, value = part.partition("=")
+        if not separator:
+            raise invalid(f"entry {position} must have the form name=value")
+        # Match the SDK's field parsing, without normalizing secret values.
+        if key != key.strip():
+            raise invalid(f"entry {position} has whitespace around its field name")
+        key = key.lower()
+        if key not in allowed:
+            raise invalid(f"entry {position} uses an unsupported field name")
+        if key in fields:
+            raise invalid(f"entry {position} repeats a field name")
+        if not value.strip():
+            raise invalid(f"entry {position} has an empty value")
+        fields[key] = value
+
+    if fields.get("defaultendpointsprotocol", "https") != "https":
+        raise invalid("DefaultEndpointsProtocol must be https")
+    if fields.get("endpointsuffix", "core.windows.net") != "core.windows.net":
+        raise invalid(
+            "EndpointSuffix must be core.windows.net; other clouds unsupported"
+        )
+    if ("accountkey" in fields) == ("sharedaccesssignature" in fields):
+        raise invalid("supply exactly one of AccountKey or SharedAccessSignature")
+
+    account = fields.get("accountname")
+    if account is None and "sharedaccesssignature" in fields:
+        endpoint = fullmatch(
+            r"https://([a-z0-9]{3,24})\.blob\.core\.windows\.net/?",
+            fields.get("blobendpoint", ""),
+        )
+        if endpoint is not None:
+            account = endpoint[1]
+    if account is None:
+        raise invalid(
+            "supply AccountName, or a public-cloud HTTPS BlobEndpoint for SAS"
+        )
+    if not fullmatch(r"[a-z0-9]{3,24}", account):
+        raise invalid("AccountName must contain 3-24 lowercase letters or digits")
+    for field, service in endpoints.items():
+        if field in fields and fields[field] not in {
+            f"https://{account}.{service}.core.windows.net",
+            f"https://{account}.{service}.core.windows.net/",
+        }:
+            raise invalid(
+                f"{service.title()}Endpoint must be the account's public-cloud "
+                "HTTPS service root, without a port, path, query or fragment"
+            )
+    return account
+
+
+def validate_scope(account: str, scope: str | None) -> None:
+    """Validate Azure location syntax without imposing a directory root."""
+    try:
+        if not fullmatch(r"[a-z0-9]{3,24}", account) or scope is None:
+            raise ValueError
+        url = urlsplit(scope)
+        if (
+            not scope.endswith("/")
+            or url.query
+            or url.fragment
+            or url.port is not None
+            or url.password is not None
+            or any(character.isspace() for character in url.netloc)
+        ):
+            raise ValueError
+        if url.scheme in {"az", "azure"} and url.username is None:
+            container = url.netloc
+        elif (
+            url.scheme == "abfss" and url.hostname == f"{account}.dfs.core.windows.net"
+        ):
+            container = url.username or ""
+        else:
+            raise ValueError
+        _validate_container(container)
+    except ValueError:
+        raise ValueError(
+            "Azure filesystem scope must identify a container with a trailing "
+            "slash and match its configured account"
+        ) from None
+
+
+def _validate_container(container: str) -> None:
+    if not (
+        fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]", container)
+        and "--" not in container
+    ) and container not in {"$root", "$web"}:
+        raise ValueError("Azure filesystem URL must identify a valid container")
+
+
+class OwnedBlobServiceClient(BlobServiceClient):
+    """Close the client and its identity once, including backend finalization."""
+
+    owned_identity: ManagedIdentityCredential | None = None
+    closed: bool = False
+
+    async def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            await super().close()
+        finally:
+            if self.owned_identity is not None:
+                await self.owned_identity.close()
+
+
+class ExplicitAzureFileSystem(AzureBlobFileSystem):
+    """Keep adlfs operations while bypassing ambient connection selection."""
+
+    def __init__(
+        self, client: OwnedBlobServiceClient, account: str, **kwargs: Any
+    ) -> None:
+        self._owned_client = client
+        # The marker prevents adlfs creating an implicit credential. do_connect
+        # attaches our existing client instead of parsing this connection value.
+        try:
+            super().__init__(  # pyright: ignore[reportUnknownMemberType]
+                account_name=account,
+                connection_string="quackframe-owned-client",
+                anon=False,
+                skip_instance_cache=True,
+            )
+        finally:
+            # adlfs 2026.8 retains self in its finalizer arguments and does not
+            # expose the handle. Our session owner already guarantees cleanup,
+            # including failed construction. Detach only this instance's hooks
+            # so the global finalizer registry cannot retain closed backends.
+            registry = cast("dict[finalize[..., Any], object]", finalize._registry)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+            for finalizer in list(registry):
+                details = finalizer.peek()
+                if details is not None and details[0] is self:
+                    finalizer.detach()
+
+    def do_connect(self) -> None:
+        self.connection_string = None
+        self.account_key = None
+        self.sas_token = None
+        self.client_id = None
+        self.client_secret = None
+        self.tenant_id = None
+        self.credential = None
+        self.sync_credential = None
+        self.service_client = self._owned_client
+
+    @classmethod
+    def _strip_protocol(cls, path: str) -> str:
+        # The outer adapter already validated and decoded the URL. Running
+        # adlfs URL parsing again would discard literal # and ?versionid= names.
+        return path.lstrip("/")
+
+    def split_path(
+        self,
+        path: str,
+        delimiter: str = "/",
+        return_container: bool = False,
+        **kwargs: Any,
+    ) -> tuple[str, str, None]:
+        container, _, blob = self._strip_protocol(path).partition(delimiter)
+        return container, blob, None
+
+    async def _mkdir(
+        self,
+        path: str,
+        create_parents: bool = True,
+        delimiter: str = "/",
+        **kwargs: Any,
+    ) -> None:
+        # Export directories are virtual Blob prefixes; never provision containers.
+        container, _, _ = self.split_path(path, delimiter=delimiter)
+        if not await self._container_exists(container):  # pyright: ignore[reportUnknownMemberType]
+            raise PermissionError("Azure output container must already exist")
+
+    def mkdir(self, path: str, create_parents: bool = True, **kwargs: Any) -> None:
+        sync(get_loop(), self._mkdir, path, create_parents=create_parents, **kwargs)
+
+    def makedirs(self, path: str, exist_ok: bool = False) -> None:
+        self.mkdir(path, exist_ok=exist_ok)
+
+    def rmdir(self, path: str, delimiter: str = "/", **kwargs: Any) -> None:
+        # Blob prefixes disappear when empty. Export cleanup must never delete
+        # the container itself, even when it was the selected output root.
+        self.invalidate_cache(path)  # pyright: ignore[reportUnknownMemberType]
+
+    async def _cp_file(self, path1: str, path2: str, **kwargs: Any) -> None:
+        # adlfs starts a server-side copy without waiting for completion. Stream
+        # through our selected client so a move cannot delete its source early,
+        # and private sources never need an anonymous URL or generated SAS.
+        container1, blob1, _ = self.split_path(path1)
+        container2, blob2, _ = self.split_path(path2)
+        async with (
+            self._owned_client.get_blob_client(container1, blob1) as source,
+            self._owned_client.get_blob_client(container2, blob2) as target,
+        ):
+            download = await source.download_blob()
+            await target.upload_blob(download.chunks(), overwrite=True)
+        self.invalidate_cache(path1)  # pyright: ignore[reportUnknownMemberType]
+        self.invalidate_cache(path2)  # pyright: ignore[reportUnknownMemberType]
+
+    def mv(
+        self,
+        path1: str,
+        path2: str,
+        recursive: bool = False,
+        maxdepth: int | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if recursive:
+            raise NotImplementedError("Azure export moves require a single file")
+        if path1 == path2:
+            return
+        # Generic fsspec moves expand glob characters even in decoded literal
+        # filenames. DuckDB supplies exact paths, including temporary outputs.
+        sync(get_loop(), self._cp_file, path1, path2)
+        sync(get_loop(), self._rm_file, path1)  # pyright: ignore[reportUnknownMemberType]
+
+
+def create_azure_filesystem(
+    protocol: str,
+    account: str,
+    scope: str | None,
+    *,
+    connection_string: str | None = None,
+    client_id: str | None = None,
+) -> ProtocolFileSystem:
+    """Construct isolated clients and transfer their lifetime to one adapter."""
+    validate_scope(account, scope)
+    loop = get_loop()
+    identity: ManagedIdentityCredential | None = None
+    client: OwnedBlobServiceClient | None = None
+
+    async def construct() -> OwnedBlobServiceClient:
+        nonlocal identity
+        if connection_string is not None:
+            return OwnedBlobServiceClient.from_connection_string(connection_string)
+        # Azure Identity otherwise also selects federated workload credentials
+        # from the environment, which is a different authentication contract.
+        identity = ManagedIdentityCredential(
+            client_id=client_id, _exclude_workload_identity_credential=True
+        )
+        result = OwnedBlobServiceClient(
+            f"https://{account}.blob.core.windows.net", credential=identity
+        )
+        result.owned_identity = identity
+        return result
+
+    def close() -> None:
+        if client is not None:
+            sync(loop, client.close)
+        elif identity is not None:
+            sync(loop, identity.close)
+
+    try:
+        client = cast(OwnedBlobServiceClient, sync(loop, construct))
+        backend = ExplicitAzureFileSystem(client, account, skip_instance_cache=True)
+        to_backend, from_backend, to_glob = azure_paths(protocol)
+        return ProtocolFileSystem(
+            backend,
+            protocol,
+            to_backend,
+            from_backend,
+            close,
+            to_glob=to_glob,
+            skip_instance_cache=True,
+        )
+    except BaseException as error:
+        with suppress(Exception):
+            close()
+        if not isinstance(error, Exception):
+            raise
+        raise RuntimeError(
+            "Azure filesystem could not be created; check credentials and dependencies"
+        ) from None
+
+
+def azure_paths(
+    protocol: str,
+) -> tuple[Callable[[str], str], Callable[[str], str], Callable[[str], str]]:
+    """Select a container and blob within the account owned by the registration."""
+
+    def to_backend(path: str, *, glob_pattern: bool = False) -> str:
+        try:
+            url = urlsplit(path)
+            if (
+                url.scheme != protocol
+                or url.username is not None
+                or url.port is not None
+                or url.query
+                or url.fragment
+                or (url.path and not url.path.startswith("/"))
+            ):
+                raise ValueError
+            _validate_container(unquote(url.netloc))
+        except ValueError:
+            raise ValueError(
+                "Azure filesystem URL must use its registered protocol and a valid "
+                "container, without authentication, port, query or fragment"
+            ) from None
+        value = url.netloc + url.path
+        if glob_pattern:
+            value = sub(
+                r"%(?:2[aA]|3[fF]|5[bBdD])",
+                lambda match: escape(chr(int(match.group()[1:], 16))),
+                value,
+            )
+        return unquote(value)
+
+    def from_backend(path: str) -> str:
+        # Keep partition separators visible without decoding literal percent escapes.
+        return f"{protocol}://{quote(path, safe='/=')}"
+
+    return to_backend, from_backend, lambda path: to_backend(path, glob_pattern=True)

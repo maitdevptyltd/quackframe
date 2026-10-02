@@ -62,7 +62,7 @@ boundary, not to give the registry ownership of Prefect execution behaviour.
 
 Status: **Accepted**
 
-File: `src/quackframe/sql_functions/register_secret/providers/registry.py`
+File: `src/quackframe/credential_loading/providers/registry.py`
 
 ### Current behaviour
 
@@ -97,7 +97,7 @@ Files:
 - `src/quackframe/sql_functions/register_secret/models.py`
 - `src/quackframe/sql_functions/register_secret/strategies.py`
 - `src/quackframe/sql_functions/register_secret/function.py`
-- `src/quackframe/sql_functions/register_secret/providers/protocol.py`
+- `src/quackframe/credential_loading/providers/protocol.py`
 
 ### Current behaviour
 
@@ -276,7 +276,7 @@ and blocks every future provider from working independently.
 
 Status: **Accepted**
 
-File: `src/quackframe/sql_functions/register_secret/providers/prefect/provider.py`
+File: `src/quackframe/credential_loading/providers/prefect/provider.py`
 
 ### Current behaviour
 

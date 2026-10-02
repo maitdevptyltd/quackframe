@@ -201,6 +201,18 @@ supplied, Quackframe performs the inverse translation so the generated DuckDB
 secret remains a simple SQL identifier. See
 [Credential Providers](credential-providers.md#prefect-references-and-duckdb-aliases).
 
+Filesystem access uses the same provider references through a separate enabled
+SQL function:
+
+```sql
+SELECT quackframe.register_filesystem('prefect', 'source-files', 'sftp');
+SELECT * FROM read_csv('source-files://files.example.test/reports/*.csv');
+```
+
+Its optional fourth argument is `protocol`, defaulting to the reference; fifth
+is `overrides`. Both positional and named arguments are supported. See
+[Filesystems](filesystems.md) for installation, query paths and backend ownership.
+
 ## Entry-point Invariants
 
 - Every entry point uses the same configuration model.

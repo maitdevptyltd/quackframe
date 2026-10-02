@@ -1,6 +1,6 @@
 """Prefect Block credential provider."""
 
-from quackframe.sql_functions.register_secret.providers.prefect.provider import (
+from quackframe.credential_loading.providers.prefect.provider import (
     PrefectCredentialProvider,
 )
 

@@ -11,7 +11,10 @@ being illustrated.
 - [Secret Registration](secrets/README.md): direct execution with the explicitly
   enabled `register_secret` function for MSSQL, Azure connection strings, and
   private-key SSH.
+- [SFTP Filesystem](filesystems/README.md): standard fsspec registration using
+  an existing Prefect SSH Block, followed by a DuckDB CSV glob read.
 
 The basic and ordered examples run without optional integrations. The Prefect
 and secret examples require the `prefect` extra plus environment-appropriate
 native Prefect configuration.
+The filesystem example also requires the `sftp` extra and a reachable test server.

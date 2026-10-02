@@ -10,6 +10,7 @@ from duckdb import DuckDBPyConnection
 from quackframe.config import QuackframeConfig
 from quackframe.database import open_duckdb_session
 from quackframe.models import ExecutionResult, SqlFileResult
+from quackframe.resources import SessionResources
 from quackframe.sql import PreparedSqlFile, execute_sql_file
 from quackframe.sql_functions.installer import install_functions
 
@@ -37,8 +38,11 @@ def execute_plan(
 
     # One run owns exactly one database session. Optional runtimes may report
     # each file separately, but every file must keep using this connection.
-    with open_duckdb_session(config) as connection:
-        install_functions(connection, config.functions.enabled)
+    with (
+        open_duckdb_session(config) as connection,
+        SessionResources(connection) as resources,
+    ):
+        install_functions(connection, config.functions.enabled, resources)
         for sql_file in sql_files:
             file_results.append(execute_file(connection, sql_file))
 

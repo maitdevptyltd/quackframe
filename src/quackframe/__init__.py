@@ -17,6 +17,7 @@ from quackframe.errors import (
     QuackframeError,
 )
 from quackframe.models import ExecutionResult, SqlFileResult
+from quackframe.resources import SessionResources
 
 __all__ = [
     "ConfigurationError",
@@ -30,6 +31,7 @@ __all__ = [
     "OptionalDependencyError",
     "QuackframeConfig",
     "QuackframeError",
+    "SessionResources",
     "SqlFileResult",
     "load_config",
     "run",

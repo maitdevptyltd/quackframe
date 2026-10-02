@@ -40,7 +40,8 @@ The happy path is:
    macros over private Python UDFs.
 7. Execute each SQL file in caller-supplied order without closing the session.
 8. Stop on the first failure and attach safe file and statement context.
-9. Close the session and apply the configured database lifecycle.
+9. Clean up extension resources, close the session and apply the configured
+   database lifecycle.
 10. Return a typed result or raise a typed execution error.
 
 ## Session Invariants
@@ -54,7 +55,9 @@ The happy path is:
 - Function installation completes before project SQL begins.
 - The runner delegates installation through one function-neutral registrar and
   never branches on concrete function names or function-specific request types.
-- Quackframe closes the session even when execution fails.
+- Quackframe releases owned extension resources and closes the session even
+  when execution fails. Resource cleanup precedes root connection closure and
+  temporary database deletion.
 
 ## SQL-file Behaviour
 
