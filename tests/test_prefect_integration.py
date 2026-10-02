@@ -144,11 +144,10 @@ def test_prefect_file_task_logs_selected_result(
         duckdb.connect() as connection,
         patch.object(prefect_runtime, "get_run_logger", return_value=logger),
     ):
+        expected_result = str(connection.sql("SELECT 'visible' AS value;"))
         prefect_runtime.execute_sql_file_task.fn(connection, sql_file)
 
-    rendered_result = logger.info.call_args.args[0]
-    assert "visible" in rendered_result
-    logger.info.assert_called_once()
+    logger.info.assert_called_once_with("\n%s", expected_result)
 
 
 def test_prefect_warns_once_before_external_results(tmp_path: Path) -> None:

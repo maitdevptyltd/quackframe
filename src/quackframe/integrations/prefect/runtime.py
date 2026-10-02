@@ -31,10 +31,11 @@ def execute_sql_file_task(
     same database session across the ordered file list.
     """
 
+    logger = get_run_logger()
     return execute_sql_file(
         connection,
         sql_file,
-        emit_result=get_run_logger().info,
+        emit_result=lambda rendered_result: logger.info("\n%s", rendered_result),
     )
 
 

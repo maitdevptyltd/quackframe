@@ -50,9 +50,11 @@ The optional Prefect adapter provides:
 - the same shared connection and file order as direct execution.
 
 Selected SQL results are written from inside the corresponding file task with
-Prefect's run logger. Because that logging system may retain values, the runtime
-requires explicit external-result permission before project SQL executes and
-emits one retention warning when result logging is enabled.
+Prefect's run logger. Each result message starts with a newline so the entire
+DuckDB table aligns below the terminal log prefix. Because that logging system
+may retain values, the runtime requires explicit external-result permission
+before project SQL executes and emits one retention warning when result logging
+is enabled.
 
 Prefect decorators live only in the optional integration package. Static,
 decorated functions wrap the existing core entry points:

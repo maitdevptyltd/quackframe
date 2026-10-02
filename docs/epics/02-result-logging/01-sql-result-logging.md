@@ -1,7 +1,7 @@
 # SQL Result Logging
 
-Status: **Planned**
-Last updated: 2026-09-18
+Status: **In Progress**
+Last updated: 2026-10-02
 Epic: 02 Result Logging
 Phase: 01
 Related docs: [Developer API](../../developer-api.md), [Execution Lifecycle](../../execution-lifecycle.md), [Runtime Adapters](../../runtime-adapters.md)
@@ -146,6 +146,14 @@ deployment or invocation decision.
   context.
 
 ## Validation
+
+The 2026-10-02 terminal-formatting fix is implemented: Prefect result messages
+begin with a newline, keeping the native table below the log prefix. The focused
+adapter regression checks one log call with the complete native rendering.
+Validation: 19 focused adapter and execution tests, source/test Ruff checks,
+Pyright, documentation links, and whitespace checks pass. Repository-wide Ruff
+still reports existing prototype issues under `MAD.Utilities.DuckDB`.
+The phase remains in progress; this fix does not reassess all phase criteria.
 
 - Prove that omitted `--log-setting` resolves to `annotations-only`.
 - Prove `--log-setting` overrides `QUACKFRAME_LOG_SETTING`.
