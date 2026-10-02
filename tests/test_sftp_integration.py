@@ -57,6 +57,7 @@ class LoopbackServer:
         self.subsystems: list[Thread] = []
         self.opened_paths: list[str] = []
         self.authentication_attempts = 0
+        self.expect_host_key_rejection = False
         self.handles: list[SFTPHandle] = []
         self.host_key = RSAKey.generate(2048)
         self.user_key = RSAKey.generate(2048)
@@ -203,6 +204,12 @@ class LoopbackServer:
             except EOFError:
                 # A rejected host key can close the socket before start_server
                 # returns. This is an expected unauthenticated disconnect.
+                client.close()
+            except ConnectionResetError as error:
+                # Windows may report a reset instead of EOF when the client
+                # deliberately rejects the host key before authentication.
+                if not self.expect_host_key_rejection or self.authentication_attempts:
+                    self.errors.append(error)
                 client.close()
             except Exception as error:
                 self.errors.append(error)
@@ -445,6 +452,11 @@ def test_layer_diagnostics(
     result, output = run_probe(
         tmp_path, server, "multi", threads, layer=layer, trace=trace
     )
+    if result is None and threads == 4 and layer in {"paramiko", "fsspec"}:
+        pytest.xfail(
+            "Unprotected shared upstream SFTP client can deadlock; "
+            "Quackframe serialization is checked by the protected-read tests"
+        )
     if trace:
         summary = json.loads((tmp_path / "trace-summary.json").read_text())
         assert summary["client_events"] > 0
@@ -587,6 +599,7 @@ def test_fingerprint_registration_before_authentication(
         host_key_fingerprint=fingerprint,
     )
     if trust == "mismatched":
+        server.expect_host_key_rejection = True
         with pytest.raises(RuntimeError, match="host-key fingerprint"):
             credentials.create_filesystem("fingerprint")
         assert server.authentication_attempts == 0
