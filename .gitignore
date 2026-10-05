@@ -13,4 +13,7 @@ __pycache__/
 .quackframe/
 *.duckdb
 *.duckdb.wal
+.release-test-tmp*/
+release-bundle/
+publish-dist/
 

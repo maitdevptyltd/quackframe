@@ -90,6 +90,17 @@ and validation notes belong in [epic phase files](epics/README.md).
   database or scope overrides.
 - No standard diagnostic path emits credentials or arbitrary returned data.
 
+## Release Infrastructure
+
+[Epic 05: Semantic Versioning And Package Publication](epics/05-releases/01-semantic-versioning-and-publication.md)
+records the agreed release flow: automatic RCs from `release/next`, reviewed
+promotion to `main`, and direct stable patch releases. Repository workflows retain
+Poetry and Hatchling, use Python Semantic Release, and publish through GitHub Actions and
+PyPI Trusted Publishing. The first candidate is `0.1.0rc1`, promoted to `0.1.0`
+after acceptance, subject to publication-history checks. External setup and the
+first production verification remain outstanding; publication is disabled until
+the repository owner completes the [release setup](releases.md#repository-owner-setup).
+
 ## Post-MVP Decisions
 
 - Whether a public execution-plan type is earned by programmatic callers.

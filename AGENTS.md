@@ -99,6 +99,10 @@ Use focused skills instead of expanding this file with task-specific detail.
   `git diff --check` when available.
 - Do not commit unless the user asks. If committing, use a Conventional Commit
   message.
+- For versioning and publication, follow [the release guide](docs/releases.md).
+  Feature work targets `release/next`; compatible stable fixes may target `main`.
+  Preserve ancestry for candidate promotion and do not manually bump package
+  versions or publish outside the documented workflow.
 
 ## Validation
 

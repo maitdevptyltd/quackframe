@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, release/next]
 
 permissions:
   contents: read
@@ -41,9 +41,9 @@ jobs:
         # Prefect 3.2 allows newer FastAPI releases that cannot run its test server.
         run: poetry run python -m pip install "prefect==${{ matrix.prefect-version }}" "fastapi==0.115.14"
       - name: Lint
-        run: poetry run ruff check src tests examples/basic/run.py
+        run: poetry run ruff check src tests scripts examples/basic/run.py
       - name: Check formatting
-        run: poetry run ruff format --check src tests examples/basic/run.py
+        run: poetry run ruff format --check src tests scripts examples/basic/run.py
       - name: Test
         run: poetry run pytest --cov=quackframe --cov-report=term-missing
       - name: Type check

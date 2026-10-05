@@ -30,6 +30,10 @@ from the main documentation.
 - [03 Azure Filesystem Strategies](04-filesystems/03-azure-filesystem-strategies.md): planned Blob and ADLS Gen2 reads using existing Azure credential Blocks.
 - [04 Filesystem Write Support](04-filesystems/04-filesystem-write-support.md): writes across SFTP and both Azure strategies, with live validation outstanding.
 
+## Epic 05: Releases
+
+- [01 Semantic Versioning And Package Publication](05-releases/01-semantic-versioning-and-publication.md): automatic RCs from `release/next`, promotion to `main`, and direct stable patches; external activation outstanding.
+
 ## Status Rules
 
 Allowed statuses are `Planned`, `In Progress`, `Blocked`, and `Complete`.

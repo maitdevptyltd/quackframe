@@ -23,3 +23,13 @@ Install the optional Prefect integration with
 Add focused tests for behaviour changes. Keep project-specific SQL and
 credentials out of this repository, and never include secret values in tests,
 logs, exceptions, or examples.
+
+## Releases
+
+Feature and candidate-fix PRs target `release/next`; compatible fixes to an
+existing stable release may target `main`. Use Conventional Commit messages and
+preserve breaking-change footers in the final merged history. Promotion from
+`release/next` to `main` uses an ancestry-preserving merge, not squash.
+
+The [release guide](docs/releases.md) defines automatic candidates, stable
+promotion, patch releases, package validation, owner setup and recovery.

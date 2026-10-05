@@ -26,6 +26,8 @@ service integrations.
 - [Roadmap](roadmap.md): delivered MVP phases, acceptance criteria, and
   post-MVP decisions.
 - [Epics](epics/README.md): implementor-facing phase tracking.
+- [Versioning And Releases](releases.md): branch roles, compatibility, automatic
+  publishing, owner setup and recovery.
 - [SQL Result Logging Scope](epics/02-result-logging/01-sql-result-logging.md):
   implemented statement selection, native DuckDB rendering, and safe runtime
   delivery.
@@ -36,6 +38,8 @@ service integrations.
 - [Named Filesystem Protocol Scope](epics/04-filesystems/02-aliased-filesystem-registrations.md): multiple independently configured filesystems selected by named protocols, with explicit cleanup.
 - [Azure Filesystem Scope](epics/04-filesystems/03-azure-filesystem-strategies.md): strategies using existing Azure connection-string and managed-identity credentials, with validation status.
 - [Filesystem Write Scope](epics/04-filesystems/04-filesystem-write-support.md): write contract, implementation and validation for every registered filesystem strategy.
+
+- [Semantic Versioning And Publication Scope](epics/05-releases/01-semantic-versioning-and-publication.md): automatic RCs, stable promotion and patch releases; repository implementation with external activation outstanding.
 
 ## Knowledge Map
 

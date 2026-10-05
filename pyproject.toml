@@ -42,6 +42,12 @@ dev = [
     "pytest>=9.0,<10",
     "pytest-cov>=7,<8",
     "ruff>=0.16,<0.17",
+    "python-semantic-release (>=10.7,<11)",
+    "build (>=1.2,<2)",
+    "twine (>=6,<8)",
+    "hatchling (>=1.27,<2)",
+    "packaging (>=24,<27)",
+    "tomlkit (>=0.13,<1)",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -53,6 +59,7 @@ include = [
     "/tests",
     "/docs",
     "/examples",
+    "/scripts",
     "/README.md",
     "/CONTRIBUTING.md",
     "/LICENSE",
@@ -63,6 +70,7 @@ include = [
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 88
@@ -72,10 +80,40 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "scripts"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 
 [tool.coverage.run]
 branch = true
 source = ["quackframe"]
+
+# Tags drive release history; version stamping is confined to the build checkout.
+[tool.semantic_release]
+allow_zero_version = true
+major_on_zero = false
+commit_parser = "conventional"
+tag_format = "v{version}"
+version_toml = ["pyproject.toml:project.version"]
+
+[tool.semantic_release.branches.main]
+match = "^main$"
+prerelease = false
+
+[tool.semantic_release.branches.next]
+match = "^release/next$"
+prerelease = true
+prerelease_token = "rc"
+
+[tool.semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+parse_squash_commits = false
+ignore_merge_commits = false
+
+[tool.semantic_release.changelog]
+mode = "init"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+mask_initial_release = false

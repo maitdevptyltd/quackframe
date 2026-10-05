@@ -1,0 +1,182 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, release/next]
+
+# Serialize both lines and retries. Do not interrupt an upload with a newer merge.
+concurrency:
+  group: quackframe-publication
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    # GitHub hides draft releases from tokens without push access.
+    permissions:
+      contents: write
+      pull-requests: read
+    if: >-
+      vars.QUACKFRAME_RELEASES_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    env:
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      GH_TOKEN: ${{ github.token }}
+      QUACKFRAME_RELEASES_ENABLED: ${{ vars.QUACKFRAME_RELEASES_ENABLED }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Ignore superseded CI results
+        id: current
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$SOURCE" ]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer merge must pass CI before publication.'
+          fi
+      - uses: actions/setup-python@v6
+        if: steps.current.outputs.current == 'true'
+        with:
+          python-version: '3.13'
+      - name: Install locked release tools
+        if: steps.current.outputs.current == 'true'
+        run: |
+          python -m pip install poetry==2.2.1
+          poetry install --no-interaction
+      - name: Calculate or resume the release
+        if: steps.current.outputs.current == 'true'
+        id: plan
+        run: poetry run python -m scripts.release_workflow plan
+      - name: Reuse retained artifacts on retry
+        if: steps.plan.outputs.release == 'true'
+        id: retained
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: python -m scripts.release_workflow authorize
+      - name: Stamp, build and check distributions
+        if: steps.plan.outputs.release == 'true' && steps.retained.outputs.exists != 'true'
+        run: |
+          poetry run python -m scripts.release_workflow prepare
+          poetry run python -m build --no-isolation --outdir release-bundle
+          poetry run python -m twine check release-bundle/*.whl release-bundle/*.tar.gz
+          python -m scripts.release_artifacts seal
+      - name: Test the wheel outside the source checkout
+        if: steps.plan.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: poetry run python scripts/package_smoke.py release-bundle/*.whl "$VERSION"
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.release == 'true'
+        with:
+          name: release-bundle
+          path: release-bundle/
+          if-no-files-found: error
+          retention-days: 90
+
+  retain:
+    needs: package
+    if: needs.package.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ github.repository }}
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ needs.package.outputs.tag }}
+      PRERELEASE: ${{ needs.package.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle
+      # Candidates may contain workflow changes absent from the default branch.
+      - name: Create repository release token
+        id: release-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.QUACKFRAME_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.QUACKFRAME_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Retain exact artifacts before PyPI upload
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: python -m scripts.release_workflow retain --decision release-bundle/release.json
+
+  publish:
+    needs: [package, retain]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ needs.package.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle
+      - name: Stage only verified missing distributions
+        run: python -m scripts.release_artifacts stage --source "$SOURCE" --tag "$TAG"
+      - name: Publish using PyPI Trusted Publishing
+        if: hashFiles('publish-dist/*') != ''
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: publish-dist/
+      - name: Verify uploaded hashes
+        run: python -m scripts.release_artifacts verify --source "$SOURCE" --tag "$TAG"
+
+  finalize:
+    needs: [package, publish]
+    runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ github.repository }}
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ needs.package.outputs.tag }}
+      PRERELEASE: ${{ needs.package.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle
+      - name: Create repository release token
+        id: release-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.QUACKFRAME_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.QUACKFRAME_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Publish the verified GitHub release
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: python -m scripts.release_workflow finalize --decision release-bundle/release.json
