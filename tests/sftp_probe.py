@@ -203,7 +203,7 @@ def main() -> None:
             raise
         assert error.sql_file == root / "probe.sql"
         assert error.statement_number == 3
-        assert "requested file" in error.reason or "missing.csv" in error.reason
+        assert "missing.csv" not in error.reason
         failed = True
     assert failed == (settings["case"] == "failure")
     assert LoopbackProvider.calls == 1
