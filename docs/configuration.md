@@ -109,7 +109,17 @@ The default database mode is `memory`; no database file is created. Temporary
 mode creates a unique file below `.quackframe/tmp/` under the runtime root and
 removes that file and its WAL after the connection closes, including after a
 failed run. An explicitly selected temporary path must remain under the runtime
-root and must not already exist.
+root; neither the database nor its WAL may already exist. Quackframe atomically
+reserves each temporary path with a sibling `<database-name>.quackframe-lock`
+directory before opening DuckDB and holds that reservation through cleanup.
+Another temporary invocation using the same path fails without opening or
+removing its files. This reservation coordinates Quackframe temporary runs;
+other programs must not write to their paths.
+
+Normal completion and handled failures release the reservation. A terminated
+process can leave it behind: confirm that no run still owns the path before
+manually removing the reservation and any abandoned temporary database/WAL.
+Quackframe does not automatically reclaim stale reservations.
 
 Persistent mode requires `database.path`. Quackframe resolves a relative path
 from the runtime root, creates its parent directory when necessary, and never

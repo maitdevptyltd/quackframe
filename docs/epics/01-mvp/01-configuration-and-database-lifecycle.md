@@ -1,7 +1,7 @@
 # Configuration And Database Lifecycle
 
 Status: **Complete**
-Last updated: 2026-09-15
+Last updated: 2026-10-06
 Epic: 01 MVP
 Phase: 01
 Related docs: [Configuration](../../configuration.md)
@@ -27,6 +27,15 @@ framework-independent runtime contract.
 - Test F5-style workspace working-directory resolution.
 - Prove persistent paths are never deleted implicitly.
 - Prove configuration errors occur before project SQL begins.
+- Reproduce overlapping temporary-path acquisition and prove that reservation
+  covers connection setup, SQL execution, and database/WAL cleanup.
+
+The 2026-10-06 ownership regression failed before the fix. Nine regression cases
+now cover competing threads and processes, cleanup ownership, existing files,
+connection failure recovery, and SQL failure cleanup. The full suite passed
+with 569 tests and four expected upstream SFTP failures. Type checking,
+maintained-code lint, formatting, documentation links, and diff checks passed;
+repository-wide lint retains 13 existing prototype findings.
 
 ## Decisions
 
@@ -35,3 +44,6 @@ framework-independent runtime contract.
   them after connection closure.
 - Require an explicit path for persistent mode and never delete it implicitly.
 - Use exactly `cwd` as the implicit root; do not search parents.
+- Atomically create a sibling reservation directory before checking a temporary
+  database and its WAL. Hold it until cleanup finishes; contenders never acquire
+  file ownership. Existing database or WAL files are never adopted.

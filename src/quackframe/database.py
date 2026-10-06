@@ -27,20 +27,19 @@ def open_duckdb_session(
     only for temporary databases created for this run.
     """
 
-    database_path, managed_path = _database_path(config)
-    connection: DuckDBPyConnection | None = None
-
-    try:
-        connection = _open_connection(database_path, config)
-        _load_extensions(connection, config.duckdb.extensions)
-        yield connection
-    finally:
-        if connection is not None:
-            connection.close()
-        # Persistent paths belong to the caller. A non-null managed path is the
-        # explicit proof that Quackframe owns both the database file and its WAL.
-        if managed_path is not None:
-            _remove_managed_database(managed_path)
+    with _database_path(config) as (database_path, managed_path):
+        connection: DuckDBPyConnection | None = None
+        try:
+            connection = _open_connection(database_path, config)
+            _load_extensions(connection, config.duckdb.extensions)
+            yield connection
+        finally:
+            if connection is not None:
+                connection.close()
+            # The surrounding reservation stays held until both owned files
+            # are removed. Persistent paths always remain caller-owned.
+            if managed_path is not None:
+                _remove_managed_database(managed_path)
 
 
 def _open_connection(
@@ -60,18 +59,23 @@ def _open_connection(
         ) from None
 
 
-def _database_path(config: QuackframeConfig) -> tuple[str, Path | None]:
-    """Return DuckDB's connection target and any path Quackframe must remove."""
+@contextmanager
+def _database_path(
+    config: QuackframeConfig,
+) -> Generator[tuple[str, Path | None], None, None]:
+    """Resolve the target and reserve temporary ownership through cleanup."""
 
     if config.database.mode == "memory":
-        return ":memory:", None
+        yield ":memory:", None
+        return
 
     if config.database.mode == "persistent":
         path = config.database.path
         if path is None:  # Guarded by configuration validation.
             raise ConfigurationError("Persistent database mode requires a path")
         _prepare_parent(path)
-        return str(path), None
+        yield str(path), None
+        return
 
     temporary_root = config.root / ".quackframe" / "tmp"
     temporary_root.mkdir(parents=True, exist_ok=True)
@@ -84,14 +88,37 @@ def _database_path(config: QuackframeConfig) -> tuple[str, Path | None]:
         raise ConfigurationError(
             "A temporary database path must remain inside the runtime root"
         )
-    if resolved_path.exists():
-        raise ConfigurationError(
-            f"Temporary database path already exists and will not be overwritten: "
-            f"{resolved_path}"
-        )
-
     _prepare_parent(resolved_path)
-    return str(resolved_path), resolved_path
+    reservation = resolved_path.with_name(f"{resolved_path.name}.quackframe-lock")
+    try:
+        reservation.mkdir()
+    except FileExistsError:
+        raise ConfigurationError(
+            f"Temporary database path is already reserved: {resolved_path}"
+        ) from None
+    except OSError:
+        raise ConfigurationError(
+            f"Temporary database path could not be reserved: {resolved_path}"
+        ) from None
+
+    # Checking after the atomic claim closes the check/open race between runs.
+    # A rejected contender never reaches the session's destructive cleanup.
+    try:
+        wal_path = resolved_path.with_name(f"{resolved_path.name}.wal")
+        for existing_path in (resolved_path, wal_path):
+            if existing_path.exists() or existing_path.is_symlink():
+                raise ConfigurationError(
+                    "Temporary database path already exists and will not be "
+                    f"overwritten: {existing_path}"
+                )
+        yield str(resolved_path), resolved_path
+    finally:
+        try:
+            reservation.rmdir()
+        except OSError:
+            raise ConfigurationError(
+                f"Temporary database reservation could not be released: {reservation}"
+            ) from None
 
 
 def _prepare_parent(path: Path) -> None:
