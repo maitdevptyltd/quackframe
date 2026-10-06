@@ -15,7 +15,7 @@ import duckdb
 import pytest
 from pydantic import SecretStr
 
-from quackframe import QuackframeConfig, run
+from quackframe import ExecutionError, QuackframeConfig, run
 from quackframe.credential_loading import loading
 from quackframe.resources import SessionResources
 from quackframe.sql_functions.installer import install_functions
@@ -629,8 +629,11 @@ def test_ordered_azure_files_close_clients_after_success_or_sql_failure(
         }
     )
     if fail:
-        with pytest.raises(RuntimeError, match="deliberate"):
+        with pytest.raises(ExecutionError) as captured:
             run([first, second], config=config)
+        assert captured.value.sql_file == second
+        assert captured.value.statement_number == 2
+        assert "deliberate" not in str(captured.value)
     else:
         run([first, second], config=config)
     assert azure_data and all(client.closed for client in azure_data)

@@ -163,10 +163,13 @@ def test_installation_failure_rolls_back_owned_transaction(
             install_functions(connection, ("echo",))
 
         connection.execute("BEGIN TRANSACTION")
-        assert connection.execute(
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name = 'quackframe'"
-        ).fetchall() == []
+        assert (
+            connection.execute(
+                "SELECT schema_name FROM information_schema.schemata "
+                "WHERE schema_name = 'quackframe'"
+            ).fetchall()
+            == []
+        )
         connection.execute("COMMIT")
         assert connection.execute("SELECT _quackframe_echo('original')").fetchone() == (
             "original",

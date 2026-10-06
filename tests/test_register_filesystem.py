@@ -12,7 +12,7 @@ import duckdb
 import pytest
 from pydantic import SecretStr
 
-from quackframe import QuackframeConfig, run
+from quackframe import ExecutionError, QuackframeConfig, run
 from quackframe.credential_loading import loading
 from quackframe.credential_loading.models import CredentialModel
 from quackframe.credential_loading.providers import registry
@@ -356,8 +356,11 @@ def test_ordered_files_cleanup_on_success_and_failure(
         }
     )
     if fail:
-        with pytest.raises(RuntimeError, match="deliberate"):
+        with pytest.raises(ExecutionError) as captured:
             run([first, second], config=config)
+        assert captured.value.sql_file == second
+        assert captured.value.statement_number == 2
+        assert "deliberate" not in str(captured.value)
     else:
         run([first, second], config=config)
     assert MemoryFilesystem.closed == ["source-files"]
