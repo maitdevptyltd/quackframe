@@ -1,7 +1,7 @@
 # Developer Entry Points
 
 Status: **In Progress**
-Last updated: 2026-09-24
+Last updated: 2026-10-06
 Epic: 01 MVP
 Phase: 03
 Related docs: [Developer API](../../developer-api.md)
@@ -24,6 +24,9 @@ Expose one execution engine through CLI, VS Code F5, and Python entry points.
 - Validate F5 on supported VS Code installations.
 - Confirm `${workspaceFolder}` supplies the runtime root.
 - Test CLI exit codes and help output.
+- Example manifests declare Quackframe's supported Python range so Poetry
+  resolves compatible project-wide constraints. Editor lifecycle validation
+  below remains outstanding.
 
 ## Open Decisions
 

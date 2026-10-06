@@ -4,6 +4,9 @@ These neutral examples demonstrate the downstream integration surface.
 They do not prescribe repository names or organization outside the behaviour
 being illustrated.
 
+Each example declares Python `>=3.11,<3.15`, matching Quackframe's supported
+range so Poetry can resolve its dependency across the project's Python versions.
+
 - [Basic](basic/README.md): one SQL file through CLI, F5, or Python.
 - [Ordered Files](ordered/README.md): two files sharing one DuckDB session.
 - [Prefect Runtime](prefect/README.md): optional Prefect runtime selection
