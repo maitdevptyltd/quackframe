@@ -252,4 +252,18 @@ if __name__ == "__main__":
             resources.enter_context(trace.instrument(SFTPClient))
         if probe_settings.get("turn_taking", False):
             resources.enter_context(enable_turn_taking())
-        main()
+        try:
+            main()
+        except Exception as error:
+            # Preserve the traceback and nonzero exit, while letting the parent
+            # distinguish the known upstream race from unrelated child failures.
+            (probe_root / "error.json").write_text(
+                json.dumps(
+                    {
+                        "type": f"{type(error).__module__}.{type(error).__qualname__}",
+                        "message": str(error),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            raise

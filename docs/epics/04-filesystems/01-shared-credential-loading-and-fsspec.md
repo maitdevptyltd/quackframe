@@ -1,7 +1,7 @@
 # Shared Credential Loading And fsspec Filesystems
 
 Status: **In Progress**
-Last updated: 2026-10-01
+Last updated: 2026-10-06
 Epic: 04 Filesystems
 Phase: 01
 Related docs: [Credential Providers](../../credential-providers.md), [SQL Function Extensions](../../python-extensions.md)
@@ -823,3 +823,26 @@ fsspec 2026.7.0, Paramiko 4.0.0, Pydantic 2.13.5 and pytest 9.1.1.
 
 Artifacts: `.quackframe/sftp-production-verified/`,
 `.quackframe/sftp-production-failure/`, `.quackframe/core-production-fix/`.
+
+### Upstream Diagnostic Failure Classification (2026-10-06)
+
+The unprotected four-thread Paramiko/fsspec controls can terminate with
+`paramiko.sftp.SFTPError: Garbage packet received` instead of reaching their
+known deadlock timeout. CI exposed that the parent rejected this child exit
+before it could be classified as an expected upstream race.
+
+The [probe](../../../tests/sftp_probe.py) now retains the exception type and
+message in `error.json` while preserving its traceback and failing exit code.
+The [parent harness](../../../tests/test_sftp_integration.py) accepts only that
+exact exception for the unprotected four-thread `multi` library controls.
+Protected clients, single-thread controls, other workloads, and unrelated
+exceptions still fail. Timeout handling and production code are unchanged.
+
+[Classification regressions](../../../tests/test_sftp_probe_result.py) cover
+those boundaries and successful results. Local Windows/Python 3.13.9 validation
+completed: the classification, SFTP integration and trace suites reported
+**80 passed, 4 xfailed**. Pyright, scoped Ruff, changed-file formatting,
+documentation links and whitespace checks passed. Repository-wide Ruff retains
+13 pre-existing prototype findings. The full suite and hosted Python 3.11 matrix
+were not rerun for this change. The diagnostic fix is complete; the phase remains
+In Progress for its separate external-server verification concerns.

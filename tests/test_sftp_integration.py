@@ -380,8 +380,51 @@ def run_probe(
     print(f"{case}, threads={threads}, timeout={timed_out}, log={log_path}\n{output}")
     if timed_out:
         return None, output
-    assert process.returncode == 0, output
-    return json.loads((tmp_path / "result.json").read_text()), output
+    return read_probe_result(
+        tmp_path,
+        process.returncode,
+        output,
+        case=case,
+        threads=threads,
+        layer=layer,
+        turn_taking=turn_taking,
+    ), output
+
+
+def read_probe_result(
+    tmp_path: Path,
+    returncode: int,
+    output: str,
+    *,
+    case: str,
+    threads: int,
+    layer: str,
+    turn_taking: bool,
+) -> dict[str, Any]:
+    """Accept only the known packet race in deliberately unprotected controls."""
+    upstream_control = (
+        case == "multi"
+        and threads == 4
+        and layer in {"paramiko", "fsspec"}
+        and not turn_taking
+    )
+    if returncode != 0 and upstream_control:
+        error_path = tmp_path / "error.json"
+        error = (
+            json.loads(error_path.read_text(encoding="utf-8"))
+            if error_path.exists()
+            else None
+        )
+        if error == {
+            "type": "paramiko.sftp.SFTPError",
+            "message": "Garbage packet received",
+        }:
+            pytest.xfail(
+                "Unprotected shared upstream SFTP client can corrupt packet reads; "
+                "Quackframe serialization is checked by the protected-read tests"
+            )
+    assert returncode == 0, output
+    return json.loads((tmp_path / "result.json").read_text())
 
 
 def expected_counts(
