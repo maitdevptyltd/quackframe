@@ -7,6 +7,8 @@ from typing import Self
 
 from duckdb import DuckDBPyConnection
 
+from quackframe.errors import QuackframeError
+
 
 class SessionResources:
     """Keep extension resources alive until their caller finishes all SQL work."""
@@ -56,7 +58,7 @@ class SessionResources:
             self._callbacks.clear()
             self._names.clear()
             if failed:
-                raise RuntimeError("Session resource cleanup failed") from None
+                raise QuackframeError("Session resource cleanup failed") from None
 
     def __exit__(
         self,

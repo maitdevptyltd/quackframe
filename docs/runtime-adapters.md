@@ -81,6 +81,11 @@ execution results and failures, where they provide useful diagnostic context.
 Quackframe never derives flow or flow-run identity from SQL filenames,
 timestamps, runtime folders, or generated random values.
 
+The adapter preserves every `QuackframeError` subclass and its original
+identity, including configuration errors raised inside the flow. Configuration
+failures therefore retain CLI exit status `2`; execution and cleanup failures
+retain status `1`. Unexpected runtime errors use fixed safe diagnostics.
+
 The dependency direction remains one-way: Prefect depends on Quackframe core;
 Quackframe core does not import Prefect.
 

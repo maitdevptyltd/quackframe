@@ -23,6 +23,13 @@ from quackframe.credential_loading.providers.prefect.blocks import (  # noqa: E4
 from quackframe.credential_loading.providers.prefect.provider import (  # noqa: E402
     PrefectCredentialProvider,
 )
+from quackframe.errors import (  # noqa: E402
+    ConfigurationError,
+    ExecutionError,
+    FunctionDefinitionError,
+    OptionalDependencyError,
+    QuackframeError,
+)
 from quackframe.integrations.prefect import runtime as prefect_runtime  # noqa: E402
 from quackframe.resources import SessionResources  # noqa: E402
 from quackframe.sql import PreparedSqlFile, prepare_sql_files  # noqa: E402
@@ -345,3 +352,87 @@ def test_block_conversion_rejects_an_incompatible_model_family() -> None:
     assert model.username.get_secret_value() == "reader"
     assert model.key_path == "/key"
     assert model.port == 22
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConfigurationError("Invalid configuration"),
+        FunctionDefinitionError("Invalid function"),
+        OptionalDependencyError("Missing dependency"),
+        ExecutionError(sql_file=Path("example.sql"), reason="SQL syntax is invalid"),
+        QuackframeError("Resource cleanup failed"),
+    ],
+)
+def test_prefect_preserves_framework_error_identity(error: QuackframeError) -> None:
+    with (
+        patch.object(prefect_runtime, "execute_plan_flow", side_effect=error),
+        pytest.raises(type(error)) as captured,
+    ):
+        prefect_runtime.execute_with_prefect((), QuackframeConfig(runtime="prefect"))
+
+    assert captured.value is error
+
+
+def test_prefect_external_error_omits_sensitive_diagnostics() -> None:
+    with (
+        patch.object(
+            prefect_runtime,
+            "execute_plan_flow",
+            side_effect=RuntimeError("protected-runtime-value"),
+        ),
+        pytest.raises(QuackframeError) as captured,
+    ):
+        prefect_runtime.execute_with_prefect((), QuackframeConfig(runtime="prefect"))
+
+    assert str(captured.value) == "Prefect runtime failed: The operation failed"
+
+
+def test_prefect_file_task_omits_conversion_values(tmp_path: Path) -> None:
+    import traceback
+
+    sql_path = tmp_path / "conversion.sql"
+    sql_path.write_text(
+        "SELECT CAST('protected-query-value' AS INTEGER);", encoding="utf-8"
+    )
+    sql_file = prepare_sql_files([sql_path], root=tmp_path, log_setting="none")[0]
+    logger = Mock()
+
+    with (
+        duckdb.connect() as connection,
+        patch.object(prefect_runtime, "get_run_logger", return_value=logger),
+        pytest.raises(ExecutionError) as captured,
+    ):
+        prefect_runtime.execute_sql_file_task.fn(connection, sql_file)
+
+    assert captured.value.statement_number == 1
+    assert (
+        captured.value.reason == "A value could not be converted to the required type"
+    )
+    assert "protected-query-value" not in "".join(
+        traceback.format_exception(captured.value)
+    )
+    logger.info.assert_not_called()
+
+
+def test_prefect_configuration_failure_retains_cli_status(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from quackframe.cli import main
+
+    sql_file = tmp_path / "example.sql"
+    sql_file.write_text("SELECT 1;", encoding="utf-8")
+    with patch.object(
+        prefect_runtime,
+        "execute_plan_flow",
+        side_effect=ConfigurationError("Invalid database configuration"),
+    ):
+        status = main(
+            ["run", "--root", str(tmp_path), "--runtime", "prefect", str(sql_file)]
+        )
+
+    assert status == 2
+    assert capsys.readouterr().err == (
+        "Configuration error: Invalid database configuration\n"
+    )

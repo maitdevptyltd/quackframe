@@ -30,6 +30,10 @@ _RETURNING_STATEMENT_TYPES = {
 }
 
 
+class _SqlPreparationError(ValueError):
+    """Carry only fixed Quackframe diagnostics for SQL preparation."""
+
+
 @dataclass(frozen=True)
 class PreparedSqlStatement:
     """Hold one DuckDB statement and its resolved result-logging decision."""
@@ -75,7 +79,7 @@ def prepare_sql_files(
         try:
             statements = extract_statements(_read_sql(path))
             if not statements:
-                raise ValueError("SQL file contains no executable statements")
+                raise _SqlPreparationError("SQL file contains no executable statements")
             prepared_statements: list[PreparedSqlStatement] = []
             for next_statement_number, statement in enumerate(statements, start=1):
                 statement_number = next_statement_number
@@ -91,7 +95,11 @@ def prepare_sql_files(
             raise ExecutionError(
                 sql_file=path,
                 statement_number=statement_number,
-                reason=safe_error_reason(error),
+                reason=(
+                    str(error)
+                    if isinstance(error, _SqlPreparationError)
+                    else safe_error_reason(error)
+                ),
             ) from None
 
         prepared.append(
@@ -178,14 +186,14 @@ def _should_emit_result(statement: Statement, log_setting: LogSetting) -> bool:
 
     annotation_state = _annotation_state(statement.query)
     if annotation_state == "misplaced":
-        raise ValueError(
+        raise _SqlPreparationError(
             "The quackframe result annotation must be the final comment "
             "immediately before its statement"
         )
 
     result_producing = _is_result_producing(statement)
     if annotation_state == "selected" and not result_producing:
-        raise ValueError(
+        raise _SqlPreparationError(
             "The quackframe result annotation requires a result-producing statement"
         )
     return result_producing and (log_setting == "all" or annotation_state == "selected")

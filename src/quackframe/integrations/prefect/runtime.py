@@ -6,7 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 from quackframe.config import QuackframeConfig
 from quackframe.engine import execute_plan
-from quackframe.errors import ExecutionError, QuackframeError, safe_error_reason
+from quackframe.errors import QuackframeError, safe_error_reason
 from quackframe.models import ExecutionResult, SqlFileResult
 from quackframe.sql import (
     PreparedSqlFile,
@@ -69,7 +69,7 @@ def execute_with_prefect(
         )
     try:
         return configured_flow(sql_files, config)
-    except ExecutionError:
+    except QuackframeError:
         raise
     except Exception as error:
         raise QuackframeError(

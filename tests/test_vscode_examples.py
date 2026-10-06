@@ -46,7 +46,8 @@ def test_example_launcher_forwards_output_and_exit_status(
 
     if fails:
         assert result.returncode != 0
-        assert "missing_baseline_table" in result.stderr
+        assert "A database object could not be resolved" in result.stderr
+        assert "missing_baseline_table" not in result.stderr
         assert "Completed" not in result.stdout
     else:
         assert result.returncode == 0, result.stderr

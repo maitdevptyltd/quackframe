@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import duckdb
 import pytest
 
+from quackframe.errors import QuackframeError
 from quackframe.resources import SessionResources
 from quackframe.sql_functions import registry
 from quackframe.sql_functions.definition import SqlFunction
@@ -24,7 +25,7 @@ def test_resource_cleanup_attempts_all_and_preserves_primary_error() -> None:
     other.assert_called_once()
     assert captured.value.__notes__ == ["Session resource cleanup also failed"]
     with (
-        pytest.raises(RuntimeError, match="Session resource cleanup failed"),
+        pytest.raises(QuackframeError, match="Session resource cleanup failed"),
         SessionResources(Mock()) as resources,
     ):
         resources.add_cleanup(cleanup)

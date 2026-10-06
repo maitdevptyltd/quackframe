@@ -169,3 +169,61 @@ def test_cli_values_override_process_environment_and_dotenv(
     assert captured_config is not None
     assert captured_config.runtime == "direct"
     assert captured_config.log_setting == "none"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT CAST('protected-query-value' AS INTEGER);",
+        "CREATE TABLE values_to_convert(value VARCHAR); "
+        "INSERT INTO values_to_convert VALUES ('protected-query-value'); "
+        "SELECT CAST(value AS INTEGER) FROM values_to_convert;",
+        'SELECT * FROM "protected-query-value";',
+    ],
+)
+def test_cli_failure_omits_query_values(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    sql: str,
+) -> None:
+    sql_file = tmp_path / "failure.sql"
+    sql_file.write_text(sql, encoding="utf-8")
+
+    exit_code = main(
+        ["run", "--root", str(tmp_path), "--log-setting", "none", str(sql_file)]
+    )
+
+    output = capsys.readouterr()
+    assert exit_code == 1
+    assert str(sql_file) in output.err
+    assert "statement" in output.err
+    assert "protected-query-value" not in output.err + output.out
+    assert "Traceback" not in output.err
+
+
+def test_cli_reports_resource_cleanup_failure_without_traceback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quackframe import engine
+    from quackframe.resources import SessionResources
+
+    sql_file = tmp_path / "success.sql"
+    sql_file.write_text("SELECT 1;", encoding="utf-8")
+    cleanup = Mock(side_effect=RuntimeError("protected-cleanup-value"))
+
+    def install_resources(
+        connection: object, enabled: tuple[str, ...], resources: SessionResources
+    ) -> None:
+        resources.add_cleanup(cleanup)
+
+    monkeypatch.setattr(engine, "install_functions", install_resources)
+
+    exit_code = main(["run", "--root", str(tmp_path), str(sql_file)])
+
+    assert exit_code == 1
+    assert capsys.readouterr().err == (
+        "Quackframe error: Session resource cleanup failed\n"
+    )
+    cleanup.assert_called_once()

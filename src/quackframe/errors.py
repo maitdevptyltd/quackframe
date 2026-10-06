@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import duckdb
+
 
 class QuackframeError(RuntimeError):
     """Identify an actionable failure produced by Quackframe."""
@@ -45,13 +47,21 @@ class ExecutionError(QuackframeError):
 
 
 def safe_error_reason(error: Exception) -> str:
-    """Keep the first external-error line without returning a large payload.
+    """Describe external failures without copying their potentially sensitive text."""
 
-    Callers must still avoid passing exceptions whose first line contains
-    credential values; provider boundaries replace such errors entirely.
-    """
-
-    message = str(error).strip()
-    if not message:
-        return error.__class__.__name__
-    return message.splitlines()[0][:300]
+    # Even the first diagnostic line can contain query values or credentials.
+    # Only known exception types select messages; unknown errors stay generic.
+    reasons: dict[type[Exception], str] = {
+        duckdb.ParserException: "SQL syntax is invalid",
+        duckdb.BinderException: "SQL names or types could not be resolved",
+        duckdb.CatalogException: "A database object could not be resolved",
+        duckdb.ConversionException: (
+            "A value could not be converted to the required type"
+        ),
+        duckdb.ConstraintException: "A database constraint was violated",
+        duckdb.IOException: "A database input/output operation failed",
+        duckdb.OutOfMemoryException: "DuckDB ran out of memory",
+        duckdb.TransactionException: "A database transaction failed",
+        duckdb.InvalidInputException: "DuckDB rejected an input or extension operation",
+    }
+    return reasons.get(type(error), "The operation failed")

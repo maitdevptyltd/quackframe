@@ -1,7 +1,7 @@
 # Ordered SQL Execution
 
 Status: **Complete**
-Last updated: 2026-09-15
+Last updated: 2026-10-06
 Epic: 01 MVP
 Phase: 02
 Related docs: [Execution Lifecycle](../../execution-lifecycle.md)
@@ -29,3 +29,7 @@ Execute caller-supplied SQL files predictably in one DuckDB session.
 
 The test suite exercises shared temporary state, ordered multi-statement files,
 fail-fast behaviour, persistent state after failure, and temporary cleanup.
+
+Backend reasons now use vetted exception categories instead of diagnostic text.
+Regression tests cover query literals, stored row values, safe CLI errors and
+resource cleanup failures without tracebacks.

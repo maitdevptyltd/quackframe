@@ -86,11 +86,19 @@ A SQL failure stops subsequent files. The failure should identify:
 
 - the SQL file;
 - the one-based statement number when known;
-- a safe reason supplied by DuckDB or the failing extension;
+- a fixed, safe reason selected from the backend exception category;
 - the overall failed outcome and non-zero CLI exit code.
 
 Runtime adapters may enrich the failure with their own run identifier, but the
-core exception remains framework-independent.
+core exception remains framework-independent. Backend diagnostic text is never
+copied into the reported reason: even its first line may contain query data,
+SQL literals, or credentials. Unknown failures receive a generic reason.
+Quackframe's own fixed SQL-preparation diagnostics remain actionable.
+
+Extension resource cleanup attempts every registered callback. A cleanup failure
+on an otherwise successful run raises `QuackframeError`, which the CLI reports
+concisely with exit status `1`. If execution already failed, cleanup adds a safe
+note and preserves the original exception.
 
 ## Database Lifecycle
 
