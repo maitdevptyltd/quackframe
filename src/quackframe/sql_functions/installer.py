@@ -45,6 +45,13 @@ def install_functions(
 
     try:
         connection.execute("BEGIN TRANSACTION")
+    except Exception as error:
+        # A rejected begin does not give us ownership of the caller's transaction.
+        raise FunctionDefinitionError(
+            f"SQL functions could not be installed: {safe_error_reason(error)}"
+        ) from None
+
+    try:
         connection.execute('CREATE SCHEMA IF NOT EXISTS "quackframe"')
         for definition, parameter_types, return_type in prepared:
             # Bind the invocation-owned context outside the SQL signature.

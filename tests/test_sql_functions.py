@@ -12,6 +12,7 @@ from quackframe import FunctionsConfig, QuackframeConfig, run
 from quackframe.errors import ConfigurationError, FunctionDefinitionError
 from quackframe.sql_functions import registry
 from quackframe.sql_functions.definition import SqlFunction
+from quackframe.sql_functions.installer import install_functions
 
 
 def echo(value: str) -> str:
@@ -125,3 +126,48 @@ def test_connection_is_bound_outside_sql_signature() -> None:
     with duckdb.connect() as connection:
         bound_function = definition.bind(connection)
         assert bound_function("value", "-bound") == "value-bound"
+
+
+def test_failed_begin_leaves_caller_responsible_for_transaction(
+    function_registry: None,
+) -> None:
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE caller_work (value INTEGER)")
+        connection.execute("BEGIN TRANSACTION")
+        connection.execute("INSERT INTO caller_work VALUES (1)")
+
+        with pytest.raises(FunctionDefinitionError, match="could not be installed"):
+            install_functions(connection, ("echo",))
+
+        # DuckDB aborts a transaction after a nested BEGIN, but does not end it.
+        with pytest.raises(duckdb.TransactionException, match="transaction is aborted"):
+            connection.execute("SELECT * FROM caller_work")
+        connection.execute("ROLLBACK")
+        assert connection.execute("SELECT * FROM caller_work").fetchall() == []
+
+        install_functions(connection, ("echo",))
+        assert connection.execute("SELECT quackframe.echo('ready')").fetchone() == (
+            "ready",
+        )
+
+
+def test_installation_failure_rolls_back_owned_transaction(
+    function_registry: None,
+) -> None:
+    with duckdb.connect() as connection:
+        connection.create_function(  # pyright: ignore[reportUnknownMemberType]
+            "_quackframe_echo", echo
+        )
+
+        with pytest.raises(FunctionDefinitionError, match="could not be installed"):
+            install_functions(connection, ("echo",))
+
+        connection.execute("BEGIN TRANSACTION")
+        assert connection.execute(
+            "SELECT schema_name FROM information_schema.schemata "
+            "WHERE schema_name = 'quackframe'"
+        ).fetchall() == []
+        connection.execute("COMMIT")
+        assert connection.execute("SELECT _quackframe_echo('original')").fetchone() == (
+            "original",
+        )

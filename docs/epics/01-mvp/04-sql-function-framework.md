@@ -1,7 +1,7 @@
 # SQL Function Framework
 
 Status: **Complete**
-Last updated: 2026-09-16
+Last updated: 2026-10-06
 Epic: 01 MVP
 Phase: 04
 Related docs: [SQL Function Extensions](../../python-extensions.md)
@@ -60,3 +60,15 @@ each connection setup.
 The supported scalar annotation map is a named module-level framework boundary.
 Optional dependencies selected within a function are checked by that function's
 adapter rather than attached to the generic function definition.
+
+
+## Transaction Ownership Review
+
+The installer now separates transaction startup from rollback-protected catalog
+changes. A rejected `BEGIN` raises `FunctionDefinitionError` without issuing
+`ROLLBACK` against a caller-owned transaction. DuckDB aborts that transaction on
+the nested `BEGIN`; its caller must explicitly roll it back before proceeding.
+
+Regression coverage verifies caller rollback ownership, successful installation
+after caller recovery, and rollback of installer-owned catalog changes after a
+registration failure. The six registrar tests pass against DuckDB 1.5.5.

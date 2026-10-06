@@ -196,8 +196,13 @@ therefore persist while their Python UDFs remain connection-scoped.
 
 Quackframe recreates enabled macros and private UDFs during every connection
 setup. Definitions and signatures are validated before catalog changes begin,
-and macro installation is transactional. Persisted macros remain implementation
-metadata in persistent databases and are replaced on the next enabled run.
+and macro installation is transactional. Manual installation requires a connection
+without an active transaction. If starting the installation transaction fails,
+Quackframe raises `FunctionDefinitionError` without rolling back the caller's
+transaction. DuckDB marks an existing transaction as aborted after a nested
+`BEGIN`; the caller must roll it back before using the connection again.
+Persisted macros remain implementation metadata in persistent databases and are
+replaced on the next enabled run.
 
 ## Related Docs
 
