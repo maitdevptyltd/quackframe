@@ -29,17 +29,24 @@ def open_duckdb_session(
 
     with _database_path(config) as (database_path, managed_path):
         connection: DuckDBPyConnection | None = None
+        primary_error: BaseException | None = None
         try:
             connection = _open_connection(database_path, config)
             _load_extensions(connection, config.duckdb.extensions)
             yield connection
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
             if connection is not None:
                 connection.close()
             # The surrounding reservation stays held until both owned files
             # are removed. Persistent paths always remain caller-owned.
             if managed_path is not None:
-                _remove_managed_database(managed_path)
+                try:
+                    _remove_managed_database(managed_path)
+                except ConfigurationError as error:
+                    _report_cleanup_failure(str(error), primary_error)
 
 
 def _open_connection(
@@ -101,6 +108,8 @@ def _database_path(
             f"Temporary database path could not be reserved: {resolved_path}"
         ) from None
 
+    primary_error: BaseException | None = None
+
     # Checking after the atomic claim closes the check/open race between runs.
     # A rejected contender never reaches the session's destructive cleanup.
     try:
@@ -112,13 +121,17 @@ def _database_path(
                     f"overwritten: {existing_path}"
                 )
         yield str(resolved_path), resolved_path
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
         try:
             reservation.rmdir()
         except OSError:
-            raise ConfigurationError(
-                f"Temporary database reservation could not be released: {reservation}"
-            ) from None
+            _report_cleanup_failure(
+                f"Temporary database reservation could not be released: {reservation}",
+                primary_error,
+            )
 
 
 def _prepare_parent(path: Path) -> None:
@@ -157,7 +170,16 @@ def _remove_managed_database(path: Path) -> None:
     try:
         path.unlink(missing_ok=True)
         path.with_name(f"{path.name}.wal").unlink(missing_ok=True)
-    except OSError as error:
+    except OSError:
         raise ConfigurationError(
-            f"Temporary database could not be removed: {path}: {error}"
+            f"Temporary database could not be removed: {path}"
         ) from None
+
+
+def _report_cleanup_failure(message: str, primary_error: BaseException | None) -> None:
+    """Retain the original failure and attach only a safe cleanup diagnostic."""
+
+    if primary_error is not None:
+        primary_error.add_note(message)
+    else:
+        raise ConfigurationError(message) from None

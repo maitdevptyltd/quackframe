@@ -9,7 +9,15 @@ from threading import Event
 import pytest
 from duckdb import CatalogException, DuckDBPyConnection
 
-from quackframe import ConfigurationError, DatabaseConfig, QuackframeConfig, database
+from quackframe import (
+    ConfigurationError,
+    DatabaseConfig,
+    ExecutionError,
+    QuackframeConfig,
+    database,
+    run,
+)
+from quackframe.cli import main
 
 
 @pytest.mark.parametrize("separate_process", [False, True])
@@ -165,3 +173,103 @@ def test_sql_failure_removes_temporary_files_and_reservation(
     ):
         connection.execute("SELECT * FROM missing_table")
     assert not list(tmp_path.rglob("*.duckdb*"))
+
+
+@pytest.mark.parametrize("cleanup_step", ["database", "wal", "reservation"])
+@pytest.mark.parametrize("sql_fails", [False, True])
+def test_cleanup_failure_preserves_execution_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_step: str,
+    sql_fails: bool,
+) -> None:
+    sql_file = tmp_path / "run.sql"
+    sql_file.write_text(
+        "SELECT 1; SELECT * FROM missing_table" if sql_fails else "SELECT 1",
+        encoding="utf-8",
+    )
+    path = tmp_path / "cleanup.duckdb"
+    config = QuackframeConfig(
+        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+    )
+    original_unlink = Path.unlink
+    original_rmdir = Path.rmdir
+
+    def fail_unlink(target: Path, missing_ok: bool = False) -> None:
+        suffix = ".duckdb" if cleanup_step == "database" else ".wal"
+        if cleanup_step != "reservation" and target.suffix == suffix:
+            raise OSError("sensitive cleanup detail")
+        original_unlink(target, missing_ok=missing_ok)
+
+    def fail_rmdir(target: Path) -> None:
+        if target.name.endswith(".quackframe-lock"):
+            raise OSError("sensitive cleanup detail")
+        original_rmdir(target)
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    if cleanup_step == "reservation":
+        monkeypatch.setattr(Path, "rmdir", fail_rmdir)
+
+    if sql_fails:
+        with pytest.raises(ExecutionError) as captured:
+            run([sql_file], config=config)
+        assert captured.value.sql_file == sql_file
+        assert captured.value.statement_number == 2
+        assert len(captured.value.__notes__) == 1
+        assert "could not be" in captured.value.__notes__[0]
+        assert "sensitive cleanup detail" not in captured.value.__notes__[0]
+    else:
+        with pytest.raises(ConfigurationError, match="could not be") as cleanup_failure:
+            run([sql_file], config=config)
+        assert "sensitive cleanup detail" not in str(cleanup_failure.value)
+
+    assert path.with_name(f"{path.name}.quackframe-lock").exists() == (
+        cleanup_step == "reservation"
+    )
+
+
+def test_failed_database_cleanup_keeps_sql_cli_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sql_file = tmp_path / "run.sql"
+    sql_file.write_text("SELECT * FROM missing_table", encoding="utf-8")
+
+    def fail_cleanup(path: Path) -> None:
+        raise ConfigurationError("Temporary database could not be removed")
+
+    monkeypatch.setattr(database, "_remove_managed_database", fail_cleanup)
+    assert main(["run", str(sql_file), "--root", str(tmp_path), "--temporary"]) == 1
+    assert "statement 1" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_multiple_cleanup_failures_preserve_original_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool
+) -> None:
+    path = tmp_path / "interrupted.duckdb"
+    config = QuackframeConfig(
+        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+    )
+    primary_error = (
+        KeyboardInterrupt() if interrupted else ConfigurationError("Setup failed")
+    )
+
+    def fail_cleanup(path: Path) -> None:
+        raise ConfigurationError("Temporary database could not be removed")
+
+    def fail_release(path: Path) -> None:
+        raise OSError("sensitive cleanup detail")
+
+    monkeypatch.setattr(database, "_remove_managed_database", fail_cleanup)
+    monkeypatch.setattr(Path, "rmdir", fail_release)
+    with (
+        pytest.raises(type(primary_error)) as captured,
+        database.open_duckdb_session(config),
+    ):
+        raise primary_error
+
+    assert captured.value is primary_error
+    assert len(primary_error.__notes__) == 2
+    assert "could not be removed" in primary_error.__notes__[0]
+    assert "could not be released" in primary_error.__notes__[1]
+    assert "sensitive cleanup detail" not in " ".join(primary_error.__notes__)

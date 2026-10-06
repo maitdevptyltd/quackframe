@@ -121,6 +121,12 @@ process can leave it behind: confirm that no run still owns the path before
 manually removing the reservation and any abandoned temporary database/WAL.
 Quackframe does not automatically reclaim stale reservations.
 
+If temporary-file removal or reservation release fails while a run is already
+failing, Quackframe preserves the original exception and adds a safe cleanup
+note. SQL failures retain their file, statement number, and CLI exit code `1`.
+If the run otherwise succeeded, cleanup failure raises `ConfigurationError`
+(CLI exit code `2`). Failed cleanup can leave files requiring manual removal.
+
 Persistent mode requires `database.path`. Quackframe resolves a relative path
 from the runtime root, creates its parent directory when necessary, and never
 deletes the database implicitly.
