@@ -303,3 +303,13 @@ attempts closure of both superseded resources. Failed setup closes only the new
 client and preserves the prior pair. Focused tests cover successful replacement,
 connect/transport/channel failures and old-channel cleanup failure. The phase
 remains **In Progress** for its existing live-service validation requirements.
+
+## SFTP File Context Correction (2026-10-07)
+
+Direct fsspec `open()` context regressions reproduced a `TypeError` before the
+body ran: Python does not delegate special context-manager methods through
+`__getattr__`. The serialized file wrapper now implements those methods explicitly
+and closes through its existing server-acknowledged path. Tests cover successful
+bodies, body failures, close rejection and simultaneous body/close failures.
+The primary body exception is preserved when cleanup also fails. This correction
+does not change the remaining live-service validation status.

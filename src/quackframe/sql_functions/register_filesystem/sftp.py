@@ -5,6 +5,7 @@ from contextlib import suppress
 from hmac import compare_digest
 from re import fullmatch
 from threading import RLock
+from types import TracebackType
 from typing import Any, cast
 
 from fsspec.implementations.sftp import (  # pyright: ignore[reportMissingTypeStubs]
@@ -125,6 +126,22 @@ class SerializedSFTPFile:
                 return attribute(*args, **kwargs)
 
         return invoke
+
+    def __enter__(self) -> "SerializedSFTPFile":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if exc_type is None:
+            self.close()
+        else:
+            # Keep the operation's failure primary if acknowledged close fails.
+            with suppress(Exception):
+                self.close()
 
     def close(self) -> None:
         with self._client._exchange_lock:  # pyright: ignore[reportPrivateUsage]

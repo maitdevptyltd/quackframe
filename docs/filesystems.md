@@ -342,7 +342,10 @@ without enforcing them.
 Each SFTP client serializes synchronous request/response exchanges with its own
 lock. Directory iteration uses synchronous listing through that lock. DuckDB
 can still use multiple threads, and independent registrations have independent
-locks. The named protocol wrapper delegates to this existing verified adapter.
+locks. Direct fsspec file handles support `with` blocks and use the same
+serialized, acknowledged close path as registered DuckDB handles. A close failure
+propagates after a successful body; cleanup does not replace an existing body
+exception. The named protocol wrapper delegates to this existing verified adapter.
 Asynchronous prefetch, pipelined writes and network deadlines are outside the
 verified read contract. Use a bounded worker process to limit stalled-server jobs.
 
