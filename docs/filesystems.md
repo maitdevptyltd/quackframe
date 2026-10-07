@@ -332,7 +332,9 @@ transaction rollback. Protocols and paths must not contain secrets.
 An optional `host_key_fingerprint` pins the server's OpenSSH SHA256 key
 (`SHA256:` plus 43 unpadded base64 characters). Surrounding whitespace is ignored.
 Malformed or mismatched fingerprints fail before authentication. Reconnects use
-the same policy. Missing, null or blank fingerprints retain automatic acceptance;
+the same policy. A failed reconnect preserves the previous client/channel pair;
+a successful reconnect closes both superseded resources. Missing, null or blank
+fingerprints retain automatic acceptance;
 this backend does not load `known_hosts`. SQL cannot override the fingerprint.
 The separate SSHFS `register_secret` path still warns about nonblank fingerprints
 without enforcing them.

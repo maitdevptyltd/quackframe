@@ -81,21 +81,31 @@ class SerializedSFTPFileSystem(SFTPFileSystem):
         fingerprint = ssh_kwargs.pop("host_key_fingerprint", None)
         fingerprint = fingerprint.strip() if fingerprint is not None else ""
         policy = FingerprintPolicy(fingerprint) if fingerprint else AutoAddPolicy()
-        self.client = SSHClient()
-        self.client.set_missing_host_key_policy(policy)
+        client = SSHClient()
         try:
-            self.client.connect(self.host, **ssh_kwargs)
-            transport = self.client.get_transport()
+            client.set_missing_host_key_policy(policy)
+            client.connect(self.host, **ssh_kwargs)
+            transport = client.get_transport()
             if transport is None:
                 raise RuntimeError("SFTP transport is unavailable")
             ftp = SerializedSFTPClient.from_transport(transport)
             if ftp is None:
                 raise RuntimeError("SFTP channel is unavailable")
-            self.ftp = ftp
         except BaseException:
             with suppress(Exception):
-                self.client.close()
+                client.close()
             raise
+
+        # Keep the owned pair intact until its replacement is fully connected.
+        previous_ftp = getattr(self, "ftp", None)
+        previous_client = getattr(self, "client", None)
+        self.client, self.ftp = client, ftp
+        try:
+            if previous_ftp is not None:
+                previous_ftp.close()
+        finally:
+            if previous_client is not None:
+                previous_client.close()
 
 
 class SerializedSFTPFile:
