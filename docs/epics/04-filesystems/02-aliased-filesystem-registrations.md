@@ -393,3 +393,19 @@ Fingerprint verification and synchronous SFTP locking are unchanged.
 - Ruff on `src`/`tests`, Pyright, documentation links and unstaged whitespace
   checks passed. Full upstream concurrency diagnostics were not rerun.
 - No commits or staging; the existing index was verified unchanged.
+
+
+### Question-Mark Glob Review Follow-Up (2026-10-07)
+
+Raw question marks in SFTP glob paths now reach fsspec as single-character
+wildcards, including a final `?`. Endpoint validation still rejects different
+hosts, ports, embedded authentication, schemes and fragments, and a `?` in the
+authority does not become a path. Encoded `%3F` remains literal and paths decode
+once. Mapping regressions and DuckDB discovery with an fsspec memory backend
+cover both wildcard forms, encoded literals and nonmatching neighbouring files.
+
+Validation: the regression cases failed before the fix (three rejected patterns
+and one truncated trailing wildcard). The filesystem registration and write
+suites pass with **114 tests**, including DuckDB discovery and loopback SFTP
+write coverage. Ruff on `src`/`tests`, Pyright, documentation links and
+`git diff --check` pass.

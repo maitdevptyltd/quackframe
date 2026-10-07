@@ -83,13 +83,14 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
         def to_backend(path: str, *, glob_pattern: bool = False) -> str:
             try:
                 url = urlsplit(path)
+                has_question_mark = "?" in path.partition("#")[0]
                 valid = (
                     url.scheme == protocol
                     and url.hostname == host
                     and url.port in (None, self.port)
                     and url.username is None
                     and url.password is None
-                    and not url.query
+                    and (not has_question_mark or (glob_pattern and bool(url.path)))
                     and not url.fragment
                 )
             except ValueError:
@@ -100,6 +101,11 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
                 raise ValueError("Filesystem URL must match its registered endpoint")
             remote_path = url.path or "/"
             if glob_pattern:
+                # URL parsing treats the first raw ? as a query delimiter. In a
+                # glob's path it is an operator, including an empty trailing query.
+                if has_question_mark:
+                    remote_path += "?" + url.query
+
                 # Encoded wildcard characters belong to literal filenames.
                 # Escape them before decoding; raw SQL glob operators stay active.
                 remote_path = sub(

@@ -310,6 +310,7 @@ def test_sftp_constructor_and_endpoint_mapping(scope: str) -> None:
         "supplier://files.example.test:22/a",
         "supplier://user@files.example.test/a",
         "supplier://files.example.test/a?secret=x",
+        "supplier://files.example.test/a?",
         "other://files.example.test/a",
     ]:
         with pytest.raises(ValueError, match="registered endpoint"):
@@ -318,6 +319,50 @@ def test_sftp_constructor_and_endpoint_mapping(scope: str) -> None:
     with pytest.raises(RuntimeError):
         filesystem.close_backend()
     constructor.return_value.client.close.assert_called_once()
+
+
+@pytest.mark.usefixtures("sftp_dependencies")
+@pytest.mark.parametrize(
+    ("pattern", "expected"),
+    [
+        ("daily-?.csv", "/reports/daily-?.csv"),
+        ("daily-?", "/reports/daily-?"),
+        ("daily-%3F?.csv", "/reports/daily-[?]?.csv"),
+        ("daily-%253F?.csv", "/reports/daily-%3F?.csv"),
+    ],
+)
+def test_sftp_question_mark_globs_preserve_raw_and_encoded_characters(
+    pattern: str, expected: str
+) -> None:
+    with patch(
+        "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+    ):
+        filesystem = sftp_credentials().create_filesystem("supplier")
+    path = "supplier://files.example.test/reports/" + pattern
+    assert filesystem.to_glob(path) == expected
+
+
+@pytest.mark.usefixtures("sftp_dependencies")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "supplier://other.test/daily-?.csv",
+        "supplier://files.example.test:22/daily-?.csv",
+        "supplier://user@files.example.test/daily-?.csv",
+        "supplier://files.example.test/daily-?.csv#fragment",
+        "supplier://files.example.test?other.test/daily-?.csv",
+        "supplier://files.example.test?",
+        "other://files.example.test/daily-?.csv",
+    ],
+)
+def test_sftp_question_mark_globs_reject_invalid_endpoints(path: str) -> None:
+    with patch(
+        "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem"
+    ) as constructor:
+        filesystem = sftp_credentials().create_filesystem("supplier")
+    with pytest.raises(ValueError, match="registered endpoint"):
+        filesystem.glob(path)
+    constructor.return_value.glob.assert_not_called()
 
 
 @pytest.mark.usefixtures("sftp_dependencies")
@@ -616,5 +661,54 @@ def test_discovered_sftp_filenames_round_trip_through_duckdb(
             assert connection.execute(
                 "SELECT value, filename FROM read_csv(?, filename=true)", [[expected]]
             ).fetchall() == [(42, expected)]
+    finally:
+        backend.rm(root, recursive=True)  # pyright: ignore[reportUnknownMemberType]
+
+
+@pytest.mark.usefixtures("sftp_dependencies")
+@pytest.mark.parametrize(
+    ("pattern", "filename"),
+    [
+        ("daily-?.csv", "daily-1.csv"),
+        ("daily-?", "daily-1"),
+        ("daily-%3F?.csv", "daily-?1.csv"),
+    ],
+)
+def test_sftp_question_mark_globs_select_files_through_duckdb(
+    pattern: str, filename: str
+) -> None:
+    from urllib.parse import quote
+
+    from fsspec.implementations.memory import (  # pyright: ignore[reportMissingTypeStubs]
+        MemoryFileSystem,
+    )
+
+    backend = MemoryFileSystem(skip_instance_cache=True)
+    root = "/" + uuid4().hex
+    for name in [filename, "daily-", "daily-12.csv", "daily-X1.csv"]:
+        backend.pipe_file(root + "/" + name, b"value\n42\n")  # pyright: ignore[reportUnknownMemberType]
+    client = Mock(glob=backend.glob)  # pyright: ignore[reportUnknownMemberType]
+    expected = (
+        "source://files.example.test:2222" + root + "/" + quote(filename, safe="")
+    )
+
+    try:
+        with (
+            patch(
+                "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPFileSystem",
+                return_value=client,
+            ),
+            duckdb.connect() as connection,
+        ):
+            filesystem = sftp_credentials().create_filesystem("source")
+            connection.register_filesystem(filesystem)
+            try:
+                assert connection.execute(
+                    "SELECT file FROM glob(?)",
+                    ["source://files.example.test" + root + "/" + pattern],
+                ).fetchall() == [(expected,)]
+            finally:
+                connection.unregister_filesystem("source")
+                filesystem.close_backend()
     finally:
         backend.rm(root, recursive=True)  # pyright: ignore[reportUnknownMemberType]

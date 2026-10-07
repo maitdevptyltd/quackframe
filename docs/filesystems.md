@@ -292,7 +292,10 @@ read paths and is not an access restriction.
 Read paths are `protocol://host/absolute/remote/path`. The hostname and effective
 port must match the configured endpoint. An omitted read port uses the configured
 port. A different hostname is rejected; it never creates or selects another
-connection. Embedded authentication, query strings and fragments are rejected.
+connection. Embedded authentication and fragments are rejected. Literal read
+paths reject query strings. In glob paths, a raw `?` after the endpoint's `/`
+is a single-character wildcard rather than a query delimiter; for example,
+`daily-?.csv` or `daily-?`. Use `%3F` to match a literal question mark.
 Server permissions remain the access boundary.
 
 `glob`, file metadata and reader filenames retain the selected protocol and
