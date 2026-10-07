@@ -12,7 +12,6 @@ LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 FENCE_PATTERN = re.compile(r"```.*?```", re.DOTALL)
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$", re.MULTILINE)
 PUNCTUATION_PATTERN = re.compile(r"[^\w\s-]")
-UNDERSCORE_PATTERN = re.compile(r"_")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 HYPHEN_PATTERN = re.compile(r"-+")
 
@@ -56,7 +55,6 @@ def strip_fenced_blocks(text: str) -> str:
 def slug_heading(heading: str) -> str:
     heading = heading.strip().lower()
     heading = PUNCTUATION_PATTERN.sub("", heading)
-    heading = UNDERSCORE_PATTERN.sub("", heading)
     heading = WHITESPACE_PATTERN.sub("-", heading)
     heading = HYPHEN_PATTERN.sub("-", heading)
 
