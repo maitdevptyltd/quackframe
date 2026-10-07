@@ -52,21 +52,72 @@ def test_policy_accepts_only_matching_server_key() -> None:
         )
 
 
-def test_reconnect_keeps_fingerprint_and_failed_check_closes_client() -> None:
-    key = RSAKey.generate(2048)
+@pytest.mark.parametrize("failure", ["connect", "transport", "channel"])
+def test_failed_reconnect_preserves_original_pair(failure: str) -> None:
+    fingerprint = "SHA256:" + "A" * 43
+    original, replacement = Mock(), Mock()
+    original_ftp = Mock()
     with (
-        patch("quackframe.sql_functions.register_filesystem.sftp.SSHClient") as client,
-        patch("quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPClient"),
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SSHClient",
+            side_effect=[original, replacement],
+        ),
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPClient"
+        ) as sftp,
     ):
+        sftp.from_transport.return_value = original_ftp
         filesystem = SerializedSFTPFileSystem(
-            "files.test", host_key_fingerprint=key.fingerprint, skip_instance_cache=True
+            "files.test", host_key_fingerprint=fingerprint, skip_instance_cache=True
         )
-        client.return_value.connect.side_effect = SSHException("host-key rejected")
-        with pytest.raises(SSHException):
+        if failure == "connect":
+            replacement.connect.side_effect = SSHException("host-key rejected")
+        elif failure == "transport":
+            replacement.get_transport.return_value = None
+        else:
+            sftp.from_transport.return_value = None
+        with pytest.raises((SSHException, RuntimeError)):
             filesystem._connect()  # pyright: ignore[reportPrivateUsage]
-        policies = client.return_value.set_missing_host_key_policy.call_args_list
-        assert len(policies) == 2
-        for call in policies:
-            assert isinstance(call.args[0], FingerprintPolicy)
-            assert call.args[0].fingerprint == key.fingerprint
-        client.return_value.close.assert_called_once()
+
+    assert filesystem.client is original
+    assert filesystem.ftp is original_ftp
+    original.close.assert_not_called()
+    original_ftp.close.assert_not_called()
+    replacement.close.assert_called_once()
+    for client in (original, replacement):
+        policy = client.set_missing_host_key_policy.call_args.args[0]
+        assert isinstance(policy, FingerprintPolicy)
+        assert policy.fingerprint == fingerprint
+
+
+@pytest.mark.parametrize("channel_close_fails", [False, True])
+def test_successful_reconnect_closes_superseded_pair(channel_close_fails: bool) -> None:
+    original, replacement = Mock(), Mock()
+    original_ftp, replacement_ftp = Mock(), Mock()
+    if channel_close_fails:
+        original_ftp.close.side_effect = OSError("channel close failed")
+    with (
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SSHClient",
+            side_effect=[original, replacement],
+        ),
+        patch(
+            "quackframe.sql_functions.register_filesystem.sftp.SerializedSFTPClient"
+        ) as sftp,
+    ):
+        sftp.from_transport.side_effect = [original_ftp, replacement_ftp]
+        filesystem = SerializedSFTPFileSystem("files.test", skip_instance_cache=True)
+        original.close.assert_not_called()
+        original_ftp.close.assert_not_called()
+        if channel_close_fails:
+            with pytest.raises(OSError, match="channel close failed"):
+                filesystem._connect()  # pyright: ignore[reportPrivateUsage]
+        else:
+            filesystem._connect()  # pyright: ignore[reportPrivateUsage]
+
+    assert filesystem.client is replacement
+    assert filesystem.ftp is replacement_ftp
+    original_ftp.close.assert_called_once()
+    original.close.assert_called_once()
+    replacement.close.assert_not_called()
+    replacement_ftp.close.assert_not_called()

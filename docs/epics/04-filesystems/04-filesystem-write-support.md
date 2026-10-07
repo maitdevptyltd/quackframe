@@ -1,7 +1,7 @@
 # Filesystem Write Support
 
 Status: **In Progress**
-Last updated: 2026-10-01
+Last updated: 2026-10-07
 Epic: 04 Filesystems
 Phase: 04
 Related docs: [Filesystems](../../filesystems.md), [Azure Strategies](03-azure-filesystem-strategies.md), [Named Protocols](02-aliased-filesystem-registrations.md), [Execution Lifecycle](../../execution-lifecycle.md)
@@ -293,3 +293,13 @@ This is an outstanding validation requirement, not a removal of write scope.
 - [Named Protocols](02-aliased-filesystem-registrations.md): isolation and path rules.
 - [Credential Providers](../../credential-providers.md): shared credential contracts.
 - [Execution Lifecycle](../../execution-lifecycle.md): ordering, errors and cleanup.
+
+## SFTP Reconnection Ownership Correction (2026-10-07)
+
+Distinct-client regressions confirmed that reconnecting leaked the previous SSH
+client and SFTP channel, while failed replacements left a mismatched owned pair.
+The adapter now builds a complete replacement before assigning ownership and
+attempts closure of both superseded resources. Failed setup closes only the new
+client and preserves the prior pair. Focused tests cover successful replacement,
+connect/transport/channel failures and old-channel cleanup failure. The phase
+remains **In Progress** for its existing live-service validation requirements.
