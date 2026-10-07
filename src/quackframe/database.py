@@ -85,7 +85,6 @@ def _database_path(
         return
 
     temporary_root = config.root / ".quackframe" / "tmp"
-    temporary_root.mkdir(parents=True, exist_ok=True)
     path = config.database.path or temporary_root / f"{uuid4().hex}.duckdb"
     resolved_path = path.resolve()
 

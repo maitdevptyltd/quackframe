@@ -116,6 +116,11 @@ Another temporary invocation using the same path fails without opening or
 removing its files. This reservation coordinates Quackframe temporary runs;
 other programs must not write to their paths.
 
+Quackframe creates only the selected database path's parent directory. An
+explicit temporary path does not require `.quackframe/tmp/` to be writable or
+even present. Failure to prepare the selected directory raises
+`ConfigurationError` (CLI exit code `2`).
+
 Normal completion and handled failures release the reservation. A terminated
 process can leave it behind: confirm that no run still owns the path before
 manually removing the reservation and any abandoned temporary database/WAL.

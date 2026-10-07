@@ -1,7 +1,7 @@
 # Configuration And Database Lifecycle
 
 Status: **Complete**
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 Epic: 01 MVP
 Phase: 01
 Related docs: [Configuration](../../configuration.md)
@@ -48,11 +48,21 @@ execution tests pass, as do targeted lint, formatting, type checking,
 documentation links, and diff checks. Combined repository validation follows
 integration with the other review fixes.
 
+The 2026-10-07 directory-selection regressions reproduced three failures:
+explicit temporary paths created the unused default directory, an unavailable
+default directory blocked a valid custom path, and default-directory setup
+errors escaped the CLI configuration-error handler. Removing eager default
+creation leaves preparation to the selected path's existing helper. All 81
+focused database, execution, configuration, and CLI tests pass, along with
+targeted lint, formatting, type checking, documentation links, and diff checks.
+
 ## Decisions
 
 - Default to an in-memory database.
 - Create temporary databases below `<root>/.quackframe/tmp/` and always clean
   them after connection closure.
+- Prepare only the selected temporary path's parent directory and report setup
+  failures as configuration errors.
 - Require an explicit path for persistent mode and never delete it implicitly.
 - Use exactly `cwd` as the implicit root; do not search parents.
 - Atomically create a sibling reservation directory before checking a temporary

@@ -20,6 +20,42 @@ from quackframe import (
 from quackframe.cli import main
 
 
+@pytest.mark.parametrize("blocked_default", [False, True])
+def test_explicit_temporary_path_does_not_prepare_default_directory(
+    tmp_path: Path, blocked_default: bool
+) -> None:
+    default_directory = tmp_path / ".quackframe"
+    if blocked_default:
+        default_directory.write_text("caller-owned", encoding="utf-8")
+    path = tmp_path / "custom" / "run.duckdb"
+    config = QuackframeConfig(
+        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+    )
+
+    with database.open_duckdb_session(config) as connection:
+        assert connection.execute("SELECT 42").fetchone() == (42,)
+        assert path.is_file()
+
+    assert not list(path.parent.glob("run.duckdb*"))
+    if blocked_default:
+        assert default_directory.read_text(encoding="utf-8") == "caller-owned"
+    else:
+        assert not default_directory.exists()
+
+
+def test_default_temporary_directory_failure_has_configuration_cli_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".quackframe").write_text("caller-owned", encoding="utf-8")
+    sql_file = tmp_path / "run.sql"
+    sql_file.write_text("SELECT 42", encoding="utf-8")
+
+    assert main(["run", str(sql_file), "--root", str(tmp_path), "--temporary"]) == 2
+    error = capsys.readouterr().err
+    assert "Could not prepare database directory" in error
+    assert "Traceback" not in error
+
+
 @pytest.mark.parametrize("separate_process", [False, True])
 def test_temporary_path_is_reserved_before_connecting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, separate_process: bool
