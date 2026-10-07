@@ -1,0 +1,6 @@
+[submodule "MAD.Utilities.DuckDB"]
+	path = MAD.Utilities.DuckDB
+	url = https://dev.azure.com/maitdevptyltd/DataServices/_git/MAD.Utilities.DuckDB
+[submodule "assquack"]
+	path = assquack
+	url = https://github.com/maitdevptyltd/assquack

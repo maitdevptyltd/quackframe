@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quackframe Coding"
+  short_description: "Implement Quackframe core, adapters, extensions, tests, docs, and epic status."
+  default_prompt: "Use the Quackframe coding skill to plan, implement, test, document, and prepare changes."

@@ -1,0 +1,234 @@
+# Developer API
+
+Status: implemented MVP contract.
+
+Quackframe has three developer entry points. Each resolves the same
+configuration and delegates to the same execution engine.
+
+## Command Line
+
+Run one SQL file:
+
+```powershell
+quackframe run sql/example.sql
+```
+
+Run several files in one shared DuckDB session:
+
+```powershell
+quackframe run `
+    sql/01-prepare.sql `
+    sql/02-transform.sql `
+    sql/03-validate.sql
+```
+
+Files execute in the supplied order and execution stops on the first failure.
+The CLI returns a scheduler-friendly process exit code and identifies the
+failed file and statement without logging full SQL or returned query data by
+default.
+
+One-run overrides include:
+
+```powershell
+quackframe run --runtime direct sql/example.sql
+quackframe run --runtime prefect sql/example.sql
+quackframe run --memory sql/example.sql
+quackframe run --database-path ./scratch.duckdb sql/example.sql
+quackframe run --config ./alternate.toml sql/example.sql
+```
+
+`--memory` and `--temporary` select managed lifecycle modes;
+`--database-path` selects a caller-owned persistent database.
+
+### SQL result logging
+
+Quackframe logs only statement results selected by the resolved log setting:
+
+```powershell
+quackframe run --log-setting annotations-only sql/example.sql
+quackframe run --log-setting none sql/example.sql
+quackframe run --log-setting all sql/example.sql
+```
+
+`annotations-only` is the default. Select one statement by placing the exact
+annotation immediately before it:
+
+```sql
+-- quackframe: log-result
+SELECT verification_status, mismatch_count
+FROM verification_summary;
+```
+
+DuckDB's native relation representation owns table formatting and truncation.
+The same values may be supplied through `QUACKFRAME_LOG_SETTING`; an explicit
+CLI value takes precedence.
+
+Non-direct runtimes require explicit permission before selected result values
+can be sent to an external logging system:
+
+```powershell
+quackframe run --runtime prefect --allow-external-result-logging sql/example.sql
+quackframe run --runtime prefect --deny-external-result-logging sql/example.sql
+```
+
+These flags override `QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` in either
+direction. Without permission, a non-direct run that would emit results fails
+before project SQL executes. Direct terminal output does not require this
+permission.
+
+The CLI and `load_config()` also read Quackframe-owned settings from exactly
+`.env` at the resolved runtime root. Process environment values override that
+file, and the CLI flags above override both. Quackframe never exports parsed
+dotenv values into the process environment.
+
+## Visual Studio Code F5
+
+F5 runs the active SQL file through the consuming project's Poetry environment.
+Copy the complete [basic example .vscode folder](../examples/basic/.vscode/launch.json)
+into the downstream repository root. Keep all three files together:
+
+- `launch.json` starts the Python launcher and selects the Debug Console.
+- `run_quackframe.py` delegates to `poetry run quackframe run`, forwards arguments,
+  and returns the child process exit code.
+- `extensions.json` recommends the Python and Python Debugger extensions.
+
+Install the recommended extensions and the project's Quackframe dependency with
+Poetry, then open the downstream repository root in VS Code. Poetry must be on
+VS Code's PATH. The Python extension needs an available Python 3.11 or newer to
+start the standard-library-only launcher; that interpreter does not need
+Quackframe installed. Poetry selects the environment used for SQL execution,
+with no required `.venv` location or developer-specific interpreter path.
+
+Press F5 with the SQL file active. The normal profile does not grant external
+result-logging permission. The separately named result-logging profile explicitly
+grants it for that run. Existing environment permissions still follow normal
+[configuration precedence](configuration.md#precedence).
+
+The workspace folder is the runtime root. Quackframe reads its configuration and
+optional `.env` there; `QUACKFRAME_RUNTIME=direct` can override a checked-in
+Prefect runtime. Both profiles set UTF-8 output and use `internalConsole`, so
+output appears in the Debug Console without opening an integrated terminal.
+Only results selected by the logging setting are printed; by default this means
+statements marked `-- quackframe: log-result`.
+
+F5 runs only the active SQL file. It does not discover neighbouring files or
+infer prerequisites. A file that depends on earlier setup must be invoked in an
+explicit ordered command or through a future approved job-definition contract.
+
+This is an F5 execution entry point, not a SQL statement debugger. VS Code starts
+the wrapper under debugpy; Quackframe executes in its Poetry subprocess. Automated
+CLI checks do not establish VS Code breakpoint or Stop-button behaviour, which
+must be verified in the editor.
+
+## Python API
+
+The common embedded call should mirror the CLI:
+
+```python
+from quackframe import run
+
+result = run(
+    [
+        "sql/01-prepare.sql",
+        "sql/02-transform.sql",
+    ]
+)
+```
+
+Direct configuration values are explicit overrides:
+
+```python
+from quackframe import QuackframeConfig, run
+
+config = QuackframeConfig(
+    runtime="direct",
+    log_setting="annotations-only",
+)
+result = run(["sql/example.sql"], config=config)
+```
+
+Embedded non-direct callers grant retained-log permission explicitly with
+`allow_external_result_logging=True`.
+
+An `ExecutionPlan` may be introduced for callers that construct or validate
+runs programmatically, but ordinary use should not require it.
+
+On success, `run()` returns a typed `ExecutionResult`. On failure, it raises a
+typed `ExecutionError` containing safe execution context such as the file and
+statement number. Core result types do not expose Prefect or another adapter's
+classes.
+
+## SQL Function API
+
+Quackframe functions use a schema-qualified public name:
+
+```sql
+SELECT quackframe.register_secret(
+    'prefect',
+    'reporting_sql_login',
+    'mssql'
+);
+```
+
+Most calls should use that concise form with a complete credential block. Use
+the keyword-style arguments and `overrides` only when deliberately repurposing
+one block for a different alias, database, or scope:
+
+```sql
+SELECT quackframe.register_secret(
+    provider := 'prefect',
+    reference := 'shared-sql-login',
+    secret_type := 'mssql',
+    alias := 'reporting_reader',
+    overrides := MAP {'database': 'Reporting'}
+);
+```
+
+These optional arguments are not required when the referenced block already
+contains the complete registration values.
+
+The public macro delegates to a private connection-scoped Python UDF such as
+`_quackframe_register_secret`. Downstream callers never need to quote a dotted
+function name or call the private implementation.
+
+Each function owns its implementation and support code as a self-contained
+unit. It conforms only to the minimal registration, naming, safety, and
+diagnostic contract needed to coexist in Quackframe.
+
+For the Prefect provider, SQL may use underscores in a Block reference even
+though Prefect stores the document name with dashes. When no explicit alias is
+supplied, Quackframe performs the inverse translation so the generated DuckDB
+secret remains a simple SQL identifier. See
+[Credential Providers](credential-providers.md#prefect-references-and-duckdb-aliases).
+
+Filesystem access uses the same provider references through a separate enabled
+SQL function:
+
+```sql
+SELECT quackframe.register_filesystem('prefect', 'source-files', 'sftp');
+SELECT * FROM read_csv('source-files://files.example.test/reports/*.csv');
+```
+
+Its optional fourth argument is `protocol`, defaulting to the reference; fifth
+is `overrides`. Both positional and named arguments are supported. See
+[Filesystems](filesystems.md) for installation, query paths and backend ownership.
+
+## Entry-point Invariants
+
+- Every entry point uses the same configuration model.
+- Every invocation has one selected runtime adapter.
+- Every invocation owns one DuckDB session.
+- File order is explicit and stable.
+- Runtime adapters preserve core behaviour.
+- Optional integrations do not become core imports.
+- Scheduled execution uses the CLI rather than a separate API.
+
+## Related Docs
+
+- [Developer Examples](developer-examples.md): concise usage paths.
+- [Execution Lifecycle](execution-lifecycle.md): behaviour shared by all entry
+  points.
+- [Configuration](configuration.md): defaults and overrides.
+- [Runtime Adapters](runtime-adapters.md): direct and Prefect execution.
+- [SQL Function Extensions](python-extensions.md): function packaging and
+  registration.

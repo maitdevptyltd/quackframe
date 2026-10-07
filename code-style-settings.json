@@ -1,0 +1,39 @@
+{
+  "targets": [
+    {
+      "scale": "Readable → Confusing",
+      "priority": 1,
+      "target": "1-2"
+    },
+    {
+      "scale": "Simple → Complex",
+      "priority": 2,
+      "target": "1-2"
+    },
+    {
+      "scale": "Concise → Verbose",
+      "priority": 3,
+      "target": "2"
+    },
+    {
+      "scale": "Clean → Messy",
+      "priority": 4,
+      "target": "1-2"
+    },
+    {
+      "scale": "Functional → Dysfunctional",
+      "priority": 5,
+      "target": "1-2"
+    },
+    {
+      "scale": "Testable → Untestable",
+      "priority": 6,
+      "target": "2-4"
+    },
+    {
+      "scale": "Abstract → Declarative",
+      "priority": 7,
+      "target": "5-8"
+    }
+  ]
+}

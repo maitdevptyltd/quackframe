@@ -1,0 +1,119 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quackframe"
+version = "0.1.0"
+description = "A Python runtime for extending and executing DuckDB SQL workflows."
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = { file = "LICENSE" }
+authors = [{ name = "Quackframe contributors" }]
+dependencies = [
+    "duckdb==1.5.5",
+    "pydantic>=2.11,<3",
+    "python-dotenv (>=1.1,<2)",
+]
+
+[project.optional-dependencies]
+azure = [
+    "fsspec>=2026.7,<2027",
+    "adlfs>=2026.8,<2027",
+    "azure-identity>=1.25,<2",
+    "azure-storage-blob>=12.26,<13",
+]
+sftp = [
+    "fsspec>=2026.7,<2027",
+    "paramiko>=4,<5",
+]
+prefect = [
+    "numpy>=1.26,<3",
+    "prefect>=3.2,<4",
+]
+
+[project.scripts]
+quackframe = "quackframe.cli:main"
+
+[dependency-groups]
+dev = [
+    "numpy>=1.26,<3",
+    "pyright>=1.1.413,<2",
+    "pytest>=9.0,<10",
+    "pytest-cov>=7,<8",
+    "ruff>=0.16,<0.17",
+    "python-semantic-release (>=10.7,<11)",
+    "build (>=1.2,<2)",
+    "twine (>=6,<8)",
+    "hatchling (>=1.27,<2)",
+    "packaging (>=24,<27)",
+    "tomlkit (>=0.13,<1)",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quackframe"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/scripts",
+    "/README.md",
+    "/CONTRIBUTING.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/poetry.lock",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+
+[tool.coverage.run]
+branch = true
+source = ["quackframe"]
+
+# Tags drive release history; version stamping is confined to the build checkout.
+[tool.semantic_release]
+allow_zero_version = true
+major_on_zero = false
+commit_parser = "conventional"
+tag_format = "v{version}"
+version_toml = ["pyproject.toml:project.version"]
+
+[tool.semantic_release.branches.main]
+match = "^main$"
+prerelease = false
+
+[tool.semantic_release.branches.next]
+match = "^release/next$"
+prerelease = true
+prerelease_token = "rc"
+
+[tool.semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+parse_squash_commits = false
+ignore_merge_commits = false
+
+[tool.semantic_release.changelog]
+mode = "init"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+mask_initial_release = false

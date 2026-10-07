@@ -1,0 +1,40 @@
+# Prefect Runtime
+
+Status: **Complete**
+Last updated: 2026-10-06
+Epic: 01 MVP
+Phase: 06
+Related docs: [Runtime Adapters](../../runtime-adapters.md)
+
+## Outcome
+
+Provide optional Prefect flow and file-level task visibility while preserving
+Quackframe's execution contract.
+
+## Scope
+
+- Add Prefect as an optional dependency.
+- Wrap an invocation in one flow.
+- Represent each SQL file as a filename-named task.
+- Disable task caching for the shared live DuckDB connection.
+- Reuse native Prefect profiles and environment settings.
+- Keep Prefect imports inside the integration package.
+
+## Validation
+
+- Compare direct and Prefect-observed outcomes for the same files.
+- Verify file tasks retain caller order and one shared session.
+- Verify flow and task failure states identify the failed file safely.
+- Prove base Quackframe remains importable without Prefect installed.
+
+SQL is read by the file task rather than carried in the execution plan. Static
+decorated wrappers call the existing core execution functions, and runtime
+selection imports those wrappers only when Prefect is selected.
+
+The flow name is fixed as `quackframe-run`. A downstream `[project].name` is
+used as the flow-run name when available, while SQL-file task names use path
+stems and retain full paths in Quackframe results and failures.
+
+The adapter preserves every Quackframe error subclass and exception identity.
+Regression tests cover configuration exit status, safe conversion failures at
+the file-task boundary, and suppression of unexpected runtime diagnostics.
