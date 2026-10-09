@@ -34,6 +34,14 @@ from the main documentation.
 
 - [01 Semantic Versioning And Package Publication](05-releases/01-semantic-versioning-and-publication.md): automatic RCs from `release/next`, promotion to `main`, and direct stable patches; external activation outstanding.
 
+## Epic 06: Prefect Deployment
+
+- [01 Prefect Deployment Entry Point](06-prefect-deployment/01-deployment-entry-point.md): public Quackframe flow, native Prefect deployment, and execution-environment SQL paths, with validation evidence.
+
+## Epic 07: Parameterized SQL
+
+- [01 Parameter Binding And SQL Invocation](07-parameterized-sql/01-parameter-binding-and-sql-invocation.md): proposed common parameter execution and two public entry points.
+
 ## Status Rules
 
 Allowed statuses are `Planned`, `In Progress`, `Blocked`, and `Complete`.

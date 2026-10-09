@@ -97,6 +97,14 @@ Use focused skills instead of expanding this file with task-specific detail.
   status before handoff.
 - Run relevant tests, lint, type checks, documentation checks, and
   `git diff --check` when available.
+- Keep validation scratch files out of the repository root. Prefer the system
+  temporary directory; when workspace-local scratch is necessary, use a
+  task-specific directory under the ignored `.quackframe/` directory.
+- Clean up scratch directories, probe scripts, copied repositories, and test
+  artifacts created during the task before handoff. Ignoring files in Git is
+  not cleanup. Explicit pytest `--basetemp` paths remain after a run; remove
+  the task-owned directory once validation is complete. If cleanup fails,
+  report the exact path and cause instead of silently creating more folders.
 - Do not commit unless the user asks. If committing, use a Conventional Commit
   message.
 - For versioning and publication, follow [the release guide](docs/releases.md).

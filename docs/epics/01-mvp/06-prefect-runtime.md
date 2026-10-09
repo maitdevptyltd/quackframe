@@ -1,7 +1,7 @@
 # Prefect Runtime
 
 Status: **Complete**
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 Epic: 01 MVP
 Phase: 06
 Related docs: [Runtime Adapters](../../runtime-adapters.md)
@@ -27,9 +27,11 @@ Quackframe's execution contract.
 - Verify flow and task failure states identify the failed file safely.
 - Prove base Quackframe remains importable without Prefect installed.
 
-SQL is read by the file task rather than carried in the execution plan. Static
-decorated wrappers call the existing core execution functions, and runtime
-selection imports those wrappers only when Prefect is selected.
+The [deployment entry-point phase](../06-prefect-deployment/01-deployment-entry-point.md)
+extends this runtime with public `quackframe_flow`. It receives file paths and
+prepares SQL inside the flow before opening DuckDB. File tasks consume the
+prepared statements through the existing core engine. Runtime selection keeps
+Prefect imports optional; the public integration can also be imported explicitly.
 
 The flow name is fixed as `quackframe-run`. A downstream `[project].name` is
 used as the flow-run name when available, while SQL-file task names use path

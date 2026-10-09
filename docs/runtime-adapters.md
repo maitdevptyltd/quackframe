@@ -56,25 +56,33 @@ may retain values, the runtime requires explicit external-result permission
 before project SQL executes and emits one retention warning when result logging
 is enabled.
 
-Prefect decorators live only in the optional integration package. Static,
-decorated functions wrap the existing core entry points:
+Prefect decorators live only in the optional integration package. The public
+`quackframe.integrations.prefect.quackframe_flow` accepts a required ordered
+list of SQL paths and optional `config_path` or `config` inputs. It is a native
+Prefect flow with native `.deploy()` and `.serve()` methods. See the
+[flow API](developer-api.md#prefect-flow) for deployment and configuration.
 
-```python
-@task(cache_policy=NO_CACHE, retries=0, persist_result=False)
-def execute_sql_file_task(connection, sql_file):
-    return execute_sql_file(connection, sql_file)
+Both `run(..., config=...)` with the Prefect runtime selected and deployed
+execution use this same flow. It prepares and validates files in the execution
+environment before opening DuckDB, then calls the core engine with the existing
+file-task executor. There is no extra Quackframe wrapper flow. Direct runtime
+execution uses the same preparation helper and prepared-plan engine.
 
-
-@flow(retries=0, persist_result=False)
-def execute_plan_flow(sql_files, config):
-    return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
-```
+The flow and file tasks disable retries and result persistence; tasks disable
+caching. File tasks execute synchronously against the shared connection.
 
 The Prefect flow has the fixed name `quackframe-run` because it represents the
 stable Quackframe execution process. When Quackframe loads a downstream
 `[project].name` from `pyproject.toml`, it uses that value as the Prefect flow
 run name. If no project name is available, Quackframe leaves the run name unset
-and lets Prefect generate it.
+and lets Prefect generate it. Configuration loaded inside a deployed flow names
+that individual run after loading; the shared flow object is never mutated.
+An explicit native `flow_run_name` option takes precedence.
+
+Configure `QUACKFRAME_ROOT` in the worker process or container for project and
+SQL-file discovery. The consuming project delivers those files and dependencies.
+Quackframe does not upload SQL, provision infrastructure, or wrap deployment
+methods. Direct Python, CLI, and F5 execution remain independent of deployment.
 
 Each SQL-file task is named from that file's path stem. Full paths remain in
 execution results and failures, where they provide useful diagnostic context.

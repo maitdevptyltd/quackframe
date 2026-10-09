@@ -32,9 +32,9 @@ The happy path is:
 1. Accept a non-empty, ordered list of SQL files.
 2. Resolve `QuackframeConfig` from defaults, repository configuration,
    environment, and explicit overrides.
-3. Validate paths, parse and classify each statement once, and validate runtime
-   result-log policy before executing SQL.
-4. Ask the selected runtime adapter to represent the invocation.
+3. Ask the selected runtime adapter to represent the invocation.
+4. Inside that runtime, validate paths, parse and classify each statement once,
+   and validate runtime result-log policy before opening DuckDB or executing SQL.
 5. Open one DuckDB session owned by the invocation.
 6. Create the reserved `quackframe` SQL schema and install enabled function
    macros over private Python UDFs.
@@ -43,6 +43,11 @@ The happy path is:
 9. Clean up extension resources, close the session and apply the configured
    database lifecycle.
 10. Return a typed result or raise a typed execution error.
+
+The public Prefect flow loads configuration in its execution environment when
+no resolved configuration is supplied. Preparation failures on the Prefect path
+are recorded as failed flow runs, before a database session opens. CLI and
+ordinary Python calls resolve configuration before selecting their runtime.
 
 ## Session Invariants
 

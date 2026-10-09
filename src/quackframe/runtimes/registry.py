@@ -11,15 +11,14 @@ from quackframe.models import ExecutionResult
 
 if TYPE_CHECKING:
     from quackframe.config import QuackframeConfig
-    from quackframe.sql import PreparedSqlFile
 
 
 class Runtime(Protocol):
-    """Run prepared SQL files without changing Quackframe's normal behaviour."""
+    """Prepare and run ordered paths without changing execution behaviour."""
 
     def __call__(
         self,
-        sql_files: tuple[PreparedSqlFile, ...],
+        sql_files: tuple[str, ...],
         config: QuackframeConfig,
     ) -> ExecutionResult:
         """Run the files in order and return a standard Quackframe result."""
@@ -67,8 +66,8 @@ class RuntimeRegistration:
 RUNTIME_REGISTRY: tuple[RuntimeRegistration, ...] = (
     RuntimeRegistration(
         name="direct",
-        module_name="quackframe.engine",
-        implementation_name="execute_plan",
+        module_name="quackframe.runtimes.direct",
+        implementation_name="execute_direct",
         result_logging_is_external=False,
     ),
     RuntimeRegistration(

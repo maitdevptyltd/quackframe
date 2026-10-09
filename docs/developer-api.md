@@ -1,9 +1,9 @@
 # Developer API
 
-Status: implemented MVP contract.
+Status: implemented execution and Prefect deployment contracts.
 
-Quackframe has three developer entry points. Each resolves the same
-configuration and delegates to the same execution engine.
+Quackframe supports CLI, F5, Python, and an optional deployable Prefect flow.
+Each resolves the same configuration and delegates to the same execution engine.
 
 ## Command Line
 
@@ -158,6 +158,83 @@ typed `ExecutionError` containing safe execution context such as the file and
 statement number. Core result types do not expose Prefect or another adapter's
 classes.
 
+## Prefect Flow
+
+Install `quackframe[prefect]` to import a real Prefect flow:
+
+```python
+from quackframe.integrations.prefect import quackframe_flow
+
+result = quackframe_flow(["sql/prepare.sql", "sql/report.sql"])
+```
+
+`sql_files` is required and non-empty. Files execute sequentially in the order
+received, using one shared DuckDB session, and stop on the first failure.
+There is one Quackframe flow run with one task per SQL file. Calling the flow
+directly does not require a deployment.
+
+For deployment, use Prefect's own `.deploy()` method:
+
+```python
+from prefect.types.entrypoint import EntrypointType
+
+from quackframe.integrations.prefect import quackframe_flow
+
+quackframe_flow.deploy(
+    name="daily-reporting",
+    work_pool_name="analytics",
+    image="your-registry/reporting:1.0.0",
+    build=False,
+    push=False,
+    entrypoint_type=EntrypointType.MODULE_PATH,
+    parameters={"sql_files": ["sql/prepare.sql", "sql/report.sql"]},
+)
+```
+
+This example uses an image already built and published by the consuming
+project. Install compatible Quackframe and Prefect versions in both environments.
+The image must contain the SQL files, configuration, and other dependencies.
+Configure `QUACKFRAME_ROOT=/app` in the **flow execution environment** to resolve
+the example paths as `/app/sql/prepare.sql` and `/app/sql/report.sql`, with
+configuration discovered at `/app/pyproject.toml`. A mounted directory or
+prepared checkout can supply these files instead. Paths do not upload files.
+If `QUACKFRAME_ROOT` is unset, the execution process's working directory is used.
+There is no `root` flow parameter.
+
+The public flow body accepts:
+
+```python
+def quackframe_flow(
+    sql_files: list[str],
+    *,
+    config_path: str | None = None,
+    config: QuackframeConfig | None = None,
+) -> ExecutionResult:
+    ...
+```
+
+Both configuration inputs are optional and mutually exclusive:
+
+- `config_path` selects an alternate TOML file with `[tool.quackframe]`
+  settings. Relative configuration paths follow `load_config()` and resolve
+  from the execution process's working directory; use an absolute worker path
+  when that directory differs from the runtime root. Normal runtime-root
+  `.env` and process environment precedence still applies.
+- `config` supplies a complete typed configuration instead of loading project
+  files and environment settings. Set `runtime="prefect"`. It is a replacement,
+  not a partial merge, and can explicitly set `config.root`. Deployment values
+  must be JSON-serializable, for example `config.model_dump(mode="json")` in
+  Prefect's `parameters`. Resolved paths must refer to the worker environment.
+
+With neither supplied, the flow loads configuration on the worker, explicitly
+selecting the Prefect runtime. Keep credentials in native providers or injected
+environment settings, outside deployment parameters. The normal Python
+`run(..., config=...)` and CLI contracts remain unchanged.
+
+See the [deployment example](../examples/prefect/README.md#deploy-the-quackframe-flow)
+for project layout and environment setup. Scheduling, images, work pools, and
+deployment registration remain native Prefect concerns.
+
 ## SQL Function API
 
 Quackframe functions use a schema-qualified public name:
@@ -221,7 +298,7 @@ is `overrides`. Both positional and named arguments are supported. See
 - File order is explicit and stable.
 - Runtime adapters preserve core behaviour.
 - Optional integrations do not become core imports.
-- Scheduled execution uses the CLI rather than a separate API.
+- Schedulers can use the CLI; Prefect deployments can use the optional public flow.
 
 ## Related Docs
 

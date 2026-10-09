@@ -7,14 +7,16 @@ provides deliberate extension points, and connects optional integrations.
 ## What Quackframe Is
 
 Quackframe runs one or more explicitly ordered SQL files in a shared DuckDB
-session. It gives the same core behaviour to three developer entry points:
+session. It gives the same core behaviour to these developer entry points:
 
 1. the `quackframe run` command;
-2. Visual Studio Code F5 execution through `launch.json` and a Python launcher; and
-3. a Python API for embedding the engine in applications, notebooks, or tests.
+2. Visual Studio Code F5 execution through `launch.json` and a Python launcher;
+3. a Python API for embedding the engine in applications, notebooks, or tests; and
+4. an optional public Prefect flow for direct invocation or native deployment.
 
-Command-line execution is also the automation entry point for schedulers. It is
-not a separate execution model.
+Schedulers can use command-line execution. Prefect deployments can import
+`quackframe_flow` from the optional integration and use Prefect's own deployment
+methods. Both preserve the same core execution model.
 
 Quackframe can install self-contained Python functions into the active DuckDB
 session. Downstream SQL calls them through a `quackframe` schema, while the

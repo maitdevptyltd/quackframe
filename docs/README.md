@@ -41,6 +41,10 @@ service integrations.
 
 - [Semantic Versioning And Publication Scope](epics/05-releases/01-semantic-versioning-and-publication.md): automatic RCs, stable promotion and patch releases; repository implementation with external activation outstanding.
 
+- [Prefect Deployment Scope](epics/06-prefect-deployment/01-deployment-entry-point.md): public Quackframe flow, native deployment, and execution-environment SQL paths, with validation evidence.
+
+- [Parameterized SQL Scope](epics/07-parameterized-sql/01-parameter-binding-and-sql-invocation.md): proposed shared binding, per-file Python inputs and SQL-driven file execution.
+
 ## Knowledge Map
 
 ```mermaid

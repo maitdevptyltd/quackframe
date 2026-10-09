@@ -101,6 +101,14 @@ after acceptance, subject to publication-history checks. External setup and the
 first production verification remain outstanding; publication is disabled until
 the repository owner completes the [release setup](releases.md#repository-owner-setup).
 
+## Prefect Deployment Entry Point
+
+[Epic 06: Prefect Deployment](epics/06-prefect-deployment/01-deployment-entry-point.md)
+adds public `quackframe_flow` within the optional Prefect runtime.
+Developers supply ordered SQL paths and use Prefect's native deployment methods;
+the consuming project delivers files and dependencies to the execution
+environment. The phase records implementation and validation evidence.
+
 ## Post-MVP Decisions
 
 - Whether a public execution-plan type is earned by programmatic callers.

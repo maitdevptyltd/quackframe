@@ -179,6 +179,22 @@ Quackframe should not create aliases for every setting owned by another
 product. Optional adapters should first respect that product's native
 environment and profile model.
 
+## Prefect Flow Configuration
+
+The deployable [Quackframe flow](developer-api.md#prefect-flow) loads these same
+configuration sources in the execution environment. Set `QUACKFRAME_ROOT` in
+that environment to locate SQL files and the default `pyproject.toml`.
+
+Optional `config_path` chooses another TOML file instead of the default project
+file; normal environment precedence remains in effect. As with `load_config()`,
+a relative explicit configuration path is relative to the process working
+directory. Optional `config` supplies a complete `QuackframeConfig`, bypassing
+source loading, and must select `runtime="prefect"`. These inputs are mutually
+exclusive. The default loaded configuration is explicitly resolved with the
+Prefect runtime regardless of the runtime choice in project or environment
+settings. The flow has no separate root parameter; an explicitly supplied
+configuration can still specify its own root.
+
 ## Prefect Settings
 
 A project may choose the Prefect runtime without checking in connection details:

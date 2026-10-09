@@ -33,7 +33,9 @@ def test_ordered_files_share_one_session(tmp_path: Path) -> None:
         "INSERT INTO shared_state VALUES (1); SELECT count(*) FROM shared_state;",
     )
 
-    result = run([create, use], config=QuackframeConfig(root=tmp_path))
+    result = run(
+        (path for path in (create, use)), config=QuackframeConfig(root=tmp_path)
+    )
 
     assert tuple(file.path.name for file in result.files) == (
         "01-create.sql",
@@ -329,8 +331,8 @@ def test_external_result_policy_is_supplied_by_the_runtime(
     )
     local_runtime = RuntimeRegistration(
         name="local-observer",
-        module_name="quackframe.engine",
-        implementation_name="execute_plan",
+        module_name="quackframe.runtimes.direct",
+        implementation_name="execute_direct",
         result_logging_is_external=False,
     )
     monkeypatch.setattr(
@@ -346,6 +348,7 @@ def test_external_result_policy_is_supplied_by_the_runtime(
 
 
 def test_external_runtime_requires_permission_before_sql(
+    external_runtime: str,
     tmp_path: Path,
 ) -> None:
     database_path = tmp_path / "not-created.duckdb"
@@ -355,7 +358,7 @@ def test_external_runtime_requires_permission_before_sql(
     )
     config = QuackframeConfig(
         root=tmp_path,
-        runtime="prefect",
+        runtime=external_runtime,
         database=DatabaseConfig(mode="persistent", path=database_path),
     )
 
@@ -366,14 +369,33 @@ def test_external_runtime_requires_permission_before_sql(
 
 
 def test_all_requires_external_permission_even_without_annotations(
+    external_runtime: str,
     tmp_path: Path,
 ) -> None:
     sql_file = _write(tmp_path / "results.sql", "CREATE TABLE example(i INTEGER);")
     config = QuackframeConfig(
         root=tmp_path,
-        runtime="prefect",
+        runtime=external_runtime,
         log_setting="all",
     )
 
     with pytest.raises(ConfigurationError, match="External result logging"):
         run([sql_file], config=config)
+
+
+@pytest.fixture
+def external_runtime(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Exercise registry policy without requiring an optional orchestrator."""
+
+    registration = RuntimeRegistration(
+        name="external-observer",
+        module_name="quackframe.runtimes.direct",
+        implementation_name="execute_direct",
+        result_logging_is_external=True,
+    )
+    monkeypatch.setattr(
+        runtime_registry,
+        "RUNTIME_REGISTRY",
+        (*runtime_registry.RUNTIME_REGISTRY, registration),
+    )
+    return registration.name

@@ -84,7 +84,7 @@ def test_dotenv_permission_allows_prefect_result_logging(tmp_path: Path) -> None
 
 
 def test_prefect_flow_has_a_stable_name() -> None:
-    assert prefect_runtime.execute_plan_flow.name == "quackframe-run"
+    assert prefect_runtime.quackframe_flow.name == "quackframe-run"
 
 
 def test_prefect_file_task_uses_the_path_stem(tmp_path: Path) -> None:
@@ -106,25 +106,6 @@ def test_prefect_file_task_uses_the_path_stem(tmp_path: Path) -> None:
 
     with_options.assert_called_once_with(name="01-load-data")
     task_call.assert_called_once_with(ANY, sql_file)
-
-
-def test_prefect_flow_run_uses_project_name(tmp_path: Path) -> None:
-    configured_flow = Mock()
-    configured_flow.return_value = Mock()
-    config = QuackframeConfig(
-        root=tmp_path,
-        runtime="prefect",
-        project_name="analytics-workflows",
-    )
-
-    with patch.object(
-        prefect_runtime.execute_plan_flow,
-        "with_options",
-        return_value=configured_flow,
-    ) as with_options:
-        prefect_runtime.execute_with_prefect((), config)
-
-    with_options.assert_called_once_with(flow_run_name="analytics-workflows")
 
 
 def test_prefect_file_task_logs_selected_result(
@@ -166,18 +147,13 @@ def test_prefect_warns_once_before_external_results(tmp_path: Path) -> None:
         log_setting="all",
         allow_external_result_logging=True,
     )
-    sql_files = prepare_sql_files(
-        [sql_file_path],
-        root=tmp_path,
-        log_setting=config.log_setting,
-    )
     logger = Mock()
 
     with (
         patch.object(prefect_runtime, "get_run_logger", return_value=logger),
         patch.object(prefect_runtime, "execute_plan", return_value=Mock()),
     ):
-        prefect_runtime.execute_plan_flow.fn(sql_files, config)
+        prefect_runtime.quackframe_flow.fn([str(sql_file_path)], config=config)
 
     logger.warning.assert_called_once()
 
@@ -366,7 +342,7 @@ def test_block_conversion_rejects_an_incompatible_model_family() -> None:
 )
 def test_prefect_preserves_framework_error_identity(error: QuackframeError) -> None:
     with (
-        patch.object(prefect_runtime, "execute_plan_flow", side_effect=error),
+        patch.object(prefect_runtime, "quackframe_flow", side_effect=error),
         pytest.raises(type(error)) as captured,
     ):
         prefect_runtime.execute_with_prefect((), QuackframeConfig(runtime="prefect"))
@@ -378,7 +354,7 @@ def test_prefect_external_error_omits_sensitive_diagnostics() -> None:
     with (
         patch.object(
             prefect_runtime,
-            "execute_plan_flow",
+            "quackframe_flow",
             side_effect=RuntimeError("protected-runtime-value"),
         ),
         pytest.raises(QuackframeError) as captured,
@@ -425,7 +401,7 @@ def test_prefect_configuration_failure_retains_cli_status(
     sql_file.write_text("SELECT 1;", encoding="utf-8")
     with patch.object(
         prefect_runtime,
-        "execute_plan_flow",
+        "quackframe_flow",
         side_effect=ConfigurationError("Invalid database configuration"),
     ):
         status = main(
