@@ -1,7 +1,7 @@
 # SQL Result Logging
 
 Status: **In Progress**
-Last updated: 2026-10-02
+Last updated: 2026-10-13
 Epic: 02 Result Logging
 Phase: 01
 Related docs: [Developer API](../../developer-api.md), [Execution Lifecycle](../../execution-lifecycle.md), [Runtime Adapters](../../runtime-adapters.md)
@@ -87,10 +87,11 @@ fail-fast behaviour, task caching, retries, database cleanup, or SQL failure
 semantics. An assertion statement such as `SELECT error(...)` continues to fail
 the file, task, and run when its condition is true.
 
-A selected statement is executed as a `DuckDBPyRelation` and that relation is
-rendered exactly once. Quackframe must not execute the statement first and then
-reconstruct or rerun it for display. Unselected statements continue through the
-ordinary execution path without result rendering.
+A selected statement is fully materialized once into a temporary DuckDB table
+through its `DuckDBPyRelation`. Native rendering reads a bounded preview of that
+table without re-executing the original relation. The temporary table and source
+view are removed afterward. Unselected statements continue through the ordinary
+execution path without result rendering.
 
 ## Data Handling Boundary
 
@@ -130,11 +131,10 @@ deployment or invocation decision.
   SQL parser or split statements on semicolons.
 - Associate an annotation with exactly the next DuckDB statement and reject or
   report misplaced annotations clearly.
-- Obtain a `DuckDBPyRelation` for a selected result-producing statement and use
-  its native string representation as the complete rendered payload.
-- Render each selected relation exactly once. Do not execute a selected
-  statement separately before rendering it, fetch its rows into a Python
-  collection, or implement Quackframe-specific table formatting or truncation.
+- Materialize a selected relation once in a uniquely named temporary DuckDB
+  table, then use that table's native relation rendering as the complete payload.
+- Do not re-execute the original relation to render it, fetch its rows into a
+  Python collection, or implement Quackframe-specific formatting or truncation.
 - Keep result selection and native relation rendering in core while adapters
   own delivery of the rendered string to their logging systems.
 - Resolve direct Python and CLI values before environment values. Do not load
@@ -146,6 +146,24 @@ deployment or invocation decision.
   context.
 
 ## Validation
+
+The 2026-10-13 R02 fix is verified against DuckDB 1.5.5 with offline synthetic
+data. All 12 selected tests passed (11 deselected): late failure and exactly-once
+counting-UDF regressions in all three modes, native truncation, both RETURNING
+paths, and existing output-selection cases. Exact targeted command:
+
+```powershell
+poetry run pytest tests/test_execution.py -k 'result_logging_detects_errors_beyond_preview or result_logging_executes_every_row_exactly_once or native_relation_rendering_owns_truncation or returning_after_unicode_emits_and_executes_once or annotations_only_emits_only_annotated_results or none_ignores_annotations or all_emits_annotated_and_unannotated_results_once' -p no:cacheprovider --tb=short
+```
+
+Changed-file checks: `poetry run ruff check src/quackframe/sql.py tests/test_execution.py`,
+`poetry run ruff format --check src/quackframe/sql.py tests/test_execution.py`, and
+`git diff --check` pass. Initial sandbox attempts failed on temporary-directory
+permissions; the same targeted selection passed outside the sandbox. No broad
+tests, type checks, dependency changes, live-system checks, or separate review
+cycle were run. The phase remains in progress because R02 does not reassess
+the remaining phase criteria. Full results occupy DuckDB temporary storage until
+rendering finishes; only the rendered preview crosses into Python.
 
 The 2026-10-02 terminal-formatting fix is implemented: Prefect result messages
 begin with a newline, keeping the native table below the log prefix. The focused

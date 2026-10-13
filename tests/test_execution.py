@@ -12,10 +12,11 @@ from quackframe import (
     QuackframeConfig,
     run,
 )
+from quackframe.config import LogSetting
 from quackframe.engine import execute_plan
 from quackframe.runtimes import registry as runtime_registry
 from quackframe.runtimes.registry import RuntimeRegistration
-from quackframe.sql import prepare_sql_files
+from quackframe.sql import execute_sql_file, prepare_sql_files
 
 
 def _write(path: Path, sql: str) -> Path:
@@ -185,6 +186,79 @@ def test_native_relation_rendering_owns_truncation(
     output = capsys.readouterr().out
     assert "25 rows" in output
     assert "20 shown" in output
+
+
+@pytest.mark.parametrize("log_setting", ["none", "annotations-only", "all"])
+def test_result_logging_detects_errors_beyond_preview(
+    tmp_path: Path, log_setting: LogSetting
+) -> None:
+    annotation = "-- quackframe: log-result\n" if log_setting != "all" else ""
+    sql_file = _write(
+        tmp_path / "late-error.sql",
+        annotation + "SELECT CASE WHEN i = 25000 THEN error('late failure') ELSE i END "
+        "FROM range(1, 30001) AS rows(i); CREATE TEMP TABLE should_not_run(i INT);",
+    )
+    (prepared,) = prepare_sql_files([sql_file], root=tmp_path, log_setting=log_setting)
+    output: list[str] = []
+
+    with duckdb.connect() as connection:
+        with pytest.raises(ExecutionError) as captured:
+            execute_sql_file(connection, prepared, emit_result=output.append)
+
+        assert captured.value.sql_file == sql_file
+        assert captured.value.statement_number == 1
+        assert output == []
+        assert (
+            connection.execute(
+                "SELECT table_name FROM duckdb_tables() WHERE NOT internal"
+            ).fetchall()
+            == []
+        )
+        assert (
+            connection.execute(
+                "SELECT view_name FROM duckdb_views() WHERE NOT internal"
+            ).fetchall()
+            == []
+        )
+
+
+@pytest.mark.parametrize("log_setting", ["none", "annotations-only", "all"])
+def test_result_logging_executes_every_row_exactly_once(
+    tmp_path: Path, log_setting: LogSetting
+) -> None:
+    calls = [0] * 30000
+
+    def counted(value: int) -> int:
+        calls[value] += 1
+        return value
+
+    annotation = "-- quackframe: log-result\n" if log_setting != "all" else ""
+    sql_file = _write(
+        tmp_path / "counted.sql",
+        annotation + "SELECT counted(i) AS value FROM range(30000) AS rows(i);",
+    )
+    (prepared,) = prepare_sql_files([sql_file], root=tmp_path, log_setting=log_setting)
+    output: list[str] = []
+
+    with duckdb.connect() as connection:
+        connection.create_function("counted", counted, side_effects=True)
+        execute_sql_file(connection, prepared, emit_result=output.append)
+
+        assert calls == [1] * 30000
+        expected = str(connection.sql("SELECT i AS value FROM range(30000) AS rows(i)"))
+        assert output == ([] if log_setting == "none" else [expected])
+        assert (
+            connection.execute(
+                "SELECT table_name FROM duckdb_tables() WHERE NOT internal"
+            ).fetchall()
+            == []
+        )
+        assert (
+            connection.execute(
+                "SELECT view_name FROM duckdb_views() WHERE NOT internal"
+            ).fetchall()
+            == []
+        )
 
 
 def test_annotated_returning_after_unicode_emits_and_executes_once(

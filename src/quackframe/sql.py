@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from duckdb import (
     DuckDBPyConnection,
@@ -128,8 +129,9 @@ def execute_sql_file(
         for next_statement_number, prepared in enumerate(sql_file.statements, start=1):
             statement_number = next_statement_number
             if prepared.emit_result:
-                relation = connection.sql(prepared.statement)
-                (emit_result or _print_result)(str(relation))
+                (emit_result or _print_result)(
+                    _render_complete_result(connection, prepared.statement)
+                )
             else:
                 connection.execute(prepared.statement)
     except Exception as error:  # DuckDB exposes several exception subclasses.
@@ -144,6 +146,24 @@ def execute_sql_file(
         statement_count=len(sql_file.statements),
         elapsed=datetime.now(UTC) - started_at,
     )
+
+
+def _render_complete_result(
+    connection: DuckDBPyConnection, statement: Statement
+) -> str:
+    """Materialize once in DuckDB, then render its bounded native preview."""
+
+    # Rendering a lazy relation evaluates only a preview, and rendering after
+    # execute() reruns it. Keep the complete result in a temporary DuckDB table.
+    name = f"_quackframe_result_{uuid4().hex}"
+    view = f"{name}_source"
+    relation = connection.sql(statement)
+    try:
+        relation.query(view, f"CREATE TEMP TABLE {name} AS SELECT * FROM {view}")
+        return str(connection.table(name))
+    finally:
+        connection.execute(f"DROP VIEW IF EXISTS {view}")
+        connection.execute(f"DROP TABLE IF EXISTS {name}")
 
 
 def validate_external_result_logging(

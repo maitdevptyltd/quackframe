@@ -122,11 +122,18 @@ git diff --check
 
 ### R02 Result logging executes the complete query
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323240) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql.py#L130) · [Local file](../src/quackframe/sql.py)
 - Feedback: Ensure logged SELECTs execute every row exactly once. Add a counting-UDF regression above 10,240 rows for none, annotated and all logging.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Execute each selected query completely once in DuckDB, then render
+  a bounded native preview from its temporary result table.
+- Resolution / verification: Implemented in `fix: fully execute logged SQL results`.
+  DuckDB 1.5.5: 12 targeted tests passed, including a failure at row 25,000 of
+  30,000 and one UDF call per row under none, annotation, and all logging.
+  Native truncation and RETURNING regressions pass. Changed-file Ruff lint and
+  format checks and `git diff --check` pass. See the
+  [phase validation](../docs/epics/02-result-logging/01-sql-result-logging.md#validation)
+  for the exact test command and validation limits.
 
 ### R03 NumPy dependency
 

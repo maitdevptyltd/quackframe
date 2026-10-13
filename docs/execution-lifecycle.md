@@ -76,8 +76,12 @@ By default, diagnostics may include:
 
 Diagnostics must not include credentials, bound secret values, full SQL text,
 or unselected returned query data. Selected results use DuckDB's native
-relation rendering and execute exactly once. A runtime whose registry policy
-declares an external result-log destination must receive explicit permission
+relation rendering after the complete query executes exactly once into a
+temporary DuckDB result table. Rendering reads a bounded preview of that table;
+errors beyond the preview still fail the statement. The temporary result is
+removed after rendering, and rows are not fetched into Python for display.
+A runtime whose registry policy declares an external result-log destination
+must receive explicit permission
 before project SQL when the selection would emit values.
 
 ## Failure Contract
