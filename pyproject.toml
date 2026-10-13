@@ -12,6 +12,7 @@ license = { file = "LICENSE" }
 authors = [{ name = "Quackframe contributors" }]
 dependencies = [
     "duckdb==1.5.5",
+    "numpy>=1.26,<3",
     "pydantic>=2.11,<3",
     "python-dotenv (>=1.1,<2)",
 ]
@@ -28,7 +29,6 @@ sftp = [
     "paramiko>=4,<5",
 ]
 prefect = [
-    "numpy>=1.26,<3",
     "prefect>=3.2,<4",
 ]
 
@@ -37,7 +37,6 @@ quackframe = "quackframe.cli:main"
 
 [dependency-groups]
 dev = [
-    "numpy>=1.26,<3",
     "pyright>=1.1.413,<2",
     "pytest>=9.0,<10",
     "pytest-cov>=7,<8",

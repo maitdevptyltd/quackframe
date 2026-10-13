@@ -2799,7 +2799,7 @@ version = "2.4.6"
 description = "Fundamental package for array computing in Python"
 optional = false
 python-versions = ">=3.11"
-groups = ["main", "dev"]
+groups = ["main"]
 files = [
     {file = "numpy-2.4.6-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:0280e0356c0829a18d9de1cb7eee50ec22ca639878d7240307ca0943d73cd2c4"},
     {file = "numpy-2.4.6-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:110f8b71aacb688ec69062bb7f6938a0f8acb01b7c1c4beb453c65b6d234584d"},
@@ -5651,10 +5651,10 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 
 [extras]
 azure = ["adlfs", "azure-identity", "azure-storage-blob", "fsspec"]
-prefect = ["numpy", "prefect"]
+prefect = ["prefect"]
 sftp = ["fsspec", "paramiko"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "306aafc3c407f13d7dad2deb1957d5b2b3345f54337ac8bc51ea4b70ef6ef4f4"
+content-hash = "4f74aa328ec4c3692a74192f9f0636707e733ec4d895ba142252d14fcc1436f4"

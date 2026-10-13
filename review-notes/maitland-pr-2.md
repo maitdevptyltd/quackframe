@@ -137,11 +137,11 @@ git diff --check
 
 ### R03 NumPy dependency
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323250) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/pyproject.toml#L30) · [Local file](../pyproject.toml)
 - Feedback: Make SQL functions work without the Prefect extra. Add a clean wheel smoke test enabling register_secret.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Include NumPy in base dependencies and exercise a pure Python UDF in the clean wheel smoke test without Prefect.
+- Resolution / verification: Moved NumPy out of the Prefect extra and dev group without upgrading locked packages. `poetry check --lock` and scoped `git diff --check` passed. Wheel build stalled and was stopped; the clean-wheel UDF check was not run.
 
 ### R04 Community extensions
 

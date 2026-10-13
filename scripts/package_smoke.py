@@ -14,9 +14,18 @@ SMOKE = """
 from importlib.metadata import version
 from importlib.util import find_spec
 from pathlib import Path
+import duckdb
 from quackframe import ExecutionError, QuackframeConfig, run
 assert find_spec("prefect") is None
 assert version("quackframe") == EXPECTED
+
+def increment(value: int) -> int:
+    return value + 1
+
+with duckdb.connect(config={"threads": 1}) as connection:
+    connection.create_function("increment", increment)
+    assert connection.execute("SELECT increment(1)").fetchone() == (2,)
+
 config = QuackframeConfig(root=Path.cwd())
 result = run(["first.sql", "second.sql"], config=config)
 assert result.statement_count == 2

@@ -4,6 +4,9 @@ Quackframe can expose self-contained Python capabilities to SQL. Each function
 is an independent unit of work that conforms to a small installation contract
 without being forced into shared thematic implementation.
 
+The base installation includes NumPy for DuckDB's Python UDF registration;
+SQL functions do not require the Prefect extra unless using a Prefect provider.
+
 ## Public Naming
 
 Downstream SQL uses a schema-qualified name:
