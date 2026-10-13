@@ -1,10 +1,6 @@
-"""Temporary database ownership across overlapping invocations."""
+"""Generated temporary database ownership and cleanup."""
 
-import subprocess
-import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Event
 
 import pytest
 from duckdb import CatalogException, DuckDBPyConnection
@@ -20,27 +16,40 @@ from quackframe import (
 from quackframe.cli import main
 
 
-@pytest.mark.parametrize("blocked_default", [False, True])
-def test_explicit_temporary_path_does_not_prepare_default_directory(
-    tmp_path: Path, blocked_default: bool
+def test_overlapping_temporary_sessions_use_distinct_generated_paths(
+    tmp_path: Path,
 ) -> None:
-    default_directory = tmp_path / ".quackframe"
-    if blocked_default:
-        default_directory.write_text("caller-owned", encoding="utf-8")
-    path = tmp_path / "custom" / "run.duckdb"
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
-    )
+    config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
+    temporary_root = tmp_path / ".quackframe" / "tmp"
 
+    with database.open_duckdb_session(config) as first:
+        first.execute("CREATE TABLE example(value INTEGER)")
+        (first_path,) = temporary_root.glob("*.duckdb")
+        with database.open_duckdb_session(config) as second:
+            second.execute("CREATE TABLE example(value INTEGER)")
+            paths = set(temporary_root.glob("*.duckdb"))
+            assert len(paths) == 2
+            assert first_path in paths
+            assert not list(temporary_root.glob("*.quackframe-lock"))
+        assert list(temporary_root.glob("*.duckdb")) == [first_path]
+        assert first.execute("SELECT count(*) FROM example").fetchone() == (0,)
+    assert not list(temporary_root.iterdir())
+
+
+def test_temporary_database_and_remaining_wal_are_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
+    remove_database = database._remove_managed_database  # pyright: ignore[reportPrivateUsage]
+
+    def cleanup_with_wal(path: Path) -> None:
+        path.with_suffix(".duckdb.wal").write_bytes(b"owned WAL")
+        remove_database(path)
+
+    monkeypatch.setattr(database, "_remove_managed_database", cleanup_with_wal)
     with database.open_duckdb_session(config) as connection:
-        assert connection.execute("SELECT 42").fetchone() == (42,)
-        assert path.is_file()
-
-    assert not list(path.parent.glob("run.duckdb*"))
-    if blocked_default:
-        assert default_directory.read_text(encoding="utf-8") == "caller-owned"
-    else:
-        assert not default_directory.exists()
+        connection.execute("CREATE TABLE example(value INTEGER)")
+    assert not list((tmp_path / ".quackframe" / "tmp").iterdir())
 
 
 def test_default_temporary_directory_failure_has_configuration_cli_exit_code(
@@ -56,130 +65,16 @@ def test_default_temporary_directory_failure_has_configuration_cli_exit_code(
     assert "Traceback" not in error
 
 
-@pytest.mark.parametrize("separate_process", [False, True])
-def test_temporary_path_is_reserved_before_connecting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, separate_process: bool
-) -> None:
-    config = QuackframeConfig(
-        root=tmp_path,
-        database=DatabaseConfig(mode="temporary", path=tmp_path / "shared.duckdb"),
-    )
-    opening = Event()
-    proceed = Event()
-    open_connection = database._open_connection  # pyright: ignore[reportPrivateUsage]
-
-    def paused_open(path: str, config: QuackframeConfig) -> DuckDBPyConnection:
-        if not opening.is_set():
-            opening.set()
-            assert proceed.wait(timeout=10)
-        return open_connection(path, config)
-
-    def owner() -> None:
-        with database.open_duckdb_session(config) as connection:
-            assert connection.execute("SELECT 42").fetchone() == (42,)
-
-    monkeypatch.setattr(database, "_open_connection", paused_open)
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        running = executor.submit(owner)
-        try:
-            assert opening.wait(timeout=10)
-            if separate_process:
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        "-c",
-                        "from pathlib import Path; import sys; "
-                        "from quackframe import DatabaseConfig, QuackframeConfig; "
-                        "from quackframe.database import open_duckdb_session; "
-                        "root = Path(sys.argv[1]); "
-                        "config = QuackframeConfig(root=root, database=DatabaseConfig("
-                        "mode='temporary', path=root / 'shared.duckdb')); "
-                        "\nwith open_duckdb_session(config): pass",
-                        str(tmp_path),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-                assert result.returncode != 0
-                assert "already reserved" in result.stderr
-            else:
-                with (
-                    pytest.raises(ConfigurationError, match="reserved"),
-                    database.open_duckdb_session(config),
-                ):
-                    pytest.fail("A competing invocation acquired the same path")
-        finally:
-            proceed.set()
-            running.result(timeout=10)
-
-    assert not (tmp_path / "shared.duckdb").exists()
-    assert not (tmp_path / "shared.duckdb.quackframe-lock").exists()
-
-
-def test_reservation_covers_database_and_wal_cleanup(
+def test_failed_connection_removes_partial_temporary_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = tmp_path / "shared.duckdb"
-    wal = tmp_path / "shared.duckdb.wal"
     config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
-    )
-    remove_database = database._remove_managed_database  # pyright: ignore[reportPrivateUsage]
-
-    def checked_cleanup(managed_path: Path) -> None:
-        # The connection has closed; stand in for a WAL still awaiting removal.
-        wal.write_bytes(b"owned WAL")
-        contents = path.read_bytes()
-        with (
-            pytest.raises(ConfigurationError, match="reserved"),
-            database.open_duckdb_session(config),
-        ):
-            pytest.fail("Contender reached an owned database")
-        assert path.read_bytes() == contents
-        assert wal.read_bytes() == b"owned WAL"
-        remove_database(managed_path)
-        with (
-            pytest.raises(ConfigurationError, match="reserved"),
-            database.open_duckdb_session(config),
-        ):
-            pytest.fail("Reservation was released before cleanup returned")
-
-    monkeypatch.setattr(database, "_remove_managed_database", checked_cleanup)
-    with database.open_duckdb_session(config) as connection:
-        connection.execute("CREATE TABLE example(value INTEGER)")
-    assert not path.exists()
-    assert not wal.exists()
-    assert not path.with_name(f"{path.name}.quackframe-lock").exists()
-
-
-@pytest.mark.parametrize("existing_suffix", ["", ".wal", ".quackframe-lock"])
-def test_existing_files_are_never_adopted(tmp_path: Path, existing_suffix: str) -> None:
-    path = tmp_path / "existing.duckdb"
-    existing = path.with_name(f"{path.name}{existing_suffix}")
-    existing.write_bytes(b"caller-owned")
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
-    )
-    with (
-        pytest.raises(ConfigurationError, match="already"),
-        database.open_duckdb_session(config),
-    ):
-        pytest.fail("Existing files were adopted")
-    assert existing.read_bytes() == b"caller-owned"
-    assert list(tmp_path.glob("existing.duckdb*")) == [existing]
-
-
-def test_failed_connection_releases_reservation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "retry.duckdb"
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+        root=tmp_path, database=DatabaseConfig(mode="temporary")
     )
 
     def fail_open(path: str, config: QuackframeConfig) -> DuckDBPyConnection:
+        Path(path).write_bytes(b"partial database")
+        Path(f"{path}.wal").write_bytes(b"partial WAL")
         raise ConfigurationError("Connection failed")
 
     with monkeypatch.context() as patch:
@@ -192,16 +87,12 @@ def test_failed_connection_releases_reservation(
 
     with database.open_duckdb_session(config) as connection:
         assert connection.execute("SELECT 1").fetchone() == (1,)
-    assert not list(tmp_path.glob("retry.duckdb*"))
+    assert not list((tmp_path / ".quackframe" / "tmp").iterdir())
 
 
-@pytest.mark.parametrize("explicit_path", [False, True])
-def test_sql_failure_removes_temporary_files_and_reservation(
-    tmp_path: Path, explicit_path: bool
-) -> None:
-    path = tmp_path / "failed.duckdb" if explicit_path else None
+def test_sql_failure_removes_temporary_files(tmp_path: Path) -> None:
     config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+        root=tmp_path, database=DatabaseConfig(mode="temporary")
     )
     with (
         pytest.raises(CatalogException, match="missing_table"),
@@ -211,7 +102,7 @@ def test_sql_failure_removes_temporary_files_and_reservation(
     assert not list(tmp_path.rglob("*.duckdb*"))
 
 
-@pytest.mark.parametrize("cleanup_step", ["database", "wal", "reservation"])
+@pytest.mark.parametrize("cleanup_step", ["database", "wal"])
 @pytest.mark.parametrize("sql_fails", [False, True])
 def test_cleanup_failure_preserves_execution_outcome(
     tmp_path: Path,
@@ -224,27 +115,18 @@ def test_cleanup_failure_preserves_execution_outcome(
         "SELECT 1; SELECT * FROM missing_table" if sql_fails else "SELECT 1",
         encoding="utf-8",
     )
-    path = tmp_path / "cleanup.duckdb"
     config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+        root=tmp_path, database=DatabaseConfig(mode="temporary")
     )
     original_unlink = Path.unlink
-    original_rmdir = Path.rmdir
 
     def fail_unlink(target: Path, missing_ok: bool = False) -> None:
         suffix = ".duckdb" if cleanup_step == "database" else ".wal"
-        if cleanup_step != "reservation" and target.suffix == suffix:
+        if target.suffix == suffix:
             raise OSError("sensitive cleanup detail")
         original_unlink(target, missing_ok=missing_ok)
 
-    def fail_rmdir(target: Path) -> None:
-        if target.name.endswith(".quackframe-lock"):
-            raise OSError("sensitive cleanup detail")
-        original_rmdir(target)
-
     monkeypatch.setattr(Path, "unlink", fail_unlink)
-    if cleanup_step == "reservation":
-        monkeypatch.setattr(Path, "rmdir", fail_rmdir)
 
     if sql_fails:
         with pytest.raises(ExecutionError) as captured:
@@ -258,10 +140,6 @@ def test_cleanup_failure_preserves_execution_outcome(
         with pytest.raises(ConfigurationError, match="could not be") as cleanup_failure:
             run([sql_file], config=config)
         assert "sensitive cleanup detail" not in str(cleanup_failure.value)
-
-    assert path.with_name(f"{path.name}.quackframe-lock").exists() == (
-        cleanup_step == "reservation"
-    )
 
 
 def test_failed_database_cleanup_keeps_sql_cli_exit_code(
@@ -279,12 +157,11 @@ def test_failed_database_cleanup_keeps_sql_cli_exit_code(
 
 
 @pytest.mark.parametrize("interrupted", [False, True])
-def test_multiple_cleanup_failures_preserve_original_exception(
+def test_cleanup_failure_preserves_setup_or_interruption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool
 ) -> None:
-    path = tmp_path / "interrupted.duckdb"
     config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary", path=path)
+        root=tmp_path, database=DatabaseConfig(mode="temporary")
     )
     primary_error = (
         KeyboardInterrupt() if interrupted else ConfigurationError("Setup failed")
@@ -293,11 +170,7 @@ def test_multiple_cleanup_failures_preserve_original_exception(
     def fail_cleanup(path: Path) -> None:
         raise ConfigurationError("Temporary database could not be removed")
 
-    def fail_release(path: Path) -> None:
-        raise OSError("sensitive cleanup detail")
-
     monkeypatch.setattr(database, "_remove_managed_database", fail_cleanup)
-    monkeypatch.setattr(Path, "rmdir", fail_release)
     with (
         pytest.raises(type(primary_error)) as captured,
         database.open_duckdb_session(config),
@@ -305,7 +178,6 @@ def test_multiple_cleanup_failures_preserve_original_exception(
         raise primary_error
 
     assert captured.value is primary_error
-    assert len(primary_error.__notes__) == 2
+    assert len(primary_error.__notes__) == 1
     assert "could not be removed" in primary_error.__notes__[0]
-    assert "could not be released" in primary_error.__notes__[1]
     assert "sensitive cleanup detail" not in " ".join(primary_error.__notes__)

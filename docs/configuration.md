@@ -91,7 +91,7 @@ designed.
 ## Runtime Root And Relative Paths
 
 The runtime root defaults to `Path.cwd()` when the caller supplies no root.
-Relative database, temporary, and configuration paths resolve from the runtime
+Relative persistent database and configuration paths resolve from the runtime
 root.
 
 For VS Code F5:
@@ -108,26 +108,16 @@ its working directory explicitly or provide a root override.
 The default database mode is `memory`; no database file is created. Temporary
 mode creates a unique file below `.quackframe/tmp/` under the runtime root and
 removes that file and its WAL after the connection closes, including after a
-failed run. An explicitly selected temporary path must remain under the runtime
-root; neither the database nor its WAL may already exist. Quackframe atomically
-reserves each temporary path with a sibling `<database-name>.quackframe-lock`
-directory before opening DuckDB and holds that reservation through cleanup.
-Another temporary invocation using the same path fails without opening or
-removing its files. This reservation coordinates Quackframe temporary runs;
-other programs must not write to their paths.
+failed run. Temporary filenames are always generated automatically;
+`database.path` is rejected with temporary mode. Use persistent mode when you
+need to select a database path.
 
-Quackframe creates only the selected database path's parent directory. An
-explicit temporary path does not require `.quackframe/tmp/` to be writable or
-even present. Failure to prepare the selected directory raises
-`ConfigurationError` (CLI exit code `2`).
+Quackframe creates the database parent directory when necessary. Failure to
+prepare it raises `ConfigurationError` (CLI exit code `2`). A terminated
+process can leave temporary database/WAL files behind for manual removal.
 
-Normal completion and handled failures release the reservation. A terminated
-process can leave it behind: confirm that no run still owns the path before
-manually removing the reservation and any abandoned temporary database/WAL.
-Quackframe does not automatically reclaim stale reservations.
-
-If temporary-file removal or reservation release fails while a run is already
-failing, Quackframe preserves the original exception and adds a safe cleanup
+If temporary-file removal fails while a run is already failing, Quackframe
+preserves the original exception and adds a safe cleanup
 note. SQL failures retain their file, statement number, and CLI exit code `1`.
 If the run otherwise succeeded, cleanup failure raises `ConfigurationError`
 (CLI exit code `2`). Failed cleanup can leave files requiring manual removal.

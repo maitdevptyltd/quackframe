@@ -50,6 +50,11 @@ class DatabaseConfig(BaseModel):
 
         if self.mode == "memory" and self.path is not None:
             raise ValueError("database.path cannot be used with memory mode")
+        if self.mode == "temporary" and self.path is not None:
+            raise ValueError(
+                "database.path cannot be used with temporary mode; "
+                "temporary filenames are generated automatically"
+            )
         if self.mode == "persistent" and self.path is None:
             raise ValueError("database.path is required with persistent mode")
         return self

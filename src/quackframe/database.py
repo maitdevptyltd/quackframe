@@ -27,26 +27,25 @@ def open_duckdb_session(
     only for temporary databases created for this run.
     """
 
-    with _database_path(config) as (database_path, managed_path):
-        connection: DuckDBPyConnection | None = None
-        primary_error: BaseException | None = None
-        try:
-            connection = _open_connection(database_path, config)
-            _load_extensions(connection, config.duckdb.extensions)
-            yield connection
-        except BaseException as error:
-            primary_error = error
-            raise
-        finally:
-            if connection is not None:
-                connection.close()
-            # The surrounding reservation stays held until both owned files
-            # are removed. Persistent paths always remain caller-owned.
-            if managed_path is not None:
-                try:
-                    _remove_managed_database(managed_path)
-                except ConfigurationError as error:
-                    _report_cleanup_failure(str(error), primary_error)
+    database_path, managed_path = _database_path(config)
+    connection: DuckDBPyConnection | None = None
+    primary_error: BaseException | None = None
+    try:
+        connection = _open_connection(database_path, config)
+        _load_extensions(connection, config.duckdb.extensions)
+        yield connection
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        if connection is not None:
+            connection.close()
+        # Persistent paths always remain caller-owned.
+        if managed_path is not None:
+            try:
+                _remove_managed_database(managed_path)
+            except ConfigurationError as error:
+                _report_cleanup_failure(str(error), primary_error)
 
 
 def _open_connection(
@@ -66,71 +65,22 @@ def _open_connection(
         ) from None
 
 
-@contextmanager
-def _database_path(
-    config: QuackframeConfig,
-) -> Generator[tuple[str, Path | None], None, None]:
-    """Resolve the target and reserve temporary ownership through cleanup."""
+def _database_path(config: QuackframeConfig) -> tuple[str, Path | None]:
+    """Resolve storage and identify the generated file owned by this run."""
 
     if config.database.mode == "memory":
-        yield ":memory:", None
-        return
+        return ":memory:", None
 
     if config.database.mode == "persistent":
         path = config.database.path
         if path is None:  # Guarded by configuration validation.
             raise ConfigurationError("Persistent database mode requires a path")
         _prepare_parent(path)
-        yield str(path), None
-        return
+        return str(path), None
 
-    temporary_root = config.root / ".quackframe" / "tmp"
-    path = config.database.path or temporary_root / f"{uuid4().hex}.duckdb"
-    resolved_path = path.resolve()
-
-    if config.database.path is not None and not resolved_path.is_relative_to(
-        config.root
-    ):
-        raise ConfigurationError(
-            "A temporary database path must remain inside the runtime root"
-        )
-    _prepare_parent(resolved_path)
-    reservation = resolved_path.with_name(f"{resolved_path.name}.quackframe-lock")
-    try:
-        reservation.mkdir()
-    except FileExistsError:
-        raise ConfigurationError(
-            f"Temporary database path is already reserved: {resolved_path}"
-        ) from None
-    except OSError:
-        raise ConfigurationError(
-            f"Temporary database path could not be reserved: {resolved_path}"
-        ) from None
-
-    primary_error: BaseException | None = None
-
-    # Checking after the atomic claim closes the check/open race between runs.
-    # A rejected contender never reaches the session's destructive cleanup.
-    try:
-        wal_path = resolved_path.with_name(f"{resolved_path.name}.wal")
-        for existing_path in (resolved_path, wal_path):
-            if existing_path.exists() or existing_path.is_symlink():
-                raise ConfigurationError(
-                    "Temporary database path already exists and will not be "
-                    f"overwritten: {existing_path}"
-                )
-        yield str(resolved_path), resolved_path
-    except BaseException as error:
-        primary_error = error
-        raise
-    finally:
-        try:
-            reservation.rmdir()
-        except OSError:
-            _report_cleanup_failure(
-                f"Temporary database reservation could not be released: {reservation}",
-                primary_error,
-            )
+    path = config.root / ".quackframe" / "tmp" / f"{uuid4().hex}.duckdb"
+    _prepare_parent(path)
+    return str(path), path
 
 
 def _prepare_parent(path: Path) -> None:

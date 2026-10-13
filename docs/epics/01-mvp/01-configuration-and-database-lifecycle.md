@@ -1,7 +1,7 @@
 # Configuration And Database Lifecycle
 
 Status: **Complete**
-Last updated: 2026-10-07
+Last updated: 2026-10-13
 Epic: 01 MVP
 Phase: 01
 Related docs: [Configuration](../../configuration.md)
@@ -27,10 +27,9 @@ framework-independent runtime contract.
 - Test F5-style workspace working-directory resolution.
 - Prove persistent paths are never deleted implicitly.
 - Prove configuration errors occur before project SQL begins.
-- Reproduce overlapping temporary-path acquisition and prove that reservation
-  covers connection setup, SQL execution, and database/WAL cleanup.
-- Preserve primary exceptions when database/WAL removal or reservation release
-  fails; report cleanup-only failures without external error details.
+- Prove overlapping temporary sessions use distinct generated paths and clean
+  up only their own database/WAL files.
+- Preserve primary exceptions when database/WAL removal fails; report cleanup-only failures without external error details.
 
 The 2026-10-06 ownership regression failed before the fix. Nine regression cases
 now cover competing threads and processes, cleanup ownership, existing files,
@@ -56,18 +55,25 @@ creation leaves preparation to the selected path's existing helper. All 81
 focused database, execution, configuration, and CLI tests pass, along with
 targeted lint, formatting, type checking, documentation links, and diff checks.
 
+The S03 change on 2026-10-13 supersedes the custom-path reservation behaviour
+described in the historical validation above. Generated UUID filenames remove
+caller-selected temporary paths and their reservation machinery; persistent
+paths and cleanup failure semantics remain unchanged. All 22 targeted database
+lifecycle and relevant configuration/CLI cases passed. Ruff on the six changed
+Python files and `git diff --check` passed. Sandbox directory permissions
+required rerunning the same offline tests outside the sandbox. No broader
+validation was run, as requested.
+
 ## Decisions
 
 - Default to an in-memory database.
 - Create temporary databases below `<root>/.quackframe/tmp/` and always clean
   them after connection closure.
-- Prepare only the selected temporary path's parent directory and report setup
+- Generate every temporary filename under the runtime-root temporary directory,
+  reject explicit temporary paths, and report directory setup
   failures as configuration errors.
 - Require an explicit path for persistent mode and never delete it implicitly.
 - Use exactly `cwd` as the implicit root; do not search parents.
-- Atomically create a sibling reservation directory before checking a temporary
-  database and its WAL. Hold it until cleanup finishes; contenders never acquire
-  file ownership. Existing database or WAL files are never adopted.
 - Keep the original execution, setup, or interruption exception when temporary
   storage cleanup fails. Attach only safe cleanup notes; if cleanup alone fails,
   raise `ConfigurationError`.

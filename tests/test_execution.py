@@ -66,33 +66,15 @@ def test_execution_stops_at_first_failing_statement(tmp_path: Path) -> None:
 
 
 def test_temporary_database_is_removed_after_success(tmp_path: Path) -> None:
-    database_path = tmp_path / "managed" / "temporary.duckdb"
     sql_file = _write(tmp_path / "run.sql", "CREATE TABLE example(value INTEGER);")
     config = QuackframeConfig(
         root=tmp_path,
-        database=DatabaseConfig(mode="temporary", path=database_path),
+        database=DatabaseConfig(mode="temporary"),
     )
 
     run([sql_file], config=config)
 
-    assert not database_path.exists()
-
-
-def test_temporary_database_never_overwrites_an_existing_file(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "existing.duckdb"
-    database_path.write_text("owned by caller", encoding="utf-8")
-    sql_file = _write(tmp_path / "run.sql", "SELECT 1;")
-    config = QuackframeConfig(
-        root=tmp_path,
-        database=DatabaseConfig(mode="temporary", path=database_path),
-    )
-
-    with pytest.raises(ConfigurationError, match="already exists"):
-        run([sql_file], config=config)
-
-    assert database_path.read_text(encoding="utf-8") == "owned by caller"
+    assert not list((tmp_path / ".quackframe" / "tmp").iterdir())
 
 
 def test_empty_input_fails_before_database_creation(tmp_path: Path) -> None:

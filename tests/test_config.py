@@ -448,3 +448,60 @@ def test_persistent_database_requires_a_path() -> None:
 def test_unknown_configuration_is_rejected() -> None:
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
         QuackframeConfig.model_validate({"unknown": True})
+
+
+@pytest.mark.parametrize("source", ["model", "python", "environment", "toml"])
+def test_explicit_temporary_database_paths_are_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    path = tmp_path / "caller.duckdb"
+    path.write_bytes(b"caller-owned")
+    database_values = {"mode": "temporary", "path": str(path)}
+    error_type = ValueError if source == "model" else ConfigurationError
+
+    with pytest.raises(error_type, match="cannot be used with temporary mode"):
+        if source == "model":
+            QuackframeConfig.model_validate({"database": database_values})
+        elif source == "python":
+            load_config(
+                root=tmp_path, database_mode="temporary", database_path=path, environ={}
+            )
+        elif source == "environment":
+            load_config(
+                root=tmp_path,
+                environ={
+                    "QUACKFRAME_DATABASE_MODE": "temporary",
+                    "QUACKFRAME_DATABASE_PATH": str(path),
+                },
+            )
+        else:
+            (tmp_path / "pyproject.toml").write_text(
+                '[tool.quackframe.database]\n'
+                'mode = "temporary"\npath = "caller.duckdb"',
+                encoding="utf-8",
+            )
+            load_config(root=tmp_path, environ={})
+    assert path.read_bytes() == b"caller-owned"
+
+
+@pytest.mark.parametrize("source", ["python", "environment"])
+def test_temporary_override_clears_inherited_persistent_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.quackframe.database]\nmode = "persistent"\npath = "caller.duckdb"',
+        encoding="utf-8",
+    )
+    config = load_config(
+        root=tmp_path,
+        database_mode="temporary" if source == "python" else None,
+        environ=(
+            {"QUACKFRAME_DATABASE_MODE": "temporary"}
+            if source == "environment"
+            else {}
+        ),
+    )
+    assert config.database.mode == "temporary"
+    assert config.database.path is None

@@ -227,3 +227,31 @@ def test_cli_reports_resource_cleanup_failure_without_traceback(
         "Quackframe error: Session resource cleanup failed\n"
     )
     cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("explicit_temporary", [False, True])
+def test_cli_temporary_database_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    explicit_temporary: bool,
+) -> None:
+    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    monkeypatch.delenv("QUACKFRAME_DATABASE_MODE", raising=False)
+    monkeypatch.delenv("QUACKFRAME_DATABASE_PATH", raising=False)
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.quackframe.database]\nmode = "temporary"\npath = "caller.duckdb"',
+        encoding="utf-8",
+    )
+    sql_file = tmp_path / "run.sql"
+    sql_file.write_text("SELECT 1", encoding="utf-8")
+    arguments = ["run", str(sql_file), "--root", str(tmp_path)]
+    if explicit_temporary:
+        arguments.append("--temporary")
+
+    assert main(arguments) == (0 if explicit_temporary else 2)
+    if explicit_temporary:
+        assert not list((tmp_path / ".quackframe" / "tmp").iterdir())
+    else:
+        assert "cannot be used with temporary mode" in capsys.readouterr().err
+    assert not (tmp_path / "caller.duckdb").exists()

@@ -80,11 +80,19 @@ verify those results or current implementation status.
 
 ### S03 Custom temporary database paths
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323295) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/database.py#L87) · [Local file](../src/quackframe/database.py)
 - Feedback: Consider generating every temporary database filename automatically, removing custom temporary paths and associated reservation machinery. Reviewer explicitly says this is not a blocker.
-- Decision: Discussed: applies only to temporary databases. Persistent paths stay configurable. Named paths predate the 6–7 October safety fixes; those fixes are necessary while named paths remain supported. No implementation completed.
-- Resolution / verification: Pending.
+- Decision: Approved: generate every temporary filename below `<root>/.quackframe/tmp/`; reject explicit temporary paths. Persistent paths and retention remain unchanged.
+- Resolution / verification: Implemented in the commit containing this entry (`fix: generate all temporary database paths`). Removed custom-path reservation/locking, retained owned database/WAL cleanup and primary-error preservation, and updated owning docs. All 22 targeted tests passed; changed-file Ruff and `git diff --check` passed. Initial sandbox attempts failed on pytest directory permissions before test execution; the same offline cases passed outside the sandbox. No full suite, repository-wide lint/type checks, CI/package workflows, benchmarks, review agents, live services, push, or GitHub thread changes.
+
+Exact successful checks:
+
+```powershell
+poetry run pytest tests/test_database.py tests/test_execution.py::test_temporary_database_is_removed_after_success tests/test_execution.py::test_execution_stops_at_first_failing_statement tests/test_config.py::test_explicit_temporary_database_paths_are_rejected tests/test_config.py::test_temporary_override_clears_inherited_persistent_path tests/test_cli.py::test_cli_temporary_database_configuration -q -p no:cacheprovider --basetemp=.test-tmp-s03-verified --tb=short
+poetry run ruff check --no-cache src/quackframe/config.py src/quackframe/database.py tests/test_database.py tests/test_execution.py tests/test_config.py tests/test_cli.py
+git diff --check
+```
 
 ### S04 Release recovery machinery
 
