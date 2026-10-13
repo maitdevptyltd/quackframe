@@ -36,8 +36,10 @@ The happy path is:
    result-log policy before executing SQL.
 4. Ask the selected runtime adapter to represent the invocation.
 5. Open one DuckDB session owned by the invocation.
-6. Create the reserved `quackframe` SQL schema and install enabled function
-   macros over private Python UDFs.
+6. If functions are enabled, create the reserved `quackframe` SQL schema and
+   install their macros over private Python UDFs. An empty allowlist (including
+   omitted function configuration) skips installation entirely: no schema
+   creation or installer transaction, so ordinary read-only queries can run.
 7. Execute each SQL file in caller-supplied order without closing the session.
 8. Stop on the first failure and attach safe file and statement context.
 9. Clean up extension resources, close the session and apply the configured

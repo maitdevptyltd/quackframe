@@ -128,6 +128,54 @@ def test_connection_is_bound_outside_sql_signature() -> None:
         assert bound_function("value", "-bound") == "value-bound"
 
 
+def test_empty_installation_preserves_caller_transaction_and_catalog() -> None:
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE caller_work (value INTEGER)")
+        connection.execute("BEGIN TRANSACTION")
+        connection.execute("INSERT INTO caller_work VALUES (1)")
+
+        install_functions(connection, ())
+
+        assert connection.execute("SELECT * FROM caller_work").fetchall() == [(1,)]
+        assert connection.execute(
+            "SELECT schema_name FROM information_schema.schemata "
+            "WHERE schema_name = 'quackframe'"
+        ).fetchall() == []
+        connection.execute("ROLLBACK")
+        assert connection.execute("SELECT * FROM caller_work").fetchall() == []
+
+
+@pytest.mark.parametrize("explicit_empty_functions", [False, True])
+def test_no_functions_permits_read_only_execution(
+    tmp_path: Path,
+    explicit_empty_functions: bool,
+) -> None:
+    database_path = tmp_path / "read-only.duckdb"
+    with duckdb.connect(str(database_path)) as connection:
+        connection.execute("CREATE TABLE caller_data AS SELECT 42 AS value")
+
+    sql_file = tmp_path / "read.sql"
+    sql_file.write_text("SELECT value FROM caller_data;", encoding="utf-8")
+    settings = {
+        "root": tmp_path,
+        "database": {"mode": "persistent", "path": database_path},
+        "duckdb": {"settings": {"access_mode": "READ_ONLY"}},
+    }
+    if explicit_empty_functions:
+        settings["functions"] = {"enabled": []}
+    config = QuackframeConfig.model_validate(settings)
+
+    result = run([sql_file], config=config)
+
+    assert result.statement_count == 1
+    with duckdb.connect(str(database_path), read_only=True) as connection:
+        assert connection.execute("SELECT * FROM caller_data").fetchall() == [(42,)]
+        assert connection.execute(
+            "SELECT schema_name FROM information_schema.schemata "
+            "WHERE schema_name = 'quackframe'"
+        ).fetchall() == []
+
+
 def test_failed_begin_leaves_caller_responsible_for_transaction(
     function_registry: None,
 ) -> None:

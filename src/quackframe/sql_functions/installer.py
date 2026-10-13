@@ -35,6 +35,9 @@ def install_functions(
     installed together so a failure cannot leave a half-installed interface.
     """
 
+    if not enabled_names:
+        return
+
     definitions = resolve_functions(enabled_names)
     prepared: list[tuple[SqlFunction, list[Any], Any]] = []
     for definition in definitions:

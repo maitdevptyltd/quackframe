@@ -156,8 +156,16 @@ git diff --check
 - [ ] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323259) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql_functions/installer.py#L55) · [Local file](../src/quackframe/sql_functions/installer.py)
 - Feedback: Skip SQL-function installation when no functions are enabled. Provide a clear error for unsupported read-only installation.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Skip installation entirely when no functions are enabled, including
+  omitted configuration. Preserve enabled-function installation behaviour.
+- Resolution / verification: Early return before registry resolution or DuckDB
+  operations. Targeted regression checks cover caller transaction ownership,
+  absence of the `quackframe` schema, and synthetic read-only execution with
+  omitted and explicitly empty function configuration. Five installer tests
+  passed; four temporary-directory tests were blocked by filesystem permissions.
+  A retry with a workspace temporary directory also failed with permission
+  errors during pytest cleanup; Python checks stopped. Read-only regression
+  verification remains pending.
 
 ### R06 Progress logging
 
