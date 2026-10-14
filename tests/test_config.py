@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from quackframe import ConfigurationError, QuackframeConfig, load_config, run
+from quackframe.config import DatabaseMode
 
 
 def test_base_package_does_not_import_prefect() -> None:
@@ -99,6 +100,60 @@ path = "from-toml.duckdb"
 
     assert config.runtime == "direct"
     assert config.database.path == tmp_path / "explicit.duckdb"
+
+
+@pytest.mark.parametrize(
+    "database_path", ["data/example.duckdb", Path("data/example.duckdb")]
+)
+def test_python_database_path_implies_persistent_mode(
+    tmp_path: Path, database_path: str | Path
+) -> None:
+    config = load_config(root=tmp_path, database_path=database_path, environ={})
+
+    assert config.database.mode == "persistent"
+    assert config.database.path == tmp_path / "data/example.duckdb"
+
+
+@pytest.mark.parametrize("source", ["toml", "dotenv", "environment"])
+@pytest.mark.parametrize("inherited_mode", ["memory", "temporary", "persistent"])
+def test_python_database_path_overrides_inherited_database_settings(
+    tmp_path: Path, source: str, inherited_mode: str
+) -> None:
+    environment = {"QUACKFRAME_DATABASE_MODE": inherited_mode}
+    if inherited_mode == "persistent":
+        environment["QUACKFRAME_DATABASE_PATH"] = "inherited.duckdb"
+    if source == "toml":
+        settings = f'[tool.quackframe.database]\nmode = "{inherited_mode}"\n'
+        if inherited_mode == "persistent":
+            settings += 'path = "inherited.duckdb"\n'
+        (tmp_path / "pyproject.toml").write_text(settings, encoding="utf-8")
+    elif source == "dotenv":
+        (tmp_path / ".env").write_text(
+            "\n".join(f'{key}="{value}"' for key, value in environment.items()),
+            encoding="utf-8",
+        )
+
+    config = load_config(
+        root=tmp_path,
+        database_path="data/example.duckdb",
+        environ=environment if source == "environment" else {},
+    )
+
+    assert config.database.mode == "persistent"
+    assert config.database.path == tmp_path / "data/example.duckdb"
+
+
+@pytest.mark.parametrize("mode", ["memory", "temporary"])
+def test_python_database_path_preserves_explicit_mode_validation(
+    tmp_path: Path, mode: DatabaseMode
+) -> None:
+    with pytest.raises(ConfigurationError, match=f"cannot be used with {mode} mode"):
+        load_config(
+            root=tmp_path,
+            database_mode=mode,
+            database_path="data/example.duckdb",
+            environ={},
+        )
 
 
 def test_quoted_dotenv_values_use_existing_environment_translation(

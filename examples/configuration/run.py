@@ -6,7 +6,6 @@ from quackframe import load_config, run
 
 config = load_config(
     root=Path(__file__).resolve().parent,
-    database_mode="persistent",
     database_path="data/example.duckdb",
     runtime="direct",
 )

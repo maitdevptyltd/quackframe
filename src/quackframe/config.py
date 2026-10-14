@@ -295,6 +295,8 @@ def _explicit_config(
             values["database"]["path"] = None
     if database_path is not None:
         values.setdefault("database", {})["path"] = str(database_path)
+        if database_mode is None:
+            values["database"]["mode"] = "persistent"
     return values
 
 

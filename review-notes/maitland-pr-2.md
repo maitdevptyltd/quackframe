@@ -187,11 +187,21 @@ git diff --check
 
 ### C01 Python database-path consistency
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323350) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/config.py#L291) · [Local file](../src/quackframe/config.py)
 - Feedback: Make a path-only load_config call imply persistent mode consistently with CLI and environment input.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Infer persistent mode when the Python invocation supplies a path but
+  no mode. Override inherited database settings; keep explicit-mode validation.
+- Resolution / verification: Implementation and configuration example updated.
+  Added 13 regression cases for string/Path inputs, inherited source precedence,
+  and incompatible explicit modes. All 26 selected configuration cases passed
+  (21 deselected) with a fresh synthetic temporary directory outside the sandbox
+  after sandbox filesystem permissions blocked fixture setup. No broader suite
+  was run. `git diff --check` passed.
+
+```powershell
+poetry run pytest tests/test_config.py -k 'python_database_path or defaults_use_current_working_directory_and_memory or explicit_values_override_environment_dotenv_and_toml or boolean_and_path_conversion_match_environment_behavior or environment_database_fields_override_dotenv_as_one_source or memory_override_clears_a_toml_database_path or explicit_temporary_database_paths_are_rejected or temporary_override_clears_inherited_persistent_path' -q -p no:cacheprovider --basetemp=.test-tmp-c01-approved --tb=short
+```
 
 ### C02 Relative configuration paths
 

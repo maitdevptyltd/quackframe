@@ -126,6 +126,11 @@ Persistent mode requires `database.path`. Quackframe resolves a relative path
 from the runtime root, creates its parent directory when necessary, and never
 deletes the database implicitly.
 
+Passing `database_path` to `load_config()` without `database_mode` selects
+persistent mode, overriding lower-precedence database settings just like a
+path-only CLI or environment input. An explicitly supplied `database_mode`
+still applies: pairing a path with `memory` or `temporary` is rejected.
+
 ## Environment Inputs
 
 Quackframe-owned settings may have `QUACKFRAME_` environment equivalents where

@@ -1,7 +1,7 @@
 # Configuration And Database Lifecycle
 
 Status: **Complete**
-Last updated: 2026-10-13
+Last updated: 2026-10-14
 Epic: 01 MVP
 Phase: 01
 Related docs: [Configuration](../../configuration.md)
@@ -64,6 +64,11 @@ Python files and `git diff --check` passed. Sandbox directory permissions
 required rerunning the same offline tests outside the sandbox. No broader
 validation was run, as requested.
 
+C01 implementation on 2026-10-14 adds Python path-only inference and 13 focused
+regression cases. All 26 selected configuration cases passed using a fresh
+synthetic temporary directory outside the sandbox after sandbox filesystem
+permissions blocked fixture setup. No broader test suite was run.
+
 ## Decisions
 
 - Default to an in-memory database.
@@ -73,6 +78,8 @@ validation was run, as requested.
   reject explicit temporary paths, and report directory setup
   failures as configuration errors.
 - Require an explicit path for persistent mode and never delete it implicitly.
+- Infer persistent mode from a Python path-only invocation, overriding inherited
+  modes while preserving validation of explicitly supplied invocation modes.
 - Use exactly `cwd` as the implicit root; do not search parents.
 - Keep the original execution, setup, or interruption exception when temporary
   storage cleanup fails. Attach only safe cleanup notes; if cleanup alone fails,
