@@ -84,6 +84,14 @@ permissions required escalation; the offline connection test was corrected to
 use a global connection option. Changed-file Ruff checks and `git diff --check`
 passed. No broader validation ran.
 
+C04 implementation on 2026-10-14 expands home-directory database paths in the
+typed configuration before relative-path resolution. All 15 targeted cases
+passed, covering home/relative/absolute paths through typed, Python, and TOML
+inputs, temporary-path rejection, and persistent retention after failure.
+Home directories were mocked under synthetic temporary storage. Sandbox
+directory permissions required escalation. `git diff --check` passed; no
+broader validation ran.
+
 ## Decisions
 
 - Default to an in-memory database.
@@ -93,6 +101,8 @@ passed. No broader validation ran.
   reject explicit temporary paths, and report directory setup
   failures as configuration errors.
 - Require an explicit path for persistent mode and never delete it implicitly.
+- Expand a leading `~` in database paths before resolving relative paths from
+  the runtime root.
 - Infer persistent mode from a Python path-only invocation, overriding inherited
   modes while preserving validation of explicitly supplied invocation modes.
 - Use exactly `cwd` as the implicit root; do not search parents.

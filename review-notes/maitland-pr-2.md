@@ -234,11 +234,22 @@ poetry run pytest tests/test_config.py -k 'configuration_paths_use_selected_runt
 
 ### C04 Home-directory expansion
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323370) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/config.py#L118) · [Local file](../src/quackframe/config.py)
 - Feedback: Expand ~ in database paths consistently with runtime-root handling.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Expand the database path's leading `~` in the typed configuration
+  before resolving relative paths against the runtime root.
+- Resolution / verification: Implemented in the commit containing this entry
+  (`fix: expand home directory in database paths`). All 15 targeted cases passed:
+  nine home/relative/absolute path cases across typed, Python, and TOML inputs,
+  five temporary-path rejection cases, and persistent retention after failure.
+  Tests mock the home directory under the synthetic temporary directory.
+  Sandbox directory permissions required escalation. `git diff --check` passed;
+  no broader validation ran.
+
+```powershell
+poetry run pytest tests/test_config.py::test_database_paths_expand_home_before_resolving_runtime_root tests/test_config.py::test_temporary_database_rejects_home_path tests/test_config.py::test_explicit_temporary_database_paths_are_rejected tests/test_execution.py::test_execution_stops_at_first_failing_statement -q -p no:cacheprovider --basetemp=.test-tmp-c04-20261014-b --tb=short
+```
 
 ### C05 TOML configuration authority
 

@@ -136,8 +136,10 @@ class QuackframeConfig(BaseModel):
         """Resolve every relative filesystem setting from the runtime root."""
 
         self.root = self.root.expanduser().resolve()
-        if self.database.path is not None and not self.database.path.is_absolute():
-            self.database.path = self.root / self.database.path
+        if self.database.path is not None:
+            self.database.path = self.database.path.expanduser()
+            if not self.database.path.is_absolute():
+                self.database.path = self.root / self.database.path
         return self
 
 

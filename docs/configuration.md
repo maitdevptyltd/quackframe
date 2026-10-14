@@ -125,9 +125,11 @@ note. SQL failures retain their file, statement number, and CLI exit code `1`.
 If the run otherwise succeeded, cleanup failure raises `ConfigurationError`
 (CLI exit code `2`). Failed cleanup can leave files requiring manual removal.
 
-Persistent mode requires `database.path`. Quackframe resolves a relative path
-from the runtime root, creates its parent directory when necessary, and never
-deletes the database implicitly.
+Persistent mode requires `database.path`. Quackframe expands a leading `~` to
+the user's home directory before resolving relative paths from the runtime root.
+For example, `~/example.duckdb` selects a database in the user's home directory.
+Quackframe creates its parent directory when necessary and never deletes the
+database implicitly.
 
 Passing `database_path` to `load_config()` without `database_mode` selects
 persistent mode, overriding lower-precedence database settings just like a

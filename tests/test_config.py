@@ -10,7 +10,51 @@ import pytest
 from pydantic import ValidationError
 
 from quackframe import ConfigurationError, QuackframeConfig, load_config, run
-from quackframe.config import DatabaseMode, DuckDBConfig
+from quackframe.config import DatabaseConfig, DatabaseMode, DuckDBConfig
+
+
+@pytest.mark.parametrize("source", ["model", "python", "toml"])
+@pytest.mark.parametrize("path_kind", ["home", "relative", "absolute"])
+def test_database_paths_expand_home_before_resolving_runtime_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, path_kind: str
+) -> None:
+    home = tmp_path / "home"
+    root = tmp_path / "runtime"
+    root.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    paths = {
+        "home": (Path("~/example.duckdb"), home / "example.duckdb"),
+        "relative": (Path("data/example.duckdb"), root / "data/example.duckdb"),
+        "absolute": (tmp_path / "example.duckdb", tmp_path / "example.duckdb"),
+    }
+    path, expected = paths[path_kind]
+
+    if source == "model":
+        config = QuackframeConfig(
+            root=root, database=DatabaseConfig(mode="persistent", path=path)
+        )
+    elif source == "python":
+        config = load_config(root=root, database_path=path, environ={})
+    else:
+        (root / "pyproject.toml").write_text(
+            '[tool.quackframe.database]\nmode = "persistent"\n'
+            f'path = "{path.as_posix()}"\n',
+            encoding="utf-8",
+        )
+        config = load_config(root=root, environ={})
+
+    assert config.database.mode == "persistent"
+    assert config.database.path == expected
+    assert not home.exists()
+
+
+def test_temporary_database_rejects_home_path(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="cannot be used with temporary mode"):
+        QuackframeConfig.model_validate(
+            {"root": tmp_path, "database": {"mode": "temporary", "path": "~/a.duckdb"}}
+        )
 
 
 @pytest.mark.parametrize(
