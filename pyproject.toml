@@ -61,7 +61,10 @@ include = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--strict-markers --strict-config"
+addopts = "--strict-markers --strict-config -m 'not upstream_sftp_control'"
+markers = [
+    "upstream_sftp_control: opt-in unprotected upstream SFTP concurrency diagnostics",
+]
 testpaths = ["tests"]
 pythonpath = ["."]
 

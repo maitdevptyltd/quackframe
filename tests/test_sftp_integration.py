@@ -482,8 +482,17 @@ def test_timeout_dumps_stacks_and_reaps_child(
     assert all(not transport.is_active() for transport in server.transports)
 
 
-@pytest.mark.parametrize("layer", ["paramiko", "fsspec", "duckdb"])
-@pytest.mark.parametrize("threads", [1, 4])
+@pytest.mark.parametrize(
+    ("threads", "layer"),
+    [
+        (1, "paramiko"),
+        (1, "fsspec"),
+        (1, "duckdb"),
+        pytest.param(4, "paramiko", marks=pytest.mark.upstream_sftp_control),
+        pytest.param(4, "fsspec", marks=pytest.mark.upstream_sftp_control),
+        (4, "duckdb"),
+    ],
+)
 @pytest.mark.parametrize("trace", [False, True], ids=["untraced", "traced"])
 def test_layer_diagnostics(
     tmp_path: Path,

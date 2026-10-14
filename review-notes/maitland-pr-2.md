@@ -322,11 +322,18 @@ git diff --check
 
 ### V02 Opt-in upstream deadlock controls
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323301) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/tests/test_sftp_integration.py#L498) · [Local file](../tests/test_sftp_integration.py)
 - Feedback: Move four deliberately timing-out upstream SFTP controls behind an opt-in marker; retain Quackframe serialization coverage.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Retain all four controls, excluded by default with the registered
+  `upstream_sftp_control` marker; explicitly opt in with `-m upstream_sftp_control`.
+- Resolution / verification: Updated pytest defaults and marked only the
+  Paramiko/fsspec four-thread parameter combinations (traced and untraced).
+  [Contributing](../CONTRIBUTING.md) documents the opt-in command. Collection-only
+  checks selected 47/51 SFTP cases by default (exactly four deselected), and 4/51
+  with opt-in (the exact four controls). Expected-failure classification, tracing,
+  runtime code and protected tests are unchanged. Changed-file Ruff lint/format,
+  documentation links and `git diff --check` passed. No test bodies were executed.
 
 ### V03 Public repository cleanup
 

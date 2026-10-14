@@ -1,7 +1,7 @@
 # Shared Credential Loading And fsspec Filesystems
 
 Status: **In Progress**
-Last updated: 2026-10-06
+Last updated: 2026-10-14
 Epic: 04 Filesystems
 Phase: 01
 Related docs: [Credential Providers](../../credential-providers.md), [SQL Function Extensions](../../python-extensions.md)
@@ -846,3 +846,13 @@ documentation links and whitespace checks passed. Repository-wide Ruff retains
 13 pre-existing prototype findings. The full suite and hosted Python 3.11 matrix
 were not rerun for this change. The diagnostic fix is complete; the phase remains
 In Progress for its separate external-server verification concerns.
+
+### Opt-in Upstream Controls (2026-10-14)
+
+The four unprotected Paramiko/fsspec four-thread diagnostic cases are retained
+with the registered `upstream_sftp_control` marker and excluded by pytest's
+default marker filter. Traced and untraced controls preserve their expected-failure
+classification and diagnostics. Single-thread library cases and protected
+Quackframe regressions remain enabled. See [Contributing](../../../CONTRIBUTING.md)
+for the explicit opt-in command. This selection change is complete; the phase
+remains In Progress for its separate external-server verification concerns.
