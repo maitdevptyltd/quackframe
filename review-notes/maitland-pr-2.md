@@ -141,7 +141,7 @@ git diff --check
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323250) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/pyproject.toml#L30) · [Local file](../pyproject.toml)
 - Feedback: Make SQL functions work without the Prefect extra. Add a clean wheel smoke test enabling register_secret.
 - Decision: Include NumPy in base dependencies and exercise a pure Python UDF in the clean wheel smoke test without Prefect.
-- Resolution / verification: Moved NumPy out of the Prefect extra and dev group without upgrading locked packages. `poetry check --lock` and scoped `git diff --check` passed. Wheel build stalled and was stopped; the clean-wheel UDF check was not run.
+- Resolution / verification: Moved NumPy out of the Prefect extra and dev group without upgrading locked packages. `poetry check --lock` and scoped `git diff --check` passed. Follow-up verification on 2026-10-14 passed: `poetry run python -m build --wheel --no-isolation`, then `poetry run python scripts/package_smoke.py dist/quackframe-0.1.0-py3-none-any.whl 0.1.0`. The clean Poetry environment installed NumPy without Prefect and successfully registered and called the Python UDF; the existing small public-entrypoint smoke checks also passed. Both commands exited 0. No full test suite ran.
 
 ### R04 Community extensions
 
@@ -153,7 +153,7 @@ git diff --check
 
 ### R05 Read-only databases
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323259) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql_functions/installer.py#L55) · [Local file](../src/quackframe/sql_functions/installer.py)
 - Feedback: Skip SQL-function installation when no functions are enabled. Provide a clear error for unsupported read-only installation.
 - Decision: Skip installation entirely when no functions are enabled, including
@@ -161,11 +161,11 @@ git diff --check
 - Resolution / verification: Early return before registry resolution or DuckDB
   operations. Targeted regression checks cover caller transaction ownership,
   absence of the `quackframe` schema, and synthetic read-only execution with
-  omitted and explicitly empty function configuration. Five installer tests
-  passed; four temporary-directory tests were blocked by filesystem permissions.
-  A retry with a workspace temporary directory also failed with permission
-  errors during pytest cleanup; Python checks stopped. Read-only regression
-  verification remains pending.
+  omitted and explicitly empty function configuration. Follow-up verification
+  on 2026-10-14 passed all five selected cases (four deselected), including both
+  read-only cases, using an accessible synthetic temporary directory outside
+  the sandbox. Command: `poetry run pytest tests/test_sql_functions.py -k 'empty_installation or no_functions_permits_read_only_execution or registrar_supports_pure_connection_bound_and_optional_functions or unknown_enabled_function' -q -p no:cacheprovider --basetemp=.test-tmp-r05-verify-20261014 --tb=short`.
+  No full test suite ran.
 
 ### R06 Progress logging
 
