@@ -350,11 +350,13 @@ git diff --check
 
 ### V04 Credential documentation table
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323403) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/docs/credential-providers.md#L128) · [Local file](../docs/credential-providers.md)
 - Feedback: Remove the stray three-column row in the two-column table.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Remove the misplaced credential-shape row from the override table.
+- Resolution / verification: Removed only the stray row; retained the valid
+  `azure_managed_identity` scope override. Documentation link check and
+  `git diff --check` passed. No runtime checks ran.
 
 ## Before enabling releases
 
@@ -402,8 +404,11 @@ git diff --check
 
 Source for each: [Maitland's overview](https://github.com/maitdevptyltd/quackframe/pull/2#pullrequestreview-5449915627).
 
-- [ ] O01 — Include scripts in CONTRIBUTING.md lint commands to match CI.
-  Decision / resolution: Pending. [File](../CONTRIBUTING.md)
+- [x] O01 — Include scripts in CONTRIBUTING.md lint commands to match CI.
+  Decision / resolution: Added `scripts` to both Ruff commands in
+  [Contributing](../CONTRIBUTING.md) and verified they match
+  [CI](../.github/workflows/ci.yml). Documentation link check and
+  `git diff --check` passed. The documented lint commands were not executed.
 - [ ] O02 — Reconcile advertised Python 3.14 support with CI coverage.
   Decision / resolution: Pending. [CI](../.github/workflows/ci.yml) · [Package metadata](../pyproject.toml)
 - [ ] O03 — Use a monotonic high-resolution timer such as time.perf_counter()

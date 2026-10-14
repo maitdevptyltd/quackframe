@@ -125,7 +125,6 @@ Each concrete secret model owns an allowlist and typed parser:
 | `mssql` | `database`, `port`, `use_encrypt` |
 | `azure_connection_string` | `scope` |
 | `azure_managed_identity` | `scope` |
-| `azure_managed_identity` | Storage account, optional client ID, and scope | `TYPE azure`, `PROVIDER managed_identity` |
 | `ssh_private_key` | `scope` |
 
 String values are parsed by the selected secret model before they are merged.

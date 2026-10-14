@@ -11,8 +11,8 @@ Create the development environment and run the checks:
 ```powershell
 poetry install
 poetry run pytest
-poetry run ruff check src tests examples/basic/run.py
-poetry run ruff format --check src tests examples/basic/run.py
+poetry run ruff check src tests scripts examples/basic/run.py
+poetry run ruff format --check src tests scripts examples/basic/run.py
 poetry run pyright
 python .agents/skills/quackframe-documentation/scripts/check_doc_links.py
 ```
