@@ -8,6 +8,8 @@ Each example declares Python `>=3.11,<3.15`, matching Quackframe's supported
 range so Poetry can resolve its dependency across the project's Python versions.
 
 - [Basic](basic/README.md): one SQL file through CLI, F5, or Python.
+- [Configuration](configuration/README.md): load project settings and override
+  database storage or runtime for a Python invocation.
 - [Ordered Files](ordered/README.md): two files sharing one DuckDB session.
 - [Prefect Runtime](prefect/README.md): optional Prefect runtime selection
   without checked-in connection details.

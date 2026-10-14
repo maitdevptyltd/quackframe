@@ -64,6 +64,8 @@ decision or implementation work in front of you.
 
 - [Developer Examples](developer-examples.md): concise commands and Python
   usage.
+- [Python Configuration Examples](../examples/configuration/README.md): explicit
+  configuration loading, persistent storage, and runtime overrides.
 - [Runnable Example Layouts](../examples/README.md): neutral downstream project
   shapes for direct, ordered, and Prefect-observed execution.
 
