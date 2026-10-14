@@ -28,6 +28,7 @@ LogSetting = Literal["annotations-only", "none", "all"]
 LOG_SETTINGS: tuple[LogSetting, ...] = ("annotations-only", "none", "all")
 
 _INVOCATION_ONLY_SETTINGS = (
+    "root",
     "log_setting",
     "allow_external_result_logging",
 )
@@ -193,7 +194,7 @@ def load_config(
             database_path=database_path,
         ),
     )
-    data.setdefault("root", str(initial_root))
+    data["root"] = str(initial_root)
     data.setdefault("project_name", project_name)
 
     try:
@@ -243,6 +244,10 @@ def _read_project_config(
     quackframe = tool.get("quackframe", {})
     if not isinstance(quackframe, dict):
         raise ConfigurationError("[tool.quackframe] must be a TOML table")
+    if "project_name" in quackframe:
+        raise ConfigurationError(
+            "[tool.quackframe].project_name is not allowed; use [project].name"
+        )
     for setting in _INVOCATION_ONLY_SETTINGS:
         if setting in quackframe:
             raise ConfigurationError(

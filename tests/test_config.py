@@ -609,6 +609,48 @@ def test_logging_controls_are_rejected_from_project_config(
         load_config(root=tmp_path, environ={})
 
 
+@pytest.mark.parametrize("root_source", ["explicit", "environment", "cwd"])
+@pytest.mark.parametrize(
+    "setting, guidance",
+    [
+        ("root", "use an environment or invocation value"),
+        ("project_name", "use [project].name"),
+    ],
+)
+def test_root_and_project_name_are_rejected_from_project_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    root_source: str,
+    setting: str,
+    guidance: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "analytics-workflows"\n'
+        f'[tool.quackframe]\n{setting} = "other"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError) as error:
+        load_config(
+            root=tmp_path if root_source == "explicit" else None,
+            environ={"QUACKFRAME_ROOT": str(tmp_path)}
+            if root_source == "environment"
+            else {},
+        )
+
+    assert str(error.value) == (
+        f"[tool.quackframe].{setting} is not allowed; {guidance}"
+    )
+
+
+def test_typed_config_accepts_root_and_project_name(tmp_path: Path) -> None:
+    config = QuackframeConfig(root=tmp_path, project_name="analytics-workflows")
+
+    assert config.root == tmp_path
+    assert config.project_name == "analytics-workflows"
+
+
 def test_project_name_is_loaded_for_runtime_display(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "analytics-workflows"\n',

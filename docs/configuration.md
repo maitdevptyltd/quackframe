@@ -52,6 +52,7 @@ When configuration comes from a `pyproject.toml` containing `[project].name`,
 Quackframe retains that non-sensitive metadata for optional runtime display.
 The Prefect adapter uses it as the flow-run name; it does not affect core
 execution or database behaviour.
+`project_name` is not accepted in `[tool.quackframe]`; use `[project].name`.
 
 ## Repository Configuration
 
@@ -92,6 +93,9 @@ designed.
 
 The runtime root uses an explicit `root`, then `QUACKFRAME_ROOT`, and otherwise
 defaults to `Path.cwd()`.
+The root is established before configuration files are read. `root` is not
+accepted in `[tool.quackframe]`; use Python `root`, CLI `--root`, or the
+`QUACKFRAME_ROOT` environment variable.
 Relative persistent database and configuration paths resolve from the runtime
 root. For example, `load_config(root="E:/jobs/example", config_path="settings.toml")`
 loads `E:/jobs/example/settings.toml`. Absolute configuration paths stay absolute;

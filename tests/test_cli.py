@@ -169,6 +169,7 @@ def test_cli_values_override_process_environment_and_dotenv(
     assert captured_config is not None
     assert captured_config.runtime == "direct"
     assert captured_config.log_setting == "none"
+    assert captured_config.root == tmp_path
 
 
 @pytest.mark.parametrize(

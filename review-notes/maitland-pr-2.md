@@ -253,11 +253,23 @@ poetry run pytest tests/test_config.py::test_database_paths_expand_home_before_r
 
 ### C05 TOML configuration authority
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323375) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/config.py#L29) · [Local file](../src/quackframe/config.py)
 - Feedback: Review rejection of root and project_name in [tool.quackframe], especially root changing after configuration sources were read.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Reject `root` and `project_name` in `[tool.quackframe]` with clear
+  source guidance. Establish root before reading configuration; preserve
+  `[project].name`, typed fields, and existing invocation/environment contracts.
+- Resolution / verification: Implemented in the commit containing this entry
+  (`fix: reject runtime metadata in project TOML`). All 21 focused cases passed.
+  Sandbox temporary-directory permissions required escalation for the same
+  offline tests using fresh synthetic inputs. Changed-file Ruff lint and
+  `git diff --check` passed. No broader checks ran.
+
+```powershell
+poetry run pytest tests/test_config.py::test_root_and_project_name_are_rejected_from_project_config tests/test_config.py::test_typed_config_accepts_root_and_project_name tests/test_config.py::test_project_name_is_loaded_for_runtime_display tests/test_config.py::test_configuration_paths_use_selected_runtime_root tests/test_config.py::test_defaults_use_current_working_directory_and_memory tests/test_config.py::test_dotenv_root_does_not_relocate_runtime_root tests/test_config.py::test_logging_controls_are_rejected_from_project_config tests/test_cli.py::test_cli_values_override_process_environment_and_dotenv -q -p no:cacheprovider --basetemp=.test-tmp-c05-20261014-b --tb=short
+poetry run ruff check --no-cache src/quackframe/config.py tests/test_config.py tests/test_cli.py
+git diff --check
+```
 
 ### C06 DuckDB version constraint
 

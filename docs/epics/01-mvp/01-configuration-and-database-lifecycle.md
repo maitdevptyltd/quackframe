@@ -15,6 +15,8 @@ framework-independent runtime contract.
 
 - Implement `QuackframeConfig` and nested database configuration.
 - Load `[tool.quackframe]` from `pyproject.toml`.
+- Reject `root` and `project_name` in `[tool.quackframe]`; establish the root
+  before reading sources and retain project metadata from `[project].name`.
 - Apply environment and direct-value precedence.
 - Default runtime root to the current working directory.
 - Resolve relative paths from that root.
@@ -92,6 +94,12 @@ Home directories were mocked under synthetic temporary storage. Sandbox
 directory permissions required escalation. `git diff --check` passed; no
 broader validation ran.
 
+C05 validation on 2026-10-14 passed all 21 focused cases covering rejected TOML
+keys, typed configuration, project metadata, Python/CLI/environment roots,
+default root selection, dotenv root isolation, and existing logging rejection.
+Sandbox temporary-directory permissions required escalation for the same
+offline cases with fresh synthetic storage. No broader tests ran.
+
 ## Decisions
 
 - Default to an in-memory database.
@@ -106,6 +114,9 @@ broader validation ran.
 - Infer persistent mode from a Python path-only invocation, overriding inherited
   modes while preserving validation of explicitly supplied invocation modes.
 - Use exactly `cwd` as the implicit root; do not search parents.
+- Establish the runtime root before reading configuration sources. Reject
+  `root` and `project_name` in `[tool.quackframe]`; use invocation/environment
+  root selection and `[project].name` metadata while preserving typed fields.
 - Resolve relative configuration paths from the explicit or environment-selected
   runtime root; preserve absolute paths and default to `<root>/pyproject.toml`.
 - Keep the original execution, setup, or interruption exception when temporary
