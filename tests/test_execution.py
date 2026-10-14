@@ -1,10 +1,14 @@
 """Ordered SQL execution and database lifecycle tests."""
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import Mock
 
 import duckdb
 import pytest
 
+import quackframe.engine as engine_module
+import quackframe.sql as sql_module
 from quackframe import (
     ConfigurationError,
     DatabaseConfig,
@@ -41,6 +45,34 @@ def test_ordered_files_share_one_session(tmp_path: Path) -> None:
         "02-use.sql",
     )
     assert result.statement_count == 3
+
+
+@pytest.mark.parametrize("wall_clock_seconds", [-3600, 3600])
+def test_elapsed_uses_monotonic_time_despite_wall_clock_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wall_clock_seconds: int
+) -> None:
+    sql_file = _write(tmp_path / "duration.sql", "SELECT 1; SELECT 2;")
+    config = QuackframeConfig(root=tmp_path, log_setting="none")
+    prepared = prepare_sql_files([sql_file], root=tmp_path, log_setting="none")
+    start = datetime(2026, 10, 14, tzinfo=UTC)
+    end = start + timedelta(seconds=wall_clock_seconds)
+
+    # Keep a jumping wall clock available to catch a return to datetime timing.
+    for module in (engine_module, sql_module):
+        monkeypatch.setattr(
+            module, "datetime", Mock(now=Mock(side_effect=[start, end])), raising=False
+        )
+    monkeypatch.setattr(engine_module, "perf_counter", Mock(side_effect=[10.0, 15.5]))
+    monkeypatch.setattr(sql_module, "perf_counter", Mock(side_effect=[11.0, 12.25]))
+
+    result = execute_plan(prepared, config)
+
+    assert result.elapsed == timedelta(seconds=5.5)
+    assert result.files[0].elapsed == timedelta(seconds=1.25)
+    assert result.files[0].path == sql_file
+    assert result.statement_count == result.files[0].statement_count == 2
+    assert result.runtime == "direct"
+    assert result.database_mode == "memory"
 
 
 def test_execution_stops_at_first_failing_statement(tmp_path: Path) -> None:

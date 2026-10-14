@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import timedelta
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from duckdb import (
@@ -122,7 +123,7 @@ def execute_sql_file(
     count and safe failure location, never full SQL or returned rows.
     """
 
-    started_at = datetime.now(UTC)
+    started_at = perf_counter()
     statement_number: int | None = None
 
     try:
@@ -144,7 +145,7 @@ def execute_sql_file(
     return SqlFileResult(
         path=sql_file.path,
         statement_count=len(sql_file.statements),
-        elapsed=datetime.now(UTC) - started_at,
+        elapsed=timedelta(seconds=perf_counter() - started_at),
     )
 
 

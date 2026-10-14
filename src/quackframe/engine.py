@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import timedelta
+from time import perf_counter
 
 from duckdb import DuckDBPyConnection
 
@@ -33,7 +34,7 @@ def execute_plan(
     order against this same live connection.
     """
 
-    started_at = datetime.now(UTC)
+    started_at = perf_counter()
     file_results: list[SqlFileResult] = []
 
     # One run owns exactly one database session. Optional runtimes may report
@@ -50,5 +51,5 @@ def execute_plan(
         runtime=config.runtime,
         database_mode=config.database.mode,
         files=tuple(file_results),
-        elapsed=datetime.now(UTC) - started_at,
+        elapsed=timedelta(seconds=perf_counter() - started_at),
     )

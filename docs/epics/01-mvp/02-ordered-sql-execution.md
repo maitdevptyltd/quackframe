@@ -1,7 +1,7 @@
 # Ordered SQL Execution
 
 Status: **Complete**
-Last updated: 2026-10-06
+Last updated: 2026-10-14
 Epic: 01 MVP
 Phase: 02
 Related docs: [Execution Lifecycle](../../execution-lifecycle.md)
@@ -17,6 +17,8 @@ Execute caller-supplied SQL files predictably in one DuckDB session.
 - Use DuckDB statement extraction.
 - Execute files serially and stop on first failure.
 - Return typed results and raise safe typed failures.
+- Measure file and run durations with `time.perf_counter()`, retaining
+  `timedelta` results independently of wall-clock adjustments (O03).
 - Apply the approved database lifecycle after connection closure.
 
 ## Validation
@@ -33,3 +35,8 @@ fail-fast behaviour, persistent state after failure, and temporary cleanup.
 Backend reasons now use vetted exception categories instead of diagnostic text.
 Regression tests cover query literals, stored row values, safe CLI errors and
 resource cleanup failures without tracebacks.
+
+O03 validation: controlled clocks prove file and run durations remain exact
+`timedelta` values despite forward or backward wall-clock changes. Both cases
+and the directly impacted ordering, fail-fast and temporary-cleanup tests passed
+(five cases total).

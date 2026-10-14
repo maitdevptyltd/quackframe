@@ -46,6 +46,11 @@ The happy path is:
    database lifecycle.
 10. Return a typed result or raise a typed execution error.
 
+Successful file and run results expose elapsed durations as `timedelta` values
+measured with `time.perf_counter()`, so wall-clock adjustments do not affect them.
+The run duration includes session setup and cleanup; each file duration includes
+statement execution and selected result rendering and delivery.
+
 ## Session Invariants
 
 - One invocation owns one DuckDB session.

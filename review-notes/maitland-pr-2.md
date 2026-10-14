@@ -411,8 +411,14 @@ Source for each: [Maitland's overview](https://github.com/maitdevptyltd/quackfra
   `git diff --check` passed. The documented lint commands were not executed.
 - [ ] O02 — Reconcile advertised Python 3.14 support with CI coverage.
   Decision / resolution: Pending. [CI](../.github/workflows/ci.yml) · [Package metadata](../pyproject.toml)
-- [ ] O03 — Use a monotonic high-resolution timer such as time.perf_counter()
-  for elapsed durations. Decision / resolution: Pending. [SQL execution](../src/quackframe/sql.py)
+- [x] O03 — Use a monotonic high-resolution timer such as time.perf_counter()
+  for elapsed durations. Decision / resolution: File and run durations now use
+  `perf_counter()` and retain their public `timedelta` types. No stored wall-clock
+  timestamps existed to change. Controlled-clock regressions cover forward and
+  backward wall-clock jumps; both cases plus ordering, fail-fast and temporary
+  cleanup passed (five tests). Changed-file Ruff lint/format checks, documentation
+  links and `git diff --check` passed. [SQL execution](../src/quackframe/sql.py) ·
+  [Run execution](../src/quackframe/engine.py)
 - [ ] O04 — Keep subsequent PRs small enough for meaningful review.
   Decision / resolution: Pending.
 
