@@ -73,6 +73,45 @@ def test_defaults_use_current_working_directory_and_memory(
     assert config.functions.enabled == ()
 
 
+@pytest.mark.parametrize("root_source", ["explicit", "environment"])
+@pytest.mark.parametrize("path_kind", ["string", "path", "absolute", "default"])
+def test_configuration_paths_use_selected_runtime_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    root_source: str,
+    path_kind: str,
+) -> None:
+    working_directory = tmp_path / "working"
+    runtime_root = tmp_path / "runtime"
+    external_directory = tmp_path / "external"
+    for directory in (working_directory, runtime_root, external_directory):
+        directory.mkdir()
+        for filename in ("settings.toml", "pyproject.toml"):
+            (directory / filename).write_text(
+                f'[project]\nname = "{directory.name}"\n', encoding="utf-8"
+            )
+    monkeypatch.chdir(working_directory)
+
+    config_path: str | Path | None = "settings.toml"
+    if path_kind == "path":
+        config_path = Path("settings.toml")
+    elif path_kind == "absolute":
+        config_path = external_directory / "settings.toml"
+    elif path_kind == "default":
+        config_path = None
+
+    explicit_root = runtime_root if root_source == "explicit" else None
+    environment_root = working_directory if explicit_root else runtime_root
+    config = load_config(
+        root=explicit_root,
+        config_path=config_path,
+        environ={"QUACKFRAME_ROOT": str(environment_root)},
+    )
+
+    assert config.root == runtime_root
+    assert config.project_name == ("external" if path_kind == "absolute" else "runtime")
+
+
 def test_explicit_values_override_environment_dotenv_and_toml(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
         """

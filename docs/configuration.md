@@ -90,9 +90,12 @@ designed.
 
 ## Runtime Root And Relative Paths
 
-The runtime root defaults to `Path.cwd()` when the caller supplies no root.
+The runtime root uses an explicit `root`, then `QUACKFRAME_ROOT`, and otherwise
+defaults to `Path.cwd()`.
 Relative persistent database and configuration paths resolve from the runtime
-root.
+root. For example, `load_config(root="E:/jobs/example", config_path="settings.toml")`
+loads `E:/jobs/example/settings.toml`. Absolute configuration paths stay absolute;
+omitting `config_path` loads `<runtime-root>/pyproject.toml` when it exists.
 
 For VS Code F5:
 

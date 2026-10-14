@@ -151,11 +151,9 @@ def load_config(
         .expanduser()
         .resolve()
     )
-    source_path = (
-        Path(config_path)
-        if config_path is not None
-        else initial_root / "pyproject.toml"
-    )
+    source_path = Path(config_path) if config_path is not None else Path("pyproject.toml")
+    if not source_path.is_absolute():
+        source_path = initial_root / source_path
     dotenv_environment = _read_dotenv(initial_root / ".env")
     dotenv_environment.pop("QUACKFRAME_ROOT", None)
 

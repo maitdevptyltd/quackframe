@@ -69,6 +69,13 @@ regression cases. All 26 selected configuration cases passed using a fresh
 synthetic temporary directory outside the sandbox after sandbox filesystem
 permissions blocked fixture setup. No broader test suite was run.
 
+C02 implementation on 2026-10-14 resolves relative configuration paths from
+the selected runtime root. Ten targeted configuration cases passed, including
+eight regressions covering explicit and environment roots, string and Path
+inputs, absolute paths, and default TOML selection. Sandbox temporary-directory
+permissions required rerunning these offline tests outside the sandbox with a
+fresh synthetic directory. `git diff --check` passed; no broader checks ran.
+
 ## Decisions
 
 - Default to an in-memory database.
@@ -81,6 +88,8 @@ permissions blocked fixture setup. No broader test suite was run.
 - Infer persistent mode from a Python path-only invocation, overriding inherited
   modes while preserving validation of explicitly supplied invocation modes.
 - Use exactly `cwd` as the implicit root; do not search parents.
+- Resolve relative configuration paths from the explicit or environment-selected
+  runtime root; preserve absolute paths and default to `<root>/pyproject.toml`.
 - Keep the original execution, setup, or interruption exception when temporary
   storage cleanup fails. Attach only safe cleanup notes; if cleanup alone fails,
   raise `ConfigurationError`.

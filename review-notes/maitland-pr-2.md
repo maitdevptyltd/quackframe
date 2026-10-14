@@ -205,11 +205,24 @@ poetry run pytest tests/test_config.py -k 'python_database_path or defaults_use_
 
 ### C02 Relative configuration paths
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323359) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/config.py#L149) · [Local file](../src/quackframe/config.py)
 - Feedback: Settle whether config_path resolves from the current directory or runtime root; align implementation and docs.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Resolve relative configuration paths from the selected runtime root,
+  including `QUACKFRAME_ROOT`; preserve absolute paths and default to
+  `<runtime-root>/pyproject.toml` when `config_path` is omitted.
+- Resolution / verification: Loader and runtime-root documentation updated.
+  Eight regression cases cover competing same-named files in the working
+  directory and runtime root, explicit-root precedence over the environment,
+  environment-selected roots, string/Path inputs, absolute paths, and defaults.
+  All 10 selected configuration cases passed (45 deselected) with a fresh
+  synthetic temporary directory outside the sandbox after sandbox filesystem
+  permissions blocked fixture setup. `git diff --check` passed. No broader
+  checks ran.
+
+```powershell
+poetry run pytest tests/test_config.py -k 'configuration_paths_use_selected_runtime_root or defaults_use_current_working_directory_and_memory or missing_dotenv_preserves_current_behavior' -q -p no:cacheprovider --basetemp=.test-tmp-c02-approved --tb=short
+```
 
 ### C03 Typed DuckDB settings
 
