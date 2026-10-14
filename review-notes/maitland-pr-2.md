@@ -304,8 +304,11 @@ git diff --check
 - [ ] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323392) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/pyproject.toml#L21) · [Local file](../pyproject.toml)
 - Feedback: Review annual upper bounds on Azure dependencies and fsspec; avoid arbitrary January incompatibility.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Awaiting Maitland's clarification. Azure fsspec removal leaves only
+  the SFTP fsspec dependency in scope. On 2026-10-14, Rowan posted a reply asking
+  whether to remove the upper bound entirely or use a different bounded range.
+- Resolution / verification: Pending response; the dependency constraint remains
+  unchanged. This item is not resolved.
 
 ## Validation and repository cleanup
 
