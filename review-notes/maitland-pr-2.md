@@ -163,8 +163,13 @@ git diff --check
 - [ ] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323255) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/database.py#L157) · [Local file](../src/quackframe/database.py)
 - Feedback: Choose repository-aware extension configuration or explicitly document core-only support and fix the mssql example.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Awaiting Maitland's response to [Rowan's proposal](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4267371558), posted 2026-10-14.
+  The proposal removes `duckdb.extensions` from TOML rather than adding
+  repository-selection syntax: users can install/load extensions in SQL, and
+  `register_secret` already loads its own requirements. Rowan asked whether
+  there is a distinct use case that justifies retaining the TOML option.
+- Resolution / verification: Comment verified on the PR. No implementation
+  change made; this item remains unresolved pending discussion.
 
 ### R05 Read-only databases
 
