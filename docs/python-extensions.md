@@ -189,7 +189,8 @@ before closing the root connection. Callers installing resource-aware functions
 manually must supply an explicit owner and keep its root connection alive.
 Filesystem registration retains root-derived duplicate handles until cleanup,
 then unregisters backends and closes their clients and handles. The core runner
-has no deferred-operation queue or function-specific branch. Compatibility is tested against the pinned DuckDB MVP version.
+has no deferred-operation queue or function-specific branch. Compatibility has
+been tested against DuckDB 1.5.5; the allowed dependency range is `>=1.5.5,<1.6`.
 
 ## Persistent Database Consideration
 

@@ -273,11 +273,16 @@ git diff --check
 
 ### C06 DuckDB version constraint
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323383) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/pyproject.toml#L14) · [Local file](../pyproject.toml)
 - Feedback: Consider a tested compatible range instead of an exact DuckDB patch pin.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Accept `>=1.5.5,<1.6`, retaining DuckDB 1.5.5 in the Poetry lock.
+- Resolution / verification: Updated the dependency constraint and two active
+  documentation statements about the exact pin. `poetry lock` changed only the
+  lock content hash; no locked dependencies were upgraded. `poetry check --lock`
+  passed with the existing license-table deprecation warning; `git diff --check`
+  passed. Historical tested-version evidence remains unchanged. No runtime tests
+  or broad checks ran, and compatibility across all allowed patches is not claimed.
 
 ### C07 Calendar-version dependency caps
 

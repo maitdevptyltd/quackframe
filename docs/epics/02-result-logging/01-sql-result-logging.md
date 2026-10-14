@@ -56,8 +56,8 @@ Selected results use DuckDB's native `DuckDBPyRelation` string representation.
 DuckDB owns the table layout, displayed row and column limits, truncation
 message, and value rendering. Quackframe does not fetch rows into a Python
 collection or implement a second table renderer. Native rendering behaviour is
-therefore tied to the pinned DuckDB version and may change only when that
-dependency is deliberately upgraded.
+therefore depends on the installed DuckDB version and may vary across allowed
+patch releases (`>=1.5.5,<1.6`).
 
 ## Runtime Behaviour
 

@@ -5657,4 +5657,4 @@ sftp = ["fsspec", "paramiko"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "4f74aa328ec4c3692a74192f9f0636707e733ec4d895ba142252d14fcc1436f4"
+content-hash = "560d54b38b08ec8330238a977728d6d85a7ece8da8e4964ac7c272838e6ce1c5"
