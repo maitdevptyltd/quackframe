@@ -27,7 +27,7 @@ from the main documentation.
 
 - [01 Shared Credential Loading And fsspec](04-filesystems/01-shared-credential-loading-and-fsspec.md)
 - [02 Named Filesystem Protocol Registrations](04-filesystems/02-aliased-filesystem-registrations.md): named protocols and independent backend lifetimes.
-- [03 Azure Filesystem Strategies](04-filesystems/03-azure-filesystem-strategies.md): planned Blob and ADLS Gen2 reads using existing Azure credential Blocks.
+- [03 Azure Filesystem Strategies](04-filesystems/03-azure-filesystem-strategies.md): historical Azure fsspec implementation, removed by S01 in favour of native DuckDB Azure access.
 - [04 Filesystem Write Support](04-filesystems/04-filesystem-write-support.md): writes across SFTP and both Azure strategies, with live validation outstanding.
 
 ## Epic 05: Releases

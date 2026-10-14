@@ -1,10 +1,25 @@
 # Azure Filesystem Strategies
 
-Status: **In Progress**
-Last updated: 2026-10-01
+Status: **Complete**
+Last updated: 2026-10-14
 Epic: 04 Filesystems
 Phase: 03
 Related docs: [Filesystems](../../filesystems.md), [Credential Providers](../../credential-providers.md), [Named Protocols](02-aliased-filesystem-registrations.md)
+
+## S01 Scope Revision - 2026-10-14
+
+Status of removal: **Complete**. The approved S01 change removes both Azure
+fsspec strategies and the `azure` extra. Native DuckDB Azure secrets, shared Azure
+credential models and Prefect Blocks/providers remain supported. SFTP and shared
+filesystem ownership remain. The sections below retain historical implementation
+and validation evidence; Azure fsspec examples and outstanding live-service
+checks below no longer describe the current product or required work.
+
+This phase is closed by the approved removal, not by live Azure validation.
+S01 verification: 51 selected credential/provider/native Azure secret and shared
+filesystem tests passed, plus two synthetic localhost SFTP export cases. No live
+Azure, Prefect or external SSH service was contacted. Exact commands and limits
+are recorded in the [S01 checklist](../../../review-notes/maitland-pr-2.md#s01-azure-fsspec).
 
 ## Purpose And Review Status
 

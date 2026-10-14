@@ -11,8 +11,6 @@ if TYPE_CHECKING:
     from quackframe.sql_functions.register_filesystem.adapter import ProtocolFileSystem
 
 from quackframe.credential_loading.models import (
-    AzureConnectionStringCredentials,
-    AzureManagedIdentityCredentials,
     CredentialModel,
     SshPrivateKeyCredentials,
 )
@@ -160,59 +158,8 @@ class SftpFilesystem(SshPrivateKeyCredentials, DuckDBFilesystem):
         return host
 
 
-class AzureConnectionStringFilesystem(
-    AzureConnectionStringCredentials, DuckDBFilesystem
-):
-    """Use the existing Azure connection credential for named Blob reads and writes."""
-
-    filesystem_type: ClassVar[str] = "azure_connection_string"
-    extra_dependency_bundle: ClassVar[str] = "azure"
-
-    def create_filesystem(self, protocol: str) -> "ProtocolFileSystem":
-        try:
-            from quackframe.sql_functions.register_filesystem.azure import (
-                connection_account,
-                create_azure_filesystem,
-            )
-        except ImportError:
-            raise OptionalDependencyError(
-                "The Azure filesystem requires "
-                f"'quackframe[{self.extra_dependency_bundle}]'"
-            ) from None
-
-        connection_string = self.connection_string.get_secret_value()
-        account = connection_account(connection_string)
-        return create_azure_filesystem(
-            protocol, account, self.scope, connection_string=connection_string
-        )
-
-
-class AzureManagedIdentityFilesystem(AzureManagedIdentityCredentials, DuckDBFilesystem):
-    """Use only the selected managed identity for named Blob reads and writes."""
-
-    filesystem_type: ClassVar[str] = "azure_managed_identity"
-    extra_dependency_bundle: ClassVar[str] = "azure"
-
-    def create_filesystem(self, protocol: str) -> "ProtocolFileSystem":
-        try:
-            from quackframe.sql_functions.register_filesystem.azure import (
-                create_azure_filesystem,
-            )
-        except ImportError:
-            raise OptionalDependencyError(
-                "The Azure filesystem requires "
-                f"'quackframe[{self.extra_dependency_bundle}]'"
-            ) from None
-
-        return create_azure_filesystem(
-            protocol, self.account_name, self.scope, client_id=self.client_id
-        )
-
-
 FILESYSTEM_MODELS: dict[str, type[DuckDBFilesystem]] = {
     "sftp": SftpFilesystem,
-    "azure_connection_string": AzureConnectionStringFilesystem,
-    "azure_managed_identity": AzureManagedIdentityFilesystem,
 }
 
 

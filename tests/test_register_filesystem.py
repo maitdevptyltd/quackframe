@@ -221,14 +221,19 @@ def test_invalid_and_reserved_protocols_fail_before_loading(
     provider.assert_not_called()
 
 
-def test_unknown_type_fails_before_loading(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "filesystem_type", ["unknown", "azure_connection_string", "azure_managed_identity"]
+)
+def test_unknown_type_fails_before_loading(
+    monkeypatch: pytest.MonkeyPatch, filesystem_type: str
+) -> None:
     provider = Mock()
     monkeypatch.setattr(loading, "get_provider", provider)
     with (
         SessionResources(Mock()) as resources,
         pytest.raises(ValueError, match="Unsupported filesystem type"),
     ):
-        register_filesystem(resources, "example", "reference", "unknown")
+        register_filesystem(resources, "example", "reference", filesystem_type)
     provider.assert_not_called()
 
 

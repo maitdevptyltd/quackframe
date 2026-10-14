@@ -1,7 +1,7 @@
 # PR 2 — Maitland review checklist
 
 Status: **Open**
-Last updated: 2026-10-13
+Last updated: 2026-10-14
 Review: 2026-10-08, commit `a7ab17974d25a5c9289fbacef22db4a9144e9324`
 
 [Pull request](https://github.com/maitdevptyltd/quackframe/pull/2) · [Maitland's overview](https://github.com/maitdevptyltd/quackframe/pull/2#pullrequestreview-5449915627) · [Documentation index](../docs/README.md)
@@ -64,11 +64,26 @@ verify those results or current implementation status.
 
 ### S01 Azure fsspec
 
-- [ ] Addressed
-- Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323284) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql_functions/register_filesystem/azure.py#L153) · [Local file](../src/quackframe/sql_functions/register_filesystem/azure.py)
+- [x] Addressed
+- Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323284) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql_functions/register_filesystem/azure.py#L153)
 - Feedback: Consider removing Azure fsspec strategies in favour of native DuckDB Azure reads/writes. Identify any unmet requirement before removal.
-- Decision: Discussed: consolidation understood; implementation and caller migration remain outstanding.
-- Resolution / verification: Pending.
+- Decision: Approved: remove Azure fsspec strategies and their unused extra/dependencies. Retain shared credential loading, Azure models and Prefect support, native DuckDB Azure secrets, SFTP and shared filesystem ownership. No downstream migration or SSHFS removal in S01.
+- Resolution / verification: Implemented in the commit containing this entry (`refactor: remove Azure fsspec strategies`). Removed the two filesystem strategies, Azure backend, Azure-only tests/examples and unused dependencies; retained shared credential/provider architecture, native Azure secrets and SFTP. Poetry preserved every surviving locked version and added no packages. The selected unit cases passed (51 passed, 25 deselected); two synthetic localhost SFTP export cases passed. The first export-test attempt failed on sandbox temporary-directory permissions before execution; the same two cases passed with normal escalation and a fresh ignored directory. No live customer services, customer data, credentials or `.env` reads; no full suite, broad checks/builds, downstream changes, push or GitHub thread changes. Changed-file Ruff and Pyright passed; Pyright required normal escalation to resolve installed Poetry dependencies after two sandboxed attempts reported missing imports. Separate review remains pending.
+
+Exact successful checks:
+
+```powershell
+poetry lock
+poetry run pytest tests/test_credential_loading.py::test_loading_preserves_strategy_and_saved_values tests/test_register_secret.py tests/test_prefect_integration.py::test_prefect_provider_translates_azure_block tests/test_prefect_integration.py::test_prefect_provider_translates_azure_managed_identity_block tests/test_prefect_integration.py::test_both_sql_functions_load_one_block_each_and_construct_the_requested_strategy tests/test_register_filesystem.py::test_unknown_type_fails_before_loading tests/test_register_filesystem.py::test_sftp_constructor_and_endpoint_mapping tests/test_register_filesystem.py::test_sql_forms_read_and_discover_the_selected_protocol tests/test_register_filesystem.py::test_failed_duckdb_registration_closes_new_backend tests/test_resources.py::test_resource_cleanup_attempts_all_and_preserves_primary_error tests/test_filesystem_writes.py::test_deferred_errors_never_expose_backend_payloads tests/test_filesystem_writes.py::test_sftp_close_acknowledgement_failure_is_not_suppressed tests/test_filesystem_writes.py::test_file_cleanup_preserves_primary_failure -k 'not test_register_secret or azure' -q -p no:cacheprovider --basetemp=.test-tmp-s01-unit-01 --tb=short
+poetry run pytest 'tests/test_filesystem_writes.py::test_sftp_exports_and_reads_back[0-False-CSV]' 'tests/test_filesystem_writes.py::test_sftp_exports_and_reads_back[10000-True-PARQUET]' -q -p no:cacheprovider --basetemp=.test-tmp-s01-exports-02 --tb=short
+poetry run ruff check --no-cache src/quackframe/sql_functions/register_filesystem/models.py tests/test_credential_loading.py tests/test_filesystem_writes.py tests/test_register_filesystem.py
+poetry run pyright --pythonpath E:/projects/quackframe/.venv/Scripts/python.exe src/quackframe/sql_functions/register_filesystem/models.py tests/test_credential_loading.py tests/test_filesystem_writes.py tests/test_register_filesystem.py
+python .agents/skills/quackframe-documentation/scripts/check_doc_links.py
+git diff --check
+```
+
+The `-k` selection includes only Azure cases from `test_register_secret.py`;
+other explicitly selected nodes cover retained credential and filesystem contracts.
 
 ### S02 DuckDB SSHFS
 

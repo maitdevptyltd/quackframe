@@ -34,46 +34,23 @@ reads against your server. Quackframe explicitly closes registered clients at
 the end of the run. See [Filesystems](../../docs/filesystems.md)
 for protocol collision and lifetime behavior.
 
-## Azure Reads
-
-For the Azure examples, add the `azure` extra to this example's Quackframe
-dependency and install it with Poetry. Keep `register_filesystem` enabled.
-Create either an `AzureConnectionStringCredentials` Block named
-`azure-reports-key`, or an `AzureManagedIdentityCredentials` Block named
-`azure-reports-identity`. Configure account `examplestorage` (inside the connection
-string for the former) and scope `az://reports/`. Substitute your actual account
-in the Block before running. SQL paths select the container and blob, for example
-`azure-reports-key://reports/daily/*.parquet`; they do not include the storage account.
-
-```powershell
-poetry run quackframe run sql/read-azure-key.sql
-poetry run quackframe run sql/read-azure-identity.sql
-```
-
-These are independent examples using the direct runtime. Managed-identity reads
-require an Azure host with the selected identity and storage data permissions.
-The Block's optional `client_id` selects a user-assigned identity; leaving it unset
-selects the system-assigned identity. See [Azure filesystems](../../docs/filesystems.md#azure-blob-and-adls-gen2)
-for supported connection strings and path semantics.
-
 ## Writes
 
-All three strategies support writing with their existing registration. Remote
-permissions determine which operations the configured account can perform.
-For SFTP, configure an `output-files` Block for a writable destination and run
-[write-files.sql](sql/write-files.sql). Its parent `/exports` directory must exist.
-For Azure, configure the `azure-reports-key` Block above and run
-[write-azure.sql](sql/write-azure.sql); the `reports` container must already exist.
-Substitute your SFTP endpoint and intended output paths first. For Azure, set
-the account in the Block and the container in the SQL path.
+SFTP supports writing with its existing registration. Remote permissions determine
+which operations the configured account can perform. Configure an `output-files`
+Block for a writable destination and run [write-files.sql](sql/write-files.sql).
+Its parent `/exports` directory must exist. Substitute your SFTP endpoint and
+intended output paths first.
 
 ```powershell
 poetry run quackframe run sql/write-files.sql
-poetry run quackframe run sql/write-azure.sql
 ```
 
-The examples replace their single output file if it exists. To use managed
-identity, change the Azure registration to `azure_managed_identity` and select
-its Block reference; the output SQL is otherwise unchanged. See
+The example replaces its single output file if it exists. See
 [write semantics](../../docs/filesystems.md#reads-writes-and-access-control) for
 partitioned output, permissions, failure recovery and validation limits.
+
+For Azure reads and writes, use native DuckDB Azure secrets through
+`register_secret`; see the [secret examples](../secrets/README.md) and
+[Azure access](../../docs/filesystems.md#azure-blob-and-adls-gen2). The Python
+Azure fsspec strategies and `azure` extra have been removed.

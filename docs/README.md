@@ -20,7 +20,7 @@ service integrations.
   functions become `quackframe.<function_name>` SQL calls.
 - [Credential Providers](credential-providers.md): credential resolution as one
   optional SQL-function use case.
-- [Filesystems](filesystems.md): SFTP and Azure registration, endpoint semantics and backend lifetime.
+- [Filesystems](filesystems.md): SFTP registration and native Azure access, endpoint semantics and backend lifetime.
 - [Prototype Reference](mad-utilities-duckdb-reference.md): evidence retained
   from the earlier prototype without inheriting its coupling.
 - [Roadmap](roadmap.md): delivered MVP phases, acceptance criteria, and
@@ -36,7 +36,7 @@ service integrations.
 
 - [Shared Credential Loading And fsspec Scope](epics/04-filesystems/01-shared-credential-loading-and-fsspec.md): implemented shared credential loading and SFTP registration.
 - [Named Filesystem Protocol Scope](epics/04-filesystems/02-aliased-filesystem-registrations.md): multiple independently configured filesystems selected by named protocols, with explicit cleanup.
-- [Azure Filesystem Scope](epics/04-filesystems/03-azure-filesystem-strategies.md): strategies using existing Azure connection-string and managed-identity credentials, with validation status.
+- [Azure Filesystem Scope](epics/04-filesystems/03-azure-filesystem-strategies.md): historical implementation and S01 removal; native Azure secrets remain supported.
 - [Filesystem Write Scope](epics/04-filesystems/04-filesystem-write-support.md): write contract, implementation and validation for every registered filesystem strategy.
 
 - [Semantic Versioning And Publication Scope](epics/05-releases/01-semantic-versioning-and-publication.md): automatic RCs, stable promotion and patch releases; repository implementation with external activation outstanding.

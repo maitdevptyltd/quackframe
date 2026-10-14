@@ -1,15 +1,15 @@
 # Filesystems
 
 Register independently configured filesystems in one DuckDB session and select
-one explicitly with its protocol in every path. SFTP and Azure Blob/ADLS Gen2
-strategies each own their credentials, endpoint and connection.
+one explicitly with its protocol in every path. The SFTP strategy owns its
+credentials, endpoint and connection. Azure access uses native DuckDB secrets;
+see [Credential Providers](credential-providers.md).
 
 ## Reads, Writes And Access Control
 
-Every registered strategy supports reads and writes: `sftp`,
-`azure_connection_string` and `azure_managed_identity`. The person configuring
-credentials and remote permissions controls access. Azure authorization rules
-and the SFTP account's filesystem permissions and server restrictions remain
+The `sftp` strategy supports reads and writes. The person configuring
+credentials and remote permissions controls access. The SFTP account's
+filesystem permissions and server restrictions remain
 authoritative. There is no separate Quackframe write-enable option. Read-only
 credentials can register and read; denied operations fail without exposing
 backend credential details. Registration does not probe write permissions.
@@ -22,17 +22,12 @@ COPY (SELECT 42 AS value)
 TO 'output-files://files.example.test/exports/result.parquet' (FORMAT PARQUET);
 ```
 
-Both Azure strategies accept the same `COPY ... TO` operations with paths such as
-`output-blobs://reports/result.parquet`. Paths are explicit; scope
-never prepends a destination root. Azure containers must already exist.
 For a single SFTP file, its parent directory must already exist. Partitioned
 exports create their required directories and accept nested output paths.
 
 With DuckDB 1.5.5, a single-file export replaces an existing destination, using a
 temporary file and move where DuckDB requires it. SFTP replacement uses the
-server's POSIX rename extension. Azure replacement streams through the selected
-client, waits for completion and then removes the temporary source; it is not an
-atomic rename and may require read and delete permissions as well as write.
+server's POSIX rename extension.
 
 Partitioned CSV/Parquet exports support `PARTITION_BY`, `APPEND` and `OVERWRITE`.
 `APPEND` adds new files; it does not append bytes to existing files. `OVERWRITE`
@@ -46,111 +41,19 @@ Quackframe provides neither remote rollback nor automatic retry. Inspect the
 failure and destination before deciding how to recover; session cleanup releases
 clients without deleting existing output as a recovery action.
 
-Local tests exercise writable and read-only loopback SFTP, real DuckDB/adlfs
-exports with controlled Azure service responses, multi-block uploads, append,
-replacement, partition overwrite and upload failures. Live Azure Blob/ADLS Gen2
-and deployed managed-identity writes still require environment validation; see
+Local tests exercise writable and read-only loopback SFTP, append, replacement,
+partition overwrite and safe backend failures. See
 [write-support evidence](epics/04-filesystems/04-filesystem-write-support.md).
 
 ## Azure Blob And ADLS Gen2
 
-The existing `AzureConnectionStringCredentials` and
-`AzureManagedIdentityCredentials` Blocks also support filesystem registration.
-Select `azure_connection_string` or `azure_managed_identity` as the filesystem
-type. No new Block or credential provider is needed.
-
-Install `quackframe[prefect,azure]` in a consuming project, or run
-`poetry install --extras "prefect azure"` in this repository. Enable
-`register_filesystem` in `[tool.quackframe.functions].enabled` as shown below.
-The direct runtime works with these Prefect-backed credentials.
-
-For a connection-string Block named `azure-reports-key`, with account
-`examplestorage` and scope `az://reports/`:
-
-```sql
-SELECT quackframe.register_filesystem(
-    'prefect', 'azure-reports-key', 'azure_connection_string'
-);
-SELECT * FROM read_parquet(
-    'azure-reports-key://reports/daily/*.parquet'
-);
-```
-
-For a managed-identity Block named `azure-reports-identity`:
-
-```sql
-SELECT quackframe.register_filesystem(
-    provider := 'prefect',
-    reference := 'azure-reports-identity',
-    filesystem_type := 'azure_managed_identity',
-    protocol := 'reports-mi',
-    overrides := MAP {'scope': 'az://reports/'}
-);
-SELECT * FROM read_csv('reports-mi://reports/daily/*.csv');
-```
-
-Positional and named forms are equivalent. For example, the second registration
-can be written as `register_filesystem('prefect', 'azure-reports-identity',
-'azure_managed_identity', 'reports-mi', MAP {'scope': 'az://reports/'})` and selects
-the same `reports-mi://` paths.
-
-Read and write paths use `protocol://container/blob-name`. The registration
-selects the storage account from its connection string or configured
-`account_name`; URLs never select or repeat the account. Every path includes the
-container and complete blob name; scope never prepends a directory or restricts
-access to a prefix. Other containers
-on the account remain available when Azure permissions allow. Unlike native
-DuckDB secret scope matching, scope does not select credentials for each read.
-
-Scopes accept `az://container/prefix/`, `azure://container/prefix/`, or
-`abfss://container@account.dfs.core.windows.net/prefix/`. A trailing slash is
-required and any explicit account must match. Only scope can be overridden in
-SQL. Filesystem URLs reject authentication, ports, query strings and fragments;
-URL-encode literal special characters in blob names. Discovery returns reusable,
-encoded protocol-qualified paths. Literal `=` remains visible so partition
-directories such as `file_date=2026-09-16` can be extracted directly from
-`read_csv` and `read_blob` filenames. Percent signs, URL delimiters and wildcard
-characters remain escaped; a literal `%3D` in a blob name becomes `%253D`,
-distinct from `=`. Reads decode paths once.
-
-Replace older `protocol://account/container/blob-name` paths with the container-first
-form above. There is no legacy account-prefix detection: the authority is always
-a container name. Separate aliases still support separate storage accounts.
-
-Connection strings must identify a public-cloud Azure account and use HTTPS,
-with either an account key or SAS. Standard `DefaultEndpointsProtocol`,
-`AccountName`, `AccountKey`/`SharedAccessSignature`, `EndpointSuffix` and a matching
-public-cloud `BlobEndpoint` are accepted. Standard `QueueEndpoint`, `TableEndpoint`
-and `FileEndpoint` fields may also be present when they identify the same account's
-public-cloud HTTPS service roots. SAS strings may omit `AccountName` when
-`BlobEndpoint` identifies the account. The original string is passed to the SDK.
-Custom endpoints and emulator
-connection strings are outside this contract. Values stay in the credential
-provider; do not put them into SQL.
-
-Format errors identify the rejected rule or numbered entry without printing field
-values or unknown field names. These errors happen before client construction;
-they do not indicate failed Azure authentication. Check the named rule in the
-saved Block. A successful `register_secret` does not establish filesystem format
-compatibility: native DuckDB and the filesystem backend use different parsers.
-
-Managed identity uses the configured `account_name` and optional `client_id`.
-Omitting the client ID selects the system-assigned identity; supplying it selects
-a user-assigned identity. Execute on a host that supports that identity and grant
-appropriate storage data permissions. There is no fallback to Azure CLI,
-environment credentials, anonymous access or another identity. Workload identity
-federation is a separate, unsupported mode. Ambient adlfs storage settings cannot
-replace either strategy's selected client.
-
-Registration constructs and publishes a backend; authentication and access checks
-may occur on the first discovery/read. Both strategies support file discovery,
-CSV/Parquet/blob reads, CSV/Parquet exports and metadata through adlfs. ACL
-administration, ADLS Gen1 and Azure Files are outside this feature. Each registration closes its
-Azure client and owned identity transport when the session owner finishes.
-
-Local regression tests exercise real DuckDB and adlfs with simulated remote
-responses. Live Blob/ADLS Gen2 accounts and managed identities have not yet been
-validated; see the [Azure phase](epics/04-filesystems/03-azure-filesystem-strategies.md).
+Azure reads and writes use DuckDB's native Azure extension with
+`quackframe.register_secret`, selecting `azure_connection_string` or
+`azure_managed_identity`. Shared credential models and Prefect Blocks remain
+supported. No Python `azure` extra is required. Enable `register_secret` and use
+native Azure URLs rather than the removed named Azure filesystem protocols.
+See [Azure secret examples](developer-examples.md)
+and [Credential Providers](credential-providers.md) for configuration.
 
 ## Enable And Register
 
