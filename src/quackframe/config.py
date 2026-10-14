@@ -6,11 +6,12 @@ import os
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from dotenv import dotenv_values
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     ValidationError,
@@ -71,6 +72,18 @@ class FunctionsConfig(BaseModel):
     enabled: tuple[str, ...] = ()
 
 
+def _duckdb_setting_string(value: object) -> str:
+    """Normalize supported scalar settings before string validation."""
+
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    raise ValueError("DuckDB settings must be strings, integers, floats, or booleans")
+
+
 class DuckDBConfig(BaseModel):
     """Describe how Quackframe prepares a DuckDB session.
 
@@ -83,7 +96,9 @@ class DuckDBConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    settings: dict[str, str] = Field(default_factory=dict)
+    settings: dict[str, Annotated[str, BeforeValidator(_duckdb_setting_string)]] = (
+        Field(default_factory=dict)
+    )
     extensions: tuple[str, ...] = ()
 
 
@@ -151,7 +166,9 @@ def load_config(
         .expanduser()
         .resolve()
     )
-    source_path = Path(config_path) if config_path is not None else Path("pyproject.toml")
+    source_path = (
+        Path(config_path) if config_path is not None else Path("pyproject.toml")
+    )
     if not source_path.is_absolute():
         source_path = initial_root / source_path
     dotenv_environment = _read_dotenv(initial_root / ".env")

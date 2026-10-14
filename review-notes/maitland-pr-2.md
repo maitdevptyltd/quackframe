@@ -226,11 +226,11 @@ poetry run pytest tests/test_config.py -k 'configuration_paths_use_selected_runt
 
 ### C03 Typed DuckDB settings
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323363) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/config.py#L81) · [Local file](../src/quackframe/config.py)
 - Feedback: Accept plain TOML numbers and booleans and convert them appropriately for DuckDB.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Accept strings, integers, floats, and booleans in the typed model; preserve strings, normalize booleans to `true`/`false`, and reject unsupported values.
+- Resolution / verification: Added scalar pre-validation and documented ordinary TOML settings. `poetry run pytest tests/test_config.py -k duckdb_settings --basetemp .test-tmp-c03-20261014-c`: **19 passed, 55 deselected**. Includes unsupported compound/date values and an offline in-memory DuckDB connection. Sandbox directory permissions required escalation; an initial connection test used a session-only setting and was corrected to use a global option. Changed-file Ruff lint and `git diff --check` passed. Ruff formatted the new code; unrelated formatting changes were reverted. No broader checks ran.
 
 ### C04 Home-directory expansion
 

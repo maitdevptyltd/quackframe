@@ -7,9 +7,79 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from quackframe import ConfigurationError, QuackframeConfig, load_config, run
-from quackframe.config import DatabaseMode
+from quackframe.config import DatabaseMode, DuckDBConfig
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (4, "4"),
+        (0, "0"),
+        (-2, "-2"),
+        (0.5, "0.5"),
+        (True, "true"),
+        (False, "false"),
+        ("4GB", "4GB"),
+        ("", ""),
+    ],
+)
+def test_duckdb_settings_normalize_scalars(value: object, expected: str) -> None:
+    config = DuckDBConfig.model_validate({"settings": {"option": value}})
+
+    assert config.settings == {"option": expected}
+
+
+@pytest.mark.parametrize("value", [None, [], {}, [4], {"nested": 4}, object(), b"4"])
+def test_duckdb_settings_reject_unsupported_values(value: object) -> None:
+    with pytest.raises(ValidationError, match="DuckDB settings must be"):
+        DuckDBConfig.model_validate({"settings": {"option": value}})
+
+
+def test_duckdb_settings_from_toml_work_in_duckdb(tmp_path: Path) -> None:
+    import duckdb
+
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[tool.quackframe.duckdb.settings]
+threads = 4
+index_scan_percentage = 0.5
+preserve_insertion_order = false
+enable_object_cache = true
+memory_limit = "1GB"
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(root=tmp_path, environ={})
+
+    assert config.duckdb.settings == {
+        "threads": "4",
+        "index_scan_percentage": "0.5",
+        "preserve_insertion_order": "false",
+        "enable_object_cache": "true",
+        "memory_limit": "1GB",
+    }
+    with duckdb.connect(":memory:", config=config.duckdb.settings) as connection:
+        assert connection.execute(
+            "SELECT current_setting('threads'), "
+            "current_setting('index_scan_percentage'), "
+            "current_setting('preserve_insertion_order'), "
+            "current_setting('enable_object_cache')"
+        ).fetchone() == (4, 0.5, False, True)
+
+
+@pytest.mark.parametrize("value", ["[4]", "{nested = 4}", "2026-10-14"])
+def test_duckdb_settings_reject_unsupported_toml(tmp_path: Path, value: str) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        f"[tool.quackframe.duckdb.settings]\nthreads = {value}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="DuckDB settings must be"):
+        load_config(root=tmp_path, environ={})
 
 
 def test_base_package_does_not_import_prefect() -> None:

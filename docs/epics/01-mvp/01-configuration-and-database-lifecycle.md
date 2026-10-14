@@ -76,6 +76,14 @@ inputs, absolute paths, and default TOML selection. Sandbox temporary-directory
 permissions required rerunning these offline tests outside the sandbox with a
 fresh synthetic directory. `git diff --check` passed; no broader checks ran.
 
+C03 implementation on 2026-10-14 normalizes integer, float, and boolean DuckDB
+settings to strings in the typed model while preserving strings and rejecting
+unsupported values. All 19 targeted settings cases passed, including synthetic
+TOML loading and an in-memory DuckDB connection. Sandbox temporary-directory
+permissions required escalation; the offline connection test was corrected to
+use a global connection option. Changed-file Ruff checks and `git diff --check`
+passed. No broader validation ran.
+
 ## Decisions
 
 - Default to an in-memory database.

@@ -233,9 +233,21 @@ not. Every source is validated through the same typed model.
 
 ## DuckDB Settings
 
-The MVP accepts string-valued connection settings and an explicit extension
-list under `[tool.quackframe.duckdb]`. Extension names are validated before
-their generated `INSTALL` and `LOAD` statements execute.
+Connection settings accept strings, integers, floats, and booleans. The typed
+model preserves strings and converts numbers and booleans to DuckDB-compatible
+strings (`true` or `false` for booleans). Arrays, tables, and other value types
+are rejected.
+
+```toml
+[tool.quackframe.duckdb.settings]
+threads = 4
+memory_limit = "1GB"
+preserve_insertion_order = false
+```
+
+An explicit extension list is accepted under `[tool.quackframe.duckdb]`.
+Extension names are validated before their generated `INSTALL` and `LOAD`
+statements execute.
 
 The implicit root is exactly the invocation working directory. Quackframe does
 not search parent directories for configuration.
