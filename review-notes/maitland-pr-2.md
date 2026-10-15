@@ -394,11 +394,32 @@ git diff --check
 
 ### P05 Before the first stable release
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323399) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/scripts/release.py#L205) · [Local file](../scripts/release.py)
 - Feedback: Return no release for ordinary main pushes before initial promotion instead of failing the release run.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Return no release before stable exists when main has neither a
+  reachable RC nor an explicit promotion request; preserve promotion validation.
+- Resolution / verification: Added the narrow planner guard and documented the
+  no-release outcome. Synthetic local Git histories cover ordinary feature, fix
+  and breaking pushes, with and without an unmerged RC, plus invalid explicit
+  promotions. Before the fix: six regressions failed and two controls passed.
+  After the fix: 16 targeted cases passed, 71 deselected, including first stable
+  promotion, candidate tree/selection validation, bootstrap conflicts and
+  post-stable feature rejection. Fixture permissions required normal escalation;
+  changed-file Pyright also required escalation to resolve installed dependencies.
+  Changed-file Ruff lint/format, Pyright, documentation links and diff checks
+  passed. No full release/repository suite, builds, hosted workflows or publishing.
+
+  Exact targeted verification:
+
+  ```powershell
+  poetry run pytest tests/test_release.py -k 'main_before_first_stable_without_promotion or first_stable_explicit_promotion or bootstrap_through_second_candidate_and_stable or promotion_requires_exact_candidate_tree or selected_candidate_is_not_silently_substituted or direct_feature_on_main_is_rejected or bootstrap_rejects_conflicting_tag_history' -q -p no:cacheprovider --basetemp=.test-tmp-p05-verified --tb=short
+  poetry run ruff check scripts/release.py tests/test_release.py
+  poetry run ruff format --check scripts/release.py tests/test_release.py
+  poetry run pyright scripts/release.py tests/test_release.py
+  poetry run python .agents/skills/quackframe-documentation/scripts/check_doc_links.py
+  git diff --check
+  ```
 
 ## Overview-only actions
 

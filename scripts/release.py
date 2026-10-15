@@ -102,6 +102,16 @@ def plan(
         stable = {tag: v for tag, v in tags.items() if not v.is_prerelease}
         if stable and max(stable, key=lambda tag: stable[tag]) not in reachable:
             raise ValueError("Synchronize the latest stable release before releasing.")
+        # Before stable exists, ordinary main pushes have no package to patch.
+        # Explicit requests and reachable RCs still undergo promotion validation.
+        if (
+            branch == "main"
+            and not stable
+            and flow != "promotion"
+            and candidate_tag is None
+            and not reachable.intersection(tags)
+        ):
+            return None
         if branch == "release/next" and any(
             repo.commit(t).hexsha == source for t in stable
         ):

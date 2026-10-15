@@ -16,7 +16,9 @@ development-only and does not add runtime dependencies to the installed wheel.
 
 Candidates are automatic; there is no separate manual release request. Before
 the first stable release, corrections belong on `release/next`, since there is
-no stable package to patch. Promote candidates with an ancestry-preserving merge
+no stable package to patch. Ordinary `main` pushes without an RC to promote
+return no release. Explicit promotion requests still require a valid candidate.
+Promote candidates with an ancestry-preserving merge
 from `release/next` to `main`, not a squash. Use a neutral promotion message such
 as `chore(release): promote Quackframe 0.1.0`.
 

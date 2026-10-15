@@ -107,6 +107,32 @@ def test_direct_feature_on_main_is_rejected(history: Path) -> None:
         plan("main")
 
 
+@pytest.mark.parametrize("message", ["feat: initial", "fix: initial", "feat!: initial"])
+@pytest.mark.parametrize("unmerged_candidate", [False, True])
+def test_main_before_first_stable_without_promotion_does_not_release(
+    history: Path, message: str, unmerged_candidate: bool
+) -> None:
+    if unmerged_candidate:
+        commit("feat: candidate implementation")
+        tag_release("release/next", "0.1.0rc1")
+    git("checkout", "main")
+    commit(message)
+
+    assert plan("main") is None
+    assert plan("main", flow="patch") is None
+
+
+@pytest.mark.parametrize("candidate_tag", [None, "v0.1.0-rc.99"])
+def test_first_stable_explicit_promotion_still_requires_candidate(
+    history: Path, candidate_tag: str | None
+) -> None:
+    git("checkout", "main")
+    commit("feat: initial")
+
+    with pytest.raises(ValueError, match="published RC"):
+        plan("main", flow="promotion", candidate_tag=candidate_tag)
+
+
 def test_promotion_requires_exact_candidate_tree(history: Path) -> None:
     commit("feat: first implementation")
     tag_release("release/next", "0.1.0rc1")
