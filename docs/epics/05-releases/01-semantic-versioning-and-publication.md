@@ -703,9 +703,6 @@ the next acceptance step; no hosted setup, rehearsal or publication is included.
 - [Release Guide](../../releases.md): implemented workflow, setup and recovery.
 - [MAD.Prefect release workflow](https://github.com/maitdevptyltd/MAD.Prefect/blob/main/.github/workflows/publish.yml):
   reference for recording a version and tag before downstream publication.
-- [WebUI release tools v2.0.2](https://dev.azure.com/maitdevptyltd/WebUI/_git/webui.release.tools?path=/src/doctor/runner.ts&version=GTv2.0.2):
-  reference for checking the proposed tag and allowing a newer version after a
-  failed publication, without requiring recovery of every earlier tagged version.
 - [Python Semantic Release](https://python-semantic-release.readthedocs.io/en/stable/):
   branch-aware release engine and version calculation.
 - [GitHub workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow):

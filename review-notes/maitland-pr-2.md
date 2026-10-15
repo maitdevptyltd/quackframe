@@ -342,11 +342,25 @@ git diff --check
 
 ### V03 Public repository cleanup
 
-- [ ] Addressed
-- Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323278) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/.gitmodules#L1) · [Local file](../.gitmodules)
+- [x] Addressed
+- Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323278) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/.gitmodules#L1)
 - Feedback: Review unused submodules/gitlinks; remove completed working notes; fix stale prototype references, private links and supplier-specific test paths; trim sdist contents; refresh PR validation figures.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Complete the public-repository cleanup; retain useful historical
+  prototype evidence without requiring private source access.
+- Resolution / verification: Submodule configuration/gitlinks and stale agent
+  map entry removed in `67d279b` and `2aa2c02`. Removed completed `found-bugs.md`
+  and implementation-review notes, the private Azure DevOps reference, and
+  supplier-specific test paths. Clarified that prototype references describe
+  historical local development material. Trimmed the sdist to source, README,
+  licence and project metadata; Hatchling also includes its `.gitignore` and
+  generated `PKG-INFO`. Built the wheel from that sdist and checked both archive
+  inventories: 49 files each, no tests/scripts/docs/examples/Poetry lock.
+  Four affected scope-override cases passed; changed-file Ruff, Poetry lock
+  consistency, documentation links and diff checks passed. Build temporary-file
+  access required normal sandbox escalation. No full suite or publication ran.
+  Updated PR #2's validation paragraph to the review's recorded 628 passed /
+  4 xfailed at `a7ab179`, explicitly separating subsequent targeted branch
+  verification from the unmodified PR head. No new full-suite total is claimed.
 
 ### V04 Credential documentation table
 

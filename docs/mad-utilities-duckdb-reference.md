@@ -4,6 +4,10 @@
 It is evidence for useful behaviour, not the documentation template and not an
 automatically accepted production contract.
 
+It is not bundled with Quackframe or registered as a submodule. Historical
+validation notes mentioning prototype lint findings describe a former local
+development checkout, not files required by this repository.
+
 The prototype repository may not be available to every public contributor. The
 relevant product meaning is retained here so Quackframe's public design does
 not depend on access to private source material.

@@ -354,7 +354,7 @@ def test_ssh_private_key_scope_override_is_bound(
     )
 
     resolved = credentials.resolve_overrides(
-        {"scope": "sftp://sftp.example.test/from_uber/trips/"}
+        {"scope": "sftp://sftp.example.test/incoming/reports/"}
     )
     resolved.register_duckdb_secret(
         cast(DuckDBPyConnection, connection), "source_files"
@@ -370,7 +370,7 @@ def test_ssh_private_key_scope_override_is_bound(
         "reader",
         "/run/secrets/sftp-key",
         2222,
-        "sftp://sftp.example.test/from_uber/trips/",
+        "sftp://sftp.example.test/incoming/reports/",
     ]
     assert ("not enforced" in caplog.text) == bool(fingerprint and fingerprint.strip())
     if fingerprint and fingerprint.strip():

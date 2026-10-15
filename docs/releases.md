@@ -103,6 +103,10 @@ a development baseline; tags and published distribution metadata identify actual
 releases. `poetry run python -m build --no-isolation` invokes Hatchling, building
 the wheel from the source distribution to check both packaging paths.
 
+The source distribution contains the package source, README, licence and project
+metadata (plus Hatchling's build metadata and `.gitignore`). Tests, release scripts, development
+documentation and the Poetry lock remain in the repository, not the package.
+
 Each release retains its wheel, source distribution, generated `CHANGELOG.md`,
 `release.json` source/version record, and `SHA256SUMS.json` in a draft GitHub
 release before upload. The tag points at the tested source commit; the source
