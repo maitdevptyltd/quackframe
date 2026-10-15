@@ -30,8 +30,6 @@ guardrails needed to work in this repository.
 - `.agents/references/code-style.md`: implementation style and testing
   preferences.
 - `.agents/references/preferences.md`: product and workflow preferences.
-- `MAD.Utilities.DuckDB/`: prototype evidence only, not an inherited production
-  contract.
 
 ## Skill Routing
 

@@ -18,3 +18,7 @@ __pycache__/
 release-bundle/
 publish-dist/
 
+
+# Local reference checkouts are not package submodules.
+/assquack/
+/MAD.Utilities.DuckDB/
