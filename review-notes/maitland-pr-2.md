@@ -319,11 +319,28 @@ git diff --check
 
 ### V01 Linux and package CI
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323271) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/.github/workflows/ci.yml#L27) · [Local file](../.github/workflows/ci.yml)
 - Feedback: Add Linux coverage, plus package build, twine check and clean wheel smoke tests on PRs.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Implement together with O02, preserving the existing Windows cases.
+- Resolution / verification: Added full-extras Linux Python 3.11/3.14 cases and
+  a separate Linux Python 3.14 PR package job using the existing build, Twine
+  and clean-wheel smoke tooling. Publication workflow and smoke script unchanged.
+  Targeted YAML/configuration validation passed (matrix, supported versions, PR
+  triggers, package command order, metadata version and read-only permissions).
+  The existing release workflow safety test passed (one test; pytest reported
+  a non-fatal cache-write permission warning). Documentation links and
+  `git diff --check` passed in the initial configuration check.
+  Follow-up on 2026-10-16: clean-wheel consumer checks passed on Windows/Python
+  3.14.0 and Ubuntu WSL/Python 3.11.14. Each verified installation without
+  Prefect, Python UDF execution, shared-session Python/CLI execution and
+  fail-fast behavior. Both resolved DuckDB 1.5.6 and NumPy 2.4.6 from the wheel's
+  allowed dependency ranges; these were consumer checks, not locked full-suite
+  runs. WSL's installed Poetry 1.8.2 could not parse current wheel metadata;
+  a disposable Poetry 2.2.1 environment completed the Linux checks without
+  changing installed tools. The V03-built sdist and wheel also passed Twine.
+  Hosted matrix execution, Linux/Python 3.14 and optional-extras coverage remain
+  pending. No full suite, hosted workflow or publication was triggered.
 
 ### V02 Opt-in upstream deadlock controls
 
@@ -514,8 +531,13 @@ Source for each: [Maitland's overview](https://github.com/maitdevptyltd/quackfra
   [Contributing](../CONTRIBUTING.md) and verified they match
   [CI](../.github/workflows/ci.yml). Documentation link check and
   `git diff --check` passed. The documented lint commands were not executed.
-- [ ] O02 — Reconcile advertised Python 3.14 support with CI coverage.
-  Decision / resolution: Pending. [CI](../.github/workflows/ci.yml) · [Package metadata](../pyproject.toml)
+- [x] O02 — Reconcile advertised Python 3.14 support with CI coverage.
+  Decision / resolution: Added full-extras Python 3.14 tests on Windows and
+  Linux, plus Linux Python 3.14 clean-wheel coverage without extras. Preserved
+  Windows core-only 3.11/3.13 and minimum-Prefect coverage. Seven explicit test
+  cases avoid a Cartesian matrix. Targeted configuration validation passed;
+  hosted Python 3.14/Linux execution is pending, as detailed in
+  [V01](#v01-linux-and-package-ci). [CI](../.github/workflows/ci.yml) · [Package metadata](../pyproject.toml)
 - [x] O03 — Use a monotonic high-resolution timer such as time.perf_counter()
   for elapsed durations. Decision / resolution: File and run durations now use
   `perf_counter()` and retain their public `timedelta` types. No stored wall-clock

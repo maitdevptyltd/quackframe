@@ -15,16 +15,29 @@ jobs:
       matrix:
         include:
           - python-version: "3.11"
+            os: windows-latest
             install-arguments: ""
           - python-version: "3.13"
+            os: windows-latest
             install-arguments: ""
           - python-version: "3.11"
+            os: windows-latest
             install-arguments: '--extras "prefect sftp"'
             prefect-version: "3.2.0"
           - python-version: "3.13"
+            os: windows-latest
+            install-arguments: '--extras "prefect sftp"'
+          - python-version: "3.14"
+            os: windows-latest
+            install-arguments: '--extras "prefect sftp"'
+          - python-version: "3.11"
+            os: ubuntu-latest
+            install-arguments: '--extras "prefect sftp"'
+          - python-version: "3.14"
+            os: ubuntu-latest
             install-arguments: '--extras "prefect sftp"'
 
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v7
@@ -51,3 +64,22 @@ jobs:
         run: poetry run pyright
       - name: Check documentation links
         run: python .agents/skills/quackframe-documentation/scripts/check_doc_links.py
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install Poetry
+        run: python -m pip install poetry==2.2.1
+      - name: Install dependencies
+        run: poetry install --no-interaction
+      - name: Build and check distributions
+        run: |
+          poetry run python -m build --no-isolation --outdir dist
+          poetry run python -m twine check dist/*.whl dist/*.tar.gz
+      - name: Test the wheel outside the source checkout
+        run: poetry run python scripts/package_smoke.py dist/*.whl "$(poetry version --short)"

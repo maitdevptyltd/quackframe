@@ -416,6 +416,13 @@ See the [release guide](../../releases.md#repository-owner-setup) for activation
 requirements and the [P02 checklist](../../../review-notes/maitland-pr-2.md#p02-trusted-release-execution)
 for focused offline evidence.
 
+PR CI now includes full-extras Linux coverage on Python 3.11/3.14, Windows
+Python 3.14 coverage, and a Linux Python 3.14 build/Twine/clean-wheel smoke job.
+The existing Windows baseline and minimum-Prefect cases remain. Targeted local
+workflow validation is recorded in the [PR review checklist](../../../review-notes/maitland-pr-2.md#v01-linux-and-package-ci);
+hosted Linux and Python 3.14 execution is pending. This phase remains In Progress
+for the outstanding publication activation and end-to-end evidence.
+
 - [x] Add a developer-facing versioning and release guide, linked from the docs
   index and `CONTRIBUTING.md`; update applicable agent guidance.
 - [x] Verify the release tool against candidate, promotion and patch
