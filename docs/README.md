@@ -60,6 +60,13 @@ flowchart LR
 Start with the [Overview](overview.md), then follow the topic that owns the
 decision or implementation work in front of you.
 
+- [Useful Error Diagnostics Scope](epics/02-result-logging/02-useful-error-diagnostics.md): approved scope for actionable diagnostics without incidental data disclosure.
+
+## Investigations
+
+- [DuckDB Error Investigation](duckdb-error-investigation.md): offline synthetic
+  evidence about diagnostic fields, practical disclosure relevance and coverage limits.
+
 ## Examples
 
 - [Developer Examples](developer-examples.md): concise commands and Python

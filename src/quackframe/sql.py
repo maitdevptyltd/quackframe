@@ -13,13 +13,18 @@ from duckdb import (
     DuckDBPyConnection,
     Statement,
     StatementType,
-    extract_statements,
+    connect,
     token_type,
     tokenize,
 )
 
 from quackframe.config import LogSetting, QuackframeConfig
-from quackframe.errors import ConfigurationError, ExecutionError, safe_error_reason
+from quackframe.errors import (
+    ConfigurationError,
+    ExecutionError,
+    error_position,
+    safe_error_reason,
+)
 from quackframe.models import SqlFileResult
 
 ResultEmitter = Callable[[str], None]
@@ -42,6 +47,8 @@ class PreparedSqlStatement:
 
     statement: Statement
     emit_result: bool
+    query: str
+    source_offset: int
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,7 @@ class PreparedSqlFile:
     """Hold immutable statement analysis ready for ordered execution."""
 
     path: Path
+    source: str
     statements: tuple[PreparedSqlStatement, ...]
 
 
@@ -58,7 +66,7 @@ def prepare_sql_files(
     root: Path,
     log_setting: LogSetting,
 ) -> tuple[PreparedSqlFile, ...]:
-    """Validate an ordered SQL-file list before opening DuckDB.
+    """Validate an ordered SQL-file list before opening the execution database.
 
     Relative paths resolve from the runtime root. Reading every file here makes
     missing, empty, or invalid inputs fail before Quackframe creates a database.
@@ -77,26 +85,40 @@ def prepare_sql_files(
         if not path.is_file():
             raise ConfigurationError(f"SQL file does not exist: {path}")
 
+        source = _read_sql(path)
         statement_number: int | None = None
+        offset = 0
+        query = source
         try:
-            statements = extract_statements(_read_sql(path))
-            if not statements:
-                raise _SqlPreparationError("SQL file contains no executable statements")
             prepared_statements: list[PreparedSqlStatement] = []
-            for next_statement_number, statement in enumerate(statements, start=1):
-                statement_number = next_statement_number
-                prepared_statements.append(
-                    PreparedSqlStatement(
-                        statement=statement,
-                        emit_result=_should_emit_result(statement, log_setting),
+            # DuckDB expands dynamic PIVOT into internal statements. Keep source
+            # boundaries for attribution and execute each source statement whole.
+            with connect(config={"errors_as_json": "true"}) as parser:
+                for offset, query in _source_statements(source):
+                    statement_number = len(prepared_statements) + 1
+                    statements = parser.extract_statements(query)
+                    if not statements:
+                        continue
+                    statement = statements[-1]
+                    prepared_statements.append(
+                        PreparedSqlStatement(
+                            statement=statement,
+                            emit_result=_should_emit_result(statement, log_setting),
+                            query=query,
+                            source_offset=offset,
+                        )
                     )
-                )
+            if not prepared_statements:
+                raise _SqlPreparationError("SQL file contains no executable statements")
         except ConfigurationError:
             raise
         except Exception as error:
+            line, column = _source_location(source, offset, query, error)
             raise ExecutionError(
                 sql_file=path,
                 statement_number=statement_number,
+                line=line,
+                column=column,
                 reason=(
                     str(error)
                     if isinstance(error, _SqlPreparationError)
@@ -105,7 +127,9 @@ def prepare_sql_files(
             ) from None
 
         prepared.append(
-            PreparedSqlFile(path=path, statements=tuple(prepared_statements))
+            PreparedSqlFile(
+                path=path, source=source, statements=tuple(prepared_statements)
+            )
         )
 
     return tuple(prepared)
@@ -119,26 +143,37 @@ def execute_sql_file(
 ) -> SqlFileResult:
     """Execute every parsed statement in one file on the shared connection.
 
-    DuckDB's parser determines statement boundaries. Quackframe retains only a
-    count and safe failure location, never full SQL or returned rows.
+    Original source statements determine counts and locations, including PIVOT
+    statements expanded internally by DuckDB. Failures omit SQL excerpts and rows.
     """
 
     started_at = perf_counter()
     statement_number: int | None = None
+    prepared: PreparedSqlStatement | None = None
 
     try:
+        connection.execute("SET errors_as_json = true")
         for next_statement_number, prepared in enumerate(sql_file.statements, start=1):
             statement_number = next_statement_number
             if prepared.emit_result:
                 (emit_result or _print_result)(
-                    _render_complete_result(connection, prepared.statement)
+                    _render_complete_result(connection, prepared.query)
                 )
             else:
-                connection.execute(prepared.statement)
+                connection.execute(prepared.query)
     except Exception as error:  # DuckDB exposes several exception subclasses.
+        line, column = (
+            _source_location(
+                sql_file.source, prepared.source_offset, prepared.query, error
+            )
+            if prepared is not None
+            else (None, None)
+        )
         raise ExecutionError(
             sql_file=sql_file.path,
             statement_number=statement_number,
+            line=line,
+            column=column,
             reason=safe_error_reason(error),
         ) from None
 
@@ -149,9 +184,7 @@ def execute_sql_file(
     )
 
 
-def _render_complete_result(
-    connection: DuckDBPyConnection, statement: Statement
-) -> str:
+def _render_complete_result(connection: DuckDBPyConnection, statement: str) -> str:
     """Materialize once in DuckDB, then render its bounded native preview."""
 
     # Rendering a lazy relation evaluates only a preview, and rendering after
@@ -303,3 +336,31 @@ def _read_sql(path: Path) -> str:
     if not sql.strip():
         raise ConfigurationError(f"SQL file is empty: {path}")
     return sql
+
+
+def _source_statements(source: str) -> Iterable[tuple[int, str]]:
+    """Split only semicolon tokens, preserving original bytes and comments."""
+
+    encoded = source.encode("utf-8")
+    start = 0
+    for position, kind in tokenize(source):
+        if kind == token_type.operator and encoded[position : position + 1] == b";":
+            yield start, encoded[start : position + 1].decode("utf-8")
+            start = position + 1
+    if start < len(encoded):
+        yield start, encoded[start:].decode("utf-8")
+
+
+def _source_location(
+    source: str, offset: int, query: str, error: Exception
+) -> tuple[int | None, int | None]:
+    """Translate only actual backend byte positions into original file coordinates."""
+
+    position = error_position(error)
+    if position is None or position > len(query.encode("utf-8")):
+        return None, None
+    try:
+        prefix = source.encode("utf-8")[: offset + position].decode("utf-8")
+    except UnicodeDecodeError:
+        return None, None
+    return prefix.count("\n") + 1, len(prefix.rsplit("\n", 1)[-1]) + 1
