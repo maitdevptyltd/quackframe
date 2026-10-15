@@ -1,7 +1,7 @@
 # PR 2 — Maitland review checklist
 
 Status: **Open**
-Last updated: 2026-10-14
+Last updated: 2026-10-16
 Review: 2026-10-08, commit `a7ab17974d25a5c9289fbacef22db4a9144e9324`
 
 [Pull request](https://github.com/maitdevptyltd/quackframe/pull/2) · [Maitland's overview](https://github.com/maitdevptyltd/quackframe/pull/2#pullrequestreview-5449915627) · [Documentation index](../docs/README.md)
@@ -10,8 +10,8 @@ This is a temporary working checklist of Maitland's feedback, not a new public
 contract. Summaries below are paraphrases; linked GitHub comments are authoritative.
 All 28 inline comments are represented once. Overview-only actions are separate.
 
-Mark a checkbox only when addressed, deliberately declined, or assigned an agreed
-follow-up. Record the decision, implementation/commit, and verification in its
+A checked box means implemented, clarification requested, deliberately declined,
+or assigned an agreed follow-up; it does not mean every item has shipped. Record the decision, implementation/commit, and verification in its
 resolution field. Local completion does not resolve a GitHub review thread.
 Move lasting decisions into their owning docs before retiring this checklist.
 
@@ -22,7 +22,75 @@ Maitland supports the core architecture. He asks for targeted fixes, a smaller
 remains disabled; activation needs the release findings addressed. His reported
 validation was 628 passed and 4 xfailed on Windows/Python 3.11 with all extras,
 with lint, type and documentation checks clean. This checklist does not independently
-verify those results or current implementation status.
+rerun those results. The reconciliation below records current local implementation
+status and previously completed verification.
+
+## Reconciled status — 2026-10-16
+
+This table covers **32 tracking entries: 28 inline comments and four overview
+items**, not 32 separate comments. Detailed decisions and verification evidence
+follow below. Verification results are recorded evidence, not tests rerun during
+this documentation reconciliation.
+
+| ID | Item | Current status | Commit / reference |
+| --- | --- | --- | --- |
+| S01 | Azure fsspec removal | Complete; re-review clear | 68cf333, 16a4468 |
+| S02 | DuckDB SSHFS route | Addressed: awaiting clarification | Comment 4255240046; no removal |
+| S03 | Temporary database paths | Complete | 841323d |
+| S04 | Release recovery machinery | Not started; decision needed | — |
+| S05 | Separate flow work | Agreed separate PR; outside this checklist’s remaining work | — |
+| R01 | Useful errors and output routing | Complete and reviewed on logging branch; integration pending | fbbcb71, e7652a9, f8259ed |
+| R02 | Complete result execution | Complete | 476aff5 |
+| R03 | Base NumPy dependency | Complete; clean wheel verified | af93d25, 9b19e0d |
+| R04 | TOML extension loading | Addressed: awaiting clarification | db03680; comment 4267371558 |
+| R05 | Empty function installation | Complete; five targeted checks passed | be1ab72, 9b19e0d |
+| R06 | Progress logging | Not started; separate logging work | — |
+| R07 | Result selection and annotations | Not started; separate logging work | — |
+| C01 | Python database-path mode | Complete; example updated | d88cd5f, 09d697d |
+| C02 | Configuration runtime root | Complete | 6e2be2f |
+| C03 | Typed DuckDB settings | Complete | 22c1491 |
+| C04 | Home-directory expansion | Complete | ae0bd71 |
+| C05 | TOML authority | Complete | 439302c |
+| C06 | DuckDB compatible range | Complete | 7fe2f92 |
+| C07 | fsspec upper bound | Addressed: awaiting clarification | 3deccbc; comment 4266977546 |
+| V01 | Linux and package CI | Committed; local smoke passed; hosted matrix pending | 642a090 |
+| V02 | Opt-in upstream controls | Complete; collection verified | c537209 |
+| V03 | Repository cleanup | Complete; package inventories and targeted checks passed | 67d279b, 2aa2c02, a42732d |
+| V04 | Credential table | Complete | d387309 |
+| P01 | PyPI verification polling | Complete | c3b2928 |
+| P02 | Trusted release execution | Code complete; external environment setup outstanding | b670ec5 |
+| P03 | Workflow hardening | Complete | efaf00f |
+| P04 | RC ancestry | Complete | 466029f |
+| P05 | Before first stable | Complete | 6772e06 |
+| O01 | Contributor lint commands | Complete | d387309 |
+| O02 | Python 3.14 coverage | Committed; shares V01 hosted verification | 642a090 |
+| O03 | Monotonic timing | Complete | ee28c83 |
+| O04 | Smaller future PRs | Accepted future guidance; no current implementation task | — |
+
+### Branch and verification handover
+
+- `fix/pr-2-feedback` was clean at `642a090` before this tracker update and
+  27 commits ahead of the locally recorded `origin/fix/pr-2-feedback`.
+  This reconciliation does not push changes or refresh remote refs.
+- `refactor/error-logging` is clean at `f8259ed`, in worktree
+  `C:/Users/RowanFarquharson/.codex/worktrees/6e53/quackframe`.
+  Its three exclusive commits are `fbbcb71`, `e7652a9` and `f8259ed`.
+  They are not integrated into `fix/pr-2-feedback`; the logging branch has no
+  configured remote tracking branch. The recorded work was not pushed.
+- The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
+  feedback fixes as already present in the PR. Live PR state was not rechecked
+  during this local reconciliation.
+- Remaining implementation decisions/work: **S04, R06 and R07**. Remaining
+  delivery/setup: integrate R01, run hosted V01/O02 verification, and finish
+  P02 environment configuration before enabling publication.
+- **S02, R04 and C07 are addressed pending reviewer clarification**, not active
+  implementation tasks. Reply state is from the last recorded PR check; check
+  for a response before reopening them. S05 is agreed separate work; O04 is
+  future guidance. Neither belongs on the current implementation to-do list.
+- Keep validation targeted. No full suite, broad formatting or new review loop
+  is implied by this handover. Local Windows/Python 3.14 and Linux/Python 3.11
+  clean-wheel checks passed; this does not establish hosted Linux/Python 3.14
+  or optional-extras matrix success.
 
 ## Navigation
 
@@ -68,7 +136,7 @@ verify those results or current implementation status.
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323284) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql_functions/register_filesystem/azure.py#L153)
 - Feedback: Consider removing Azure fsspec strategies in favour of native DuckDB Azure reads/writes. Identify any unmet requirement before removal.
 - Decision: Approved: remove Azure fsspec strategies and their unused extra/dependencies. Retain shared credential loading, Azure models and Prefect support, native DuckDB Azure secrets, SFTP and shared filesystem ownership. No downstream migration or SSHFS removal in S01.
-- Resolution / verification: Implemented in the commit containing this entry (`refactor: remove Azure fsspec strategies`). Removed the two filesystem strategies, Azure backend, Azure-only tests/examples and unused dependencies; retained shared credential/provider architecture, native Azure secrets and SFTP. Poetry preserved every surviving locked version and added no packages. The selected unit cases passed (51 passed, 25 deselected); two synthetic localhost SFTP export cases passed. The first export-test attempt failed on sandbox temporary-directory permissions before execution; the same two cases passed with normal escalation and a fresh ignored directory. No live customer services, customer data, credentials or `.env` reads; no full suite, broad checks/builds, downstream changes, push or GitHub thread changes. Changed-file Ruff and Pyright passed; Pyright required normal escalation to resolve installed Poetry dependencies after two sandboxed attempts reported missing imports. Separate review remains pending.
+- Resolution / verification: Implemented in the commit containing this entry (`refactor: remove Azure fsspec strategies`). Removed the two filesystem strategies, Azure backend, Azure-only tests/examples and unused dependencies; retained shared credential/provider architecture, native Azure secrets and SFTP. Poetry preserved every surviving locked version and added no packages. The selected unit cases passed (51 passed, 25 deselected); two synthetic localhost SFTP export cases passed. The first export-test attempt failed on sandbox temporary-directory permissions before execution; the same two cases passed with normal escalation and a fresh ignored directory. No live customer services, customer data, credentials or `.env` reads; no full suite, broad checks/builds, downstream changes, push or GitHub thread changes. Changed-file Ruff and Pyright passed; Pyright required normal escalation to resolve installed Poetry dependencies after two sandboxed attempts reported missing imports. Separate review identified stale filesystem write documentation, corrected in `16a4468`; the follow-up review found no remaining scoped issues. Implementation commit: `68cf333`.
 
 Exact successful checks:
 
@@ -87,11 +155,11 @@ other explicitly selected nodes cover retained credential and filesystem contrac
 
 ### S02 DuckDB SSHFS
 
-- [ ] Addressed
+- [x] Addressed — awaiting clarification
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323290) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql_functions/register_secret/models.py#L145) · [Local file](../src/quackframe/sql_functions/register_secret/models.py)
 - Feedback: Consider removing register_secret(..., 'ssh_private_key'), retaining fsspec SFTP. Review existing callers before removal.
 - Decision: Discussed: keep shared SSH credential models, credential providers and Prefect Blocks. Only the DuckDB SSHFS registration route is proposed for removal. Older downstream code has callers; migration remains unverified.
-- Resolution / verification: Pending.
+- Resolution / verification: [Clarifying comment posted](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4255240046). Retain the credential/block structure for the current fsspec route and possible future SSHFS support once extension gaps are fixed. No removal implemented; await the reviewer response before further action.
 
 ### S03 Custom temporary database paths
 
@@ -119,21 +187,44 @@ git diff --check
 
 ### S05 Separate flow work
 
-- [ ] Addressed
+- [x] Addressed — agreed separate PR
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323316) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/api.py#L14) · [Local file](../src/quackframe/api.py)
 - Feedback: Keep quackframe_flow in its own PR; settle run parameters and a shared ordered job file list there. Address Prefect displaying sql_files as <tuple>.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Agreed to handle flow, parameters and ordered job-list work in a separate PR.
+- Resolution / verification: Deferred by agreement, not an unfinished implementation task for this PR. No completion or verification of that separate work is claimed here.
 
 ## Runtime and diagnostics
 
 ### R01 Useful SQL errors
 
-- [ ] Addressed
+- [x] Addressed — implemented on separate branch; integration pending
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323234) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/errors.py#L49) · [Local file](../src/quackframe/errors.py)
 - Feedback: Restore actionable error details and file locations; correct statement attribution including PIVOT. Decide terminal versus external-log disclosure policy without exposing sensitive values.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Implement a useful safe baseline from the practical DuckDB error
+  investigation. Direct execution always shows full original errors; external
+  runtimes show the safe baseline unless `allow_external_result_logging=true`,
+  which permits full errors and selected results. Errors are reported either way;
+  no extra setting. Ordinary identifiers are not treated as secrets merely
+  because a caller could deliberately put a password in them.
+- Resolution / verification: Complete on `refactor/error-logging`: `fbbcb71`
+  implements useful diagnostics/source attribution; `e7652a9` fixes JSON-function
+  diagnostics and locked-session configuration; `f8259ed` implements routing.
+  The investigation recorded 42 scenarios in text/JSON modes (84 targeted
+  probes); its consolidated report distinguishes ordinary exposure from
+  deliberately constructed cases. Those counts are not a prevalence estimate.
+  The doer/reviewer loop completed with no remaining actionable scoped findings.
+  After review fixes, 41 error tests passed; final routing validation passed 79
+  focused cases plus 11 selected CLI/mocked-Prefect cases. Independent review
+  passed four offline checks. Changed-file checks passed except three documented
+  pre-existing CLI-test lambda typing diagnostics. No full suite or live Prefect
+  service was used. R06/R07 are not included.
+  Remaining step: integrate the three commits into the feedback branch; neither
+  integration nor push has occurred. Branch-only documents are
+  `docs/duckdb-error-investigation.md` and
+  `docs/epics/02-result-logging/02-useful-error-diagnostics.md`; read them in the
+  logging worktree until integration. Some relation binder failures lack position
+  metadata; candidate suggestions are omitted because they can contain PIVOT
+  row values. Composite-key errors retain the first identifiable column.
 
 ### R02 Result logging executes the complete query
 
@@ -160,7 +251,7 @@ git diff --check
 
 ### R04 Community extensions
 
-- [ ] Addressed
+- [x] Addressed — awaiting clarification
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323255) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/database.py#L157) · [Local file](../src/quackframe/database.py)
 - Feedback: Choose repository-aware extension configuration or explicitly document core-only support and fix the mssql example.
 - Decision: Awaiting Maitland's response to [Rowan's proposal](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4267371558), posted 2026-10-14.
@@ -169,7 +260,7 @@ git diff --check
   `register_secret` already loads its own requirements. Rowan asked whether
   there is a distinct use case that justifies retaining the TOML option.
 - Resolution / verification: Comment verified on the PR. No implementation
-  change made; this item remains unresolved pending discussion.
+  change made; implementation awaits discussion and is not on the active to-do list.
 
 ### R05 Read-only databases
 
@@ -306,14 +397,15 @@ git diff --check
 
 ### C07 Calendar-version dependency caps
 
-- [ ] Addressed
+- [x] Addressed — awaiting clarification
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323392) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/pyproject.toml#L21) · [Local file](../pyproject.toml)
 - Feedback: Review annual upper bounds on Azure dependencies and fsspec; avoid arbitrary January incompatibility.
 - Decision: Awaiting Maitland's clarification. Azure fsspec removal leaves only
   the SFTP fsspec dependency in scope. On 2026-10-14, Rowan posted a reply asking
   whether to remove the upper bound entirely or use a different bounded range.
+  [Clarification comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4266977546).
 - Resolution / verification: Pending response; the dependency constraint remains
-  unchanged. This item is not resolved.
+  unchanged. Addressed by requesting clarification; no implementation action until a response.
 
 ## Validation and repository cleanup
 
@@ -546,8 +638,9 @@ Source for each: [Maitland's overview](https://github.com/maitdevptyltd/quackfra
   cleanup passed (five tests). Changed-file Ruff lint/format checks, documentation
   links and `git diff --check` passed. [SQL execution](../src/quackframe/sql.py) ·
   [Run execution](../src/quackframe/engine.py)
-- [ ] O04 — Keep subsequent PRs small enough for meaningful review.
-  Decision / resolution: Pending.
+- [x] O04 — Keep subsequent PRs small enough for meaningful review.
+  Decision / resolution: Accepted guidance for future PRs, not an outstanding
+  code change or additional review point to implement in this PR.
 
 ## Related Docs
 
