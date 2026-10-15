@@ -53,6 +53,10 @@ After stable publication, synchronize `main` back into `release/next`. Do the
 same after a direct stable patch. Synchronization alone does not publish another
 RC. A stable fix can coexist with the next minor candidate: `0.1.1` does not
 change the upcoming `0.2.0rcN` target. Candidate testing must include that fix.
+If a direct patch consumes a patch candidate's target version, synchronize and
+cut a fresh candidate for the next version. Merging the stale candidate does
+not let its changes ship through a later direct patch: uncovered RC ancestry
+still requires a valid promotion.
 
 Git tags use the release engine's SemVer form, such as `v0.1.0-rc.1`. Python
 package metadata uses the equivalent PEP 440 form `0.1.0rc1`. Stable tags are

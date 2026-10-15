@@ -398,11 +398,27 @@ git diff --check
 
 ### P04 RC and patch ancestry
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323346) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/scripts/release.py#L167) · [Local file](../scripts/release.py)
 - Feedback: Prevent direct patches taking an RC target version and later shipping candidate changes as an unrelated patch; add the four-step history regression.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Approved. Detect uncovered reachable RC ancestry independently of
+  target version; apply the version filter only when selecting a valid RC.
+  Preserve direct patches and require a refreshed candidate after a collision.
+- Resolution / verification: Separated ancestry detection from candidate version
+  selection. The four-step synthetic history failed before the fix and passes
+  after it, including rejection with explicit patch provenance and automatic
+  planning, refreshed-candidate recovery, and direct patches after promotion.
+  The focused run passed 26 cases (62 deselected), including concurrent minor
+  candidates, promotion freshness, retries and pre-stable P05 controls.
+  Changed-file Ruff lint/format, Pyright, documentation links and diff checks
+  passed. Fixture access and Pyright dependency resolution required normal
+  sandbox escalation. No full suites, builds, hosted execution or publication.
+
+  Targeted test command:
+
+  ```powershell
+  poetry run pytest tests/test_release.py -k 'collided_patch_candidate or candidate_promotion_patch_and_concurrent_next_minor or promotion_target_and_freshness or retry_resumes_original_version or main_before_first_stable_without_promotion or first_stable_explicit_promotion' -q -p no:cacheprovider --basetemp=.test-tmp-p04-verified --tb=short
+  ```
 
 ### P05 Before the first stable release
 

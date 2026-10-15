@@ -78,6 +78,47 @@ def test_candidate_promotion_patch_and_concurrent_next_minor(history: Path) -> N
     tag_release("main", "0.2.0")
 
 
+def test_collided_patch_candidate_cannot_escape_as_direct_patch(history: Path) -> None:
+    first_stable()
+    git("checkout", "release/next")
+    git("merge", "main", "--no-edit")
+    change_file("a.txt", "fix: candidate A")
+    candidate = tag_release("release/next", "0.1.1rc1")
+
+    git("checkout", "main")
+    change_file("b.txt", "fix: stable B")
+    direct = plan("main", flow="patch")
+    assert direct and direct.flow == "patch" and direct.version == "0.1.1"
+    git("tag", direct.tag)
+    assert not Path("a.txt").exists()
+
+    git("merge", "--no-ff", "release/next", "-m", "chore: promote A")
+    with pytest.raises(ValueError, match="targets another version"):
+        plan("main", flow="promotion", candidate_tag=candidate)
+
+    change_file("c.txt", "fix: unrelated stable C")
+    assert Path("a.txt").exists()
+    with pytest.raises(ValueError, match="Candidate ancestry"):
+        plan("main", flow="patch")
+    with pytest.raises(ValueError, match="Promotion requires a published RC"):
+        plan("main")
+
+    # Refresh against stable before promoting the combined, tested source.
+    git("checkout", "release/next")
+    git("merge", "main", "--no-edit")
+    candidate = tag_release("release/next", "0.1.2rc1")
+    git("checkout", "main")
+    git("merge", "--no-ff", "release/next", "-m", "chore: promote refreshed A")
+    promotion = plan("main", flow="promotion", candidate_tag=candidate)
+    assert promotion and promotion.flow == "promotion"
+    assert promotion.version == "0.1.2" and promotion.candidate_tag == candidate
+    git("tag", promotion.tag)
+
+    change_file("d.txt", "fix: stable D after promotion")
+    direct = plan("main", flow="patch")
+    assert direct and direct.flow == "patch" and direct.version == "0.1.3"
+
+
 @pytest.mark.parametrize("message", ["feat: initial", "fix: initial", "feat!: initial"])
 def test_first_release_has_explicit_target(history: Path, message: str) -> None:
     commit(message)

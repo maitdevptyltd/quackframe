@@ -174,17 +174,20 @@ def plan(
             covered: set[str] = set()
             for stable_tag in prior_stable:
                 covered.update(git("tag", "--merged", stable_tag).splitlines())
-            candidates = [
+            uncovered_candidates = [
                 t
                 for t, v in tags.items()
-                if v.is_prerelease
-                and t in reachable - covered
-                and v.release == version.release
+                if v.is_prerelease and t in reachable - covered
             ]
-            # A patch-sized RC is still a promotion. Hosted execution also checks
-            # the merged PR's source branch and its explicitly selected candidate.
+            candidates = [
+                t for t in uncovered_candidates if tags[t].release == version.release
+            ]
+            # A stable patch can consume an RC's target number without its work.
+            # That uncovered ancestry still requires promotion through a valid RC.
             promotion = (
-                flow == "promotion" or candidate_tag is not None or bool(candidates)
+                flow == "promotion"
+                or candidate_tag is not None
+                or bool(uncovered_candidates)
             )
             if promotion:
                 if flow == "patch":
