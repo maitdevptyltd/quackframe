@@ -415,11 +415,28 @@ git diff --check
 
 ### P03 Workflow hardening
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323339) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/.github/workflows/release.yml#L35) · [Local file](../.github/workflows/release.yml)
 - Feedback: Scope write tokens to required steps, pin privileged actions to commit SHAs and set job timeouts.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Approved. Preserve P02's job isolation, scope planning's token
+  environment to API steps, pin the two privileged actions and bound all release
+  jobs. GitHub token permissions remain job-level; no step permissions added.
+- Resolution / verification: Planning exposes `GH_TOKEN` only to plan/authorize;
+  App tokens remain limited to retain/finalize steps. Timeouts are 15/30/10/15/10
+  minutes for plan/package/retain/publish/finalize. On 2026-10-15, read-only
+  `git ls-remote` against the authoritative upstream repositories verified
+  `actions/create-github-app-token` v3 and v3.3.0 at
+  `64ab729a6294000f5aa4a4bc0b73d1f32bc45510`, and
+  `pypa/gh-action-pypi-publish` release/v1 and peeled v1.14.2 at
+  `dc37677b2e1c63e2034f94d8a5b11f265b73ba33`. These exact commits are pinned;
+  unrelated action versions are unchanged. Focused pytest selection
+  `workflow_serializes or candidate_build_is_separate or limits_token_exposure or verified_commit_pins`
+  in `tests/test_release_workflow.py`: **4 passed, 59 deselected**. Changed-file
+  Ruff lint/format and Pyright, documentation links and `git diff --check` passed.
+  Upstream reads and Pyright required normal sandbox escalation; Pyright then
+  caught a missing test set annotation, corrected before the passing rerun.
+  Actionlint was unavailable on PATH. No hosted workflows, builds, publication
+  or broad test suite ran. P02 external setup remains unverified.
 
 ### P04 RC and patch ancestry
 

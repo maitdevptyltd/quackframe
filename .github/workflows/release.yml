@@ -28,6 +28,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       release: ${{ steps.plan.outputs.release }}
       decision: ${{ steps.plan.outputs.decision }}
@@ -37,7 +38,6 @@ jobs:
       retained: ${{ steps.retained.outputs.exists }}
     env:
       SOURCE: ${{ github.event.workflow_run.head_sha }}
-      GH_TOKEN: ${{ github.token }}
       QUACKFRAME_RELEASES_ENABLED: ${{ vars.QUACKFRAME_RELEASES_ENABLED }}
     steps:
       - uses: actions/checkout@v7
@@ -71,11 +71,14 @@ jobs:
       - name: Calculate or resume the release
         if: steps.current.outputs.current == 'true'
         id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" --repository "$GITHUB_WORKSPACE/source" release_workflow plan --decision "$GITHUB_WORKSPACE/release-plan.json"
       - name: Reuse retained artifacts on retry
         if: steps.plan.outputs.release == 'true'
         id: retained
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.plan.outputs.tag }}
           GH_REPO: ${{ github.repository }}
         run: python -I tooling/scripts/release_entrypoint.py release_workflow authorize
@@ -97,6 +100,7 @@ jobs:
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     # Candidate build hooks and installed wheels run only in this read-only job.
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -155,6 +159,7 @@ jobs:
   retain:
     needs: [plan, package]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: pypi
     env:
       PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}
@@ -173,7 +178,7 @@ jobs:
       # Candidates may contain workflow changes absent from the default branch.
       - name: Create repository release token
         id: release-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.QUACKFRAME_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.QUACKFRAME_RELEASE_APP_PRIVATE_KEY }}
@@ -187,6 +192,7 @@ jobs:
   publish:
     needs: [plan, retain]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: pypi
     permissions:
       contents: read
@@ -207,7 +213,7 @@ jobs:
         run: python -I scripts/release_entrypoint.py release_artifacts stage --source "$SOURCE" --tag "$TAG"
       - name: Publish using PyPI Trusted Publishing
         if: hashFiles('publish-dist/*') != ''
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: publish-dist/
       - name: Verify uploaded hashes
@@ -216,6 +222,7 @@ jobs:
   finalize:
     needs: [plan, publish]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: pypi
     env:
       PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}
@@ -233,7 +240,7 @@ jobs:
           path: release-bundle
       - name: Create repository release token
         id: release-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.QUACKFRAME_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.QUACKFRAME_RELEASE_APP_PRIVATE_KEY }}

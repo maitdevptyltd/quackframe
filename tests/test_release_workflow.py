@@ -543,6 +543,52 @@ def test_workflow_serializes_and_gates_writes() -> None:
     assert text.count("id-token: write") == 1
 
 
+def test_release_workflow_limits_token_exposure_and_job_duration() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    sections = re.split(r"^  (\w+):$", text.split("jobs:\n", 1)[1], flags=re.M)
+    jobs = dict(zip(sections[1::2], sections[2::2], strict=True))
+    token_steps = {
+        "Calculate or resume the release",
+        "Reuse retained artifacts on retry",
+        "Retain exact artifacts before PyPI upload",
+        "Publish the verified GitHub release",
+    }
+    found_token_steps: set[str] = set()
+    for job in jobs.values():
+        settings, steps = job.split("    steps:\n", 1)
+        assert "GH_TOKEN" not in settings
+        timeout = re.search(r"^    timeout-minutes: (\d+)$", settings, re.M)
+        assert timeout and 1 <= int(timeout[1]) <= 30
+        for step in re.split(r"^      - ", steps, flags=re.M)[1:]:
+            assert "permissions:" not in step
+            if "GH_TOKEN:" in step:
+                name = step.splitlines()[0].removeprefix("name: ")
+                found_token_steps.add(name)
+                assert name in token_steps
+            if "uses: actions/checkout@" in step:
+                assert "persist-credentials: false" in step
+    assert found_token_steps == token_steps
+
+
+def test_privileged_release_actions_use_verified_commit_pins() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    pins = {
+        "actions/create-github-app-token": (
+            "64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+            "v3.3.0",
+            2,
+        ),
+        "pypa/gh-action-pypi-publish": (
+            "dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
+            "v1.14.2",
+            1,
+        ),
+    }
+    for action, (sha, version, count) in pins.items():
+        refs = re.findall(rf"uses: {re.escape(action)}@(.+)", text)
+        assert refs == [f"{sha} # {version}"] * count
+
+
 def test_candidate_build_is_separate_from_trusted_release_jobs() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     # Split only job headings, not step or environment mappings.

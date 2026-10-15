@@ -128,6 +128,17 @@ and `workflows: write`: candidates may change workflow files relative to the
 default branch, which `GITHUB_TOKEN` cannot authorize. Each token is scoped to
 the current repository, exposed only to its release step, and revoked at job end.
 The planning job also needs `pull-requests: read` for merged-PR provenance.
+Its `GH_TOKEN` environment variable is supplied only to planning and retained
+artifact authorization. GitHub permissions apply to whole jobs, not individual
+steps; this limits environment inheritance without removing the planning job's
+token rights. Checkout never persists credentials. The App-token and PyPI
+publishing actions are pinned to verified upstream commit SHAs with version
+annotations.
+
+Job timeouts bound the shared release queue: planning has 15 minutes for tool
+installation and provenance checks, packaging has 30 minutes for builds and
+consumer installation, retention and finalization have 10 minutes each, and
+publication has 15 minutes for upload and the bounded PyPI visibility checks.
 
 All release tooling, locked tooling dependencies and version policy come from
 the workflow's immutable default-branch commit (`github.sha`). Candidate files
