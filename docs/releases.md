@@ -175,6 +175,10 @@ Before a tag exists, the run can rebuild. Once a tag exists, retries download th
 original retained assets and verify source identity and checksums; they do not
 rebuild. Existing PyPI files must match, and only missing files are uploaded.
 An already complete upload becomes a no-op before GitHub release finalization.
+After upload, verification polls missing files every 20 seconds for three
+minutes to tolerate cached PyPI 404 responses. An in-flight request can take
+up to another 30 seconds. Hash conflicts and unrelated errors fail immediately;
+exhausting the polling budget reports the filenames still missing.
 
 Recovery finds both drafts and published releases through GitHub's paginated
 release listing with push access. A 404 from the published-release-by-tag

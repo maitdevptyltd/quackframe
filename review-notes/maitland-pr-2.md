@@ -362,11 +362,23 @@ git diff --check
 
 ### P01 PyPI verification delay
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323325) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/scripts/release_artifacts.py#L133) · [Local file](../scripts/release_artifacts.py)
 - Feedback: Poll publication verification long enough to tolerate cached 404 responses after upload.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Approved bounded polling for verification only: every 20 seconds
+  for three minutes, allowing several cycles of the roughly one-minute cached
+  404 measured in the review. An in-flight request retains its 30-second timeout.
+- Resolution / verification: Verification waits for missing files, preserves
+  exact file/hash checks, and reports remaining filenames on timeout. Staging
+  and upload behavior are unchanged. Eight focused mocked-response/fake-clock
+  cases passed, covering delayed 404/partial visibility, timeout, conflicting
+  hashes, unexpected files, HTTP/network/JSON errors and local checksum failure.
+  Command: `poetry run pytest tests/test_release_artifacts.py -k pypi_verification_polling -q -p no:cacheprovider --basetemp=.test-tmp-p01-elevated --tb=short`.
+  The initial sandbox run could not access temporary fixtures; the approved
+  elevated rerun passed. No live requests, real waits or publication occurred.
+  Changed-file Ruff lint/format checks, Pyright (with elevated environment
+  access after sandbox import-resolution failures), and `git diff --check`
+  passed. No full release or repository suite was run.
 
 ### P02 Trusted release execution
 

@@ -7,6 +7,7 @@ import hashlib
 import json
 import shutil
 import tarfile
+import time
 import zipfile
 from email import message_from_bytes
 from pathlib import Path
@@ -114,6 +115,23 @@ def reconcile(expected: dict[str, str], published: dict[str, str]) -> set[str]:
     return expected.keys() - published.keys()
 
 
+def verify_publication(expected: dict[str, str], version: str) -> None:
+    """Allow cached missing files to become visible without retrying uploads."""
+    # PyPI can cache missing versions for roughly a minute. Allow three minutes
+    # for visibility; an in-flight request retains its existing 30-second timeout.
+    deadline = time.monotonic() + 180
+    while True:
+        missing = reconcile(expected, published_hashes(version))
+        if not missing:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError(
+                f"PyPI publication incomplete after 180 seconds: {sorted(missing)}"
+            )
+        time.sleep(min(20, remaining))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -130,11 +148,10 @@ def main() -> None:
     if args.operation == "verify-local":
         return
     metadata = json.loads((args.bundle / "release.json").read_text(encoding="utf-8"))
-    missing = reconcile(expected, published_hashes(metadata["version"]))
     if args.operation == "verify":
-        if missing:
-            raise ValueError(f"PyPI publication incomplete: {sorted(missing)}")
+        verify_publication(expected, metadata["version"])
         return
+    missing = reconcile(expected, published_hashes(metadata["version"]))
     destination = Path("publish-dist")
     destination.mkdir(exist_ok=True)
     if any(destination.iterdir()):
