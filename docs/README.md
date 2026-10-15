@@ -71,8 +71,6 @@ decision or implementation work in front of you.
 
 ## Documentation Status
 
-- [R01 Safe Error Diagnostics Scope](../review-notes/r01-safe-error-diagnostics-scope.md): draft review scope for useful errors without sensitive data; output permissions are a separate task.
-
 The MVP contract is implemented in `src/quackframe`. The phase documents record
 the initial implementation and its validation boundaries; the roadmap now
 separates delivered MVP behaviour from post-MVP work.
