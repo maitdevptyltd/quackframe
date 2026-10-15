@@ -152,7 +152,6 @@ def execute_sql_file(
     prepared: PreparedSqlStatement | None = None
 
     try:
-        connection.execute("SET errors_as_json = true")
         for next_statement_number, prepared in enumerate(sql_file.statements, start=1):
             statement_number = next_statement_number
             if prepared.emit_result:

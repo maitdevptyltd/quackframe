@@ -116,3 +116,12 @@ Validation completed on 2026-10-15:
 
 Tests used the existing Poetry Python 3.13 environment with this worktree's `src`
 on `PYTHONPATH`; no dependencies or live services were changed.
+
+Review corrections preserve malformed-JSON byte details for both casts and JSON
+functions (`Conversion` and `Invalid Input`). Structured diagnostics are requested
+when opening the owned connection, before configuration locking takes effect;
+execution no longer issues a per-file configuration mutation. Focused review
+regressions cover `json(v)`, `json_extract(v, '$.key')`, and multiple files with
+`lock_configuration=true`, including a useful error from the locked session.
+The error suite passed **41 tests** after these corrections. Changed-file Ruff,
+format and Pyright checks, documentation links and whitespace checks passed.

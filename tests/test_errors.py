@@ -187,3 +187,44 @@ def test_csv_failure_retains_file_line_column_and_expected_type(tmp_path: Path) 
     for expected in ("records.csv", "input line 2", "column 'v'", "expected INTEGER"):
         assert expected in message
     assert "private-data" not in "".join(traceback.format_exception(captured.value))
+
+
+@pytest.mark.parametrize("expression", ["json(v)", "json_extract(v, '$.key')"])
+def test_json_functions_omit_stored_values_but_keep_input_position(
+    tmp_path: Path, expression: str
+) -> None:
+    from quackframe import ExecutionError, QuackframeConfig, run
+
+    path = tmp_path / "json.sql"
+    path.write_text(
+        "CREATE TABLE payloads AS SELECT 'private-row-data' v; "
+        f"SELECT {expression} FROM payloads;",
+        encoding="utf-8",
+    )
+    with pytest.raises(ExecutionError) as captured:
+        run([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
+    assert "Invalid Input: Malformed JSON at input byte 0" in str(captured.value)
+    assert "private-row-data" not in "".join(traceback.format_exception(captured.value))
+
+
+def test_locked_configuration_supports_multiple_files_and_diagnostics(
+    tmp_path: Path,
+) -> None:
+    from quackframe import DuckDBConfig, ExecutionError, QuackframeConfig, run
+
+    first = tmp_path / "first.sql"
+    first.write_text("SELECT 1;", encoding="utf-8")
+    second = tmp_path / "second.sql"
+    second.write_text("SELECT 2;", encoding="utf-8")
+    config = QuackframeConfig(
+        root=tmp_path,
+        log_setting="none",
+        duckdb=DuckDBConfig(settings={"lock_configuration": "true"}),
+    )
+    assert run([first, second], config=config).statement_count == 2
+
+    second.write_text("SELECT absent;", encoding="utf-8")
+    with pytest.raises(ExecutionError) as captured:
+        run([first, second], config=config)
+    assert "Column 'absent' was not found" in str(captured.value)
+    assert (captured.value.line, captured.value.column) == (1, 8)

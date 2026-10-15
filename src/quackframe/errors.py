@@ -176,6 +176,10 @@ def _diagnostic_reason(details: dict[str, str]) -> str | None:
         return "SQL syntax is invalid" + (
             " at end of input" if message == "syntax error at end of input" else ""
         )
+    if category in {"Conversion", "Invalid Input"}:
+        match = re.match(r"Malformed JSON at byte (\d+) of input:", message)
+        if match:
+            return f"Malformed JSON at input byte {match[1]}"
     if category == "Conversion":
         if message.startswith("CSV Error on Line:"):
             line = re.search(r"^CSV Error on Line: (\d+)", message)
@@ -194,9 +198,6 @@ def _diagnostic_reason(details: dict[str, str]) -> str | None:
             if target:
                 parts.append(f"expected {target[1]}")
             return ", ".join(parts)
-        if message.startswith("Malformed JSON at byte "):
-            match = re.match(r"Malformed JSON at byte (\d+) of input:", message)
-            return "Malformed JSON" + (f" at input byte {match[1]}" if match else "")
         target = re.search(
             r" to ([A-Z][A-Z0-9_]*(?:\([0-9, ]+\))?)"
             r"(?: when casting from source column [^\n]+)?$",

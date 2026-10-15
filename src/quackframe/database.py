@@ -57,7 +57,8 @@ def _open_connection(
     try:
         return duckdb.connect(
             database=database_path,
-            config=dict(config.duckdb.settings),
+            # Request diagnostics before lock_configuration can prevent SET.
+            config={**config.duckdb.settings, "errors_as_json": "true"},
         )
     except Exception as error:
         raise ConfigurationError(

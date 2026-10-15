@@ -103,7 +103,8 @@ A SQL failure stops subsequent files. The failure should identify:
 
 Runtime adapters may enrich the failure with their own run identifier, but the
 core exception remains framework-independent. Quackframe requests structured
-DuckDB errors and constructs diagnostics from supported fields and observed
+DuckDB errors at connection creation (including locked configurations) and
+constructs diagnostics from supported fields and observed
 message forms, rather than forwarding complete backend messages. Missing object
 names, conversion target types, constraint columns and CSV input file/line/column
 remain useful; rejected values, CSV rows and SQL excerpts are omitted. URL
