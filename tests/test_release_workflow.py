@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -40,15 +40,30 @@ def workflow_step(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     command_line = match[1]
     if command_line == "|":
         command_line = block.split("        run: |\n", 1)[1].splitlines()[0].strip()
+    command_line = command_line.replace("$GITHUB_WORKSPACE/", "")
+    command_line = command_line.replace(
+        "decision/release-plan.json", "release-plan.json"
+    )
     for name in ("SOURCE", "TAG"):
         command_line = command_line.replace(f"${name}", os.environ.get(name, ""))
     arguments = shlex.split(command_line)
-    if arguments[:2] == ["poetry", "run"]:
+    if arguments[0] == "poetry":
+        arguments = arguments[arguments.index("run") + 1 :]
+    assert arguments[:2] == ["python", "-I"]
+    assert arguments[2].endswith("scripts/release_entrypoint.py")
+    arguments = arguments[3:]
+    if arguments[0] == "--repository":
         arguments = arguments[2:]
-    assert arguments[:2] == ["python", "-m"]
-    assert arguments[2] in {"scripts.release_workflow", "scripts.release_artifacts"}
-    monkeypatch.setattr(sys, "argv", ["release_workflow", *arguments[3:]])
-    if arguments[2] == "scripts.release_workflow":
+    assert arguments[0] in {"release_workflow", "release_artifacts"}
+    if arguments[1] in {"retain", "finalize"} and "PLANNED_RELEASE" not in os.environ:
+        # Older fixtures start at retention. Supply their known decision as the
+        # job output; substitution tests supply an independent decision explicitly.
+        decision = Path("release-plan.json")
+        if not decision.exists():
+            decision = Path("release-bundle/release.json")
+        monkeypatch.setenv("PLANNED_RELEASE", decision.read_text(encoding="utf-8"))
+    monkeypatch.setattr(sys, "argv", arguments)
+    if arguments[0] == "release_workflow":
         workflow.main()
     else:
         artifacts.main()
@@ -521,14 +536,150 @@ def test_workflow_serializes_and_gates_writes() -> None:
     assert text.index("Reuse retained artifacts on retry") < text.index(
         "Stamp, build and check distributions"
     )
-    assert (
-        "if: steps.plan.outputs.release == 'true' && "
-        "steps.retained.outputs.exists != 'true'" in text
-    )
-    assert "needs: [package, retain]" in text
-    assert "needs: [package, publish]" in text
+    assert "if: needs.plan.outputs.retained != 'true'" in text
+    assert "needs: [plan, retain]" in text
+    assert "needs: [plan, publish]" in text
     assert "if: hashFiles('publish-dist/*') != ''" in text
     assert text.count("id-token: write") == 1
+
+
+def test_candidate_build_is_separate_from_trusted_release_jobs() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    # Split only job headings, not step or environment mappings.
+    sections = re.split(
+        r"^  (plan|package|retain|publish|finalize):$", text, flags=re.M
+    )
+    jobs = dict(zip(sections[1::2], sections[2::2], strict=True))
+    assert "github.ref == 'refs/heads/main'" in jobs["plan"]
+    assert "decision: ${{ steps.plan.outputs.decision }}" in jobs["plan"]
+    for name, job in jobs.items():
+        assert "ref: ${{ github.sha }}" in job
+        assert "persist-credentials: true" not in job
+        if name in {"retain", "publish", "finalize"}:
+            assert "environment: pypi" in job
+            assert "workflow_run.head_sha }}\n          persist" not in job
+            assert "ref: ${{ github.event.workflow_run." not in job
+            assert "poetry" not in job
+            assert "python -I scripts/release_entrypoint.py" in job
+        if name in {"retain", "finalize"}:
+            assert "PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}" in job
+            assert "--decision release-bundle/" not in job
+        if name != "publish":
+            assert "id-token: write" not in job
+    build = jobs["package"]
+    assert "contents: read" in build
+    assert all(value not in build for value in ("secrets.", "environment:", "GH_TOKEN"))
+    assert "outputs:" not in build
+    assert "poetry -C tooling install --no-root" in jobs["plan"]
+    assert "--repository" in jobs["plan"]
+    assert "build --no-isolation" not in jobs["plan"]
+    assert "package_smoke" not in jobs["plan"]
+
+
+def test_trusted_entrypoint_ignores_candidate_import_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    (candidate / "scripts").mkdir()
+    sentinel = tmp_path / "candidate-executed"
+    payload = (
+        f"from pathlib import Path\nPath({str(sentinel)!r}).touch()\n"
+        "raise RuntimeError('candidate executed')\n"
+    )
+    for path in (
+        candidate / "scripts/__init__.py",
+        candidate / "scripts/release_artifacts.py",
+        candidate / "json.py",
+        candidate / "sitecustomize.py",
+    ):
+        path.write_text(payload, encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(candidate))
+    release = Release(
+        "synthetic-source", "release/next", "v0.1.0-rc.1", "0.1.0rc1", True, "candidate"
+    )
+    bundle = make_bundle(release, tmp_path / "bundle")
+    entrypoint = WORKFLOW.parents[2] / "scripts/release_entrypoint.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            str(entrypoint),
+            "--repository",
+            str(candidate),
+            "release_artifacts",
+            "verify-local",
+            "--bundle",
+            str(bundle),
+            "--source",
+            release.source,
+            "--tag",
+            release.tag,
+        ],
+        cwd=candidate,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not sentinel.exists()
+
+
+def test_planner_uses_trusted_policy_with_candidate_history(
+    history: Path, remote: Remote, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = Path("pyproject.toml")
+    candidate_policy = project.read_text().replace(
+        'tag_format = "v{version}"', 'tag_format = "untrusted-{version}"'
+    )
+    change_file("pyproject.toml", candidate_policy)
+    commit("feat: candidate delivery")
+    event_and_pr(remote, monkeypatch, head="feat/example")
+    workflow_step("Calculate or resume the release", monkeypatch)
+    decision = Release.read(Path("release-plan.json"))
+    assert decision.source == git("rev-parse", "HEAD")
+    assert decision.tag == "v0.1.0-rc.1"
+    outputs = Path("outputs").read_text()
+    assert f"decision={json.dumps(asdict(decision))}" in outputs
+
+
+@pytest.mark.parametrize("operation", ["retain", "finalize"])
+@pytest.mark.parametrize("substitution", ["source", "version", "flow"])
+def test_build_cannot_replace_trusted_release_decision(
+    history: Path,
+    remote: Remote,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    substitution: str,
+) -> None:
+    commit("feat: initial")
+    decision = plan("release/next")
+    assert decision
+    remote.candidate(decision, draft=True)
+    forged = {
+        "source": replace(decision, source="other-source"),
+        "version": replace(decision, tag="v9.9.9-rc.1", version="9.9.9rc1"),
+        "flow": replace(
+            decision,
+            branch="main",
+            tag="v9.9.9",
+            version="9.9.9",
+            prerelease=False,
+            flow="patch",
+        ),
+    }[substitution]
+    make_bundle(forged, Path("release-bundle"))
+    monkeypatch.setenv("PLANNED_RELEASE", json.dumps(asdict(decision)))
+    monkeypatch.setenv("SOURCE", decision.source)
+    monkeypatch.setenv("TAG", decision.tag)
+    step = (
+        "Retain exact artifacts before PyPI upload"
+        if operation == "retain"
+        else "Publish the verified GitHub release"
+    )
+    with pytest.raises(ValueError, match="another source or version"):
+        workflow_step(step, monkeypatch)
+    assert not remote.writes
 
 
 @pytest.mark.parametrize("field", ["SOURCE", "TAG"])

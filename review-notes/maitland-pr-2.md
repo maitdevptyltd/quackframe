@@ -385,8 +385,33 @@ git diff --check
 - [ ] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323333) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/.github/workflows/release.yml#L136) · [Local file](../.github/workflows/release.yml)
 - Feedback: Separate candidate code from privileged release tooling; review main-only environment restrictions and App-key secret placement.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Approved default-branch tooling and policy, a separate unprivileged
+  candidate build job, and `main`-only `pypi` environment protection with the App
+  key stored only as an environment secret.
+- Resolution / verification: Repository implementation complete. Planning and
+  privileged jobs use the workflow's immutable default-branch SHA; isolated Python
+  excludes candidate import paths. Retention/finalization consume the planner's
+  full decision through job outputs and reject substituted build metadata.
+  Seventeen focused offline cases passed for import/policy isolation, forged
+  decisions, patch provenance, retries, finalization and workflow boundaries.
+  Seven focused P04/P05 history controls also passed, preserving collided-candidate
+  protection and ordinary pre-stable `main` no-release behavior.
+  Changed-file Ruff lint/format, Pyright, YAML parsing and doc links passed.
+  Pytest fixture access and Pyright dependency resolution needed normal sandbox
+  escalation. No builds, full suites, hosted runs or publication were performed.
+- External setup remains unverified, so this item stays open: the available
+  GitHub connector has no environment administration operation and local `gh`
+  is unavailable. An owner must set `pypi` deployment rules to the `main` branch
+  only, supply `QUACKFRAME_RELEASE_APP_PRIVATE_KEY` as an environment secret from
+  their secure original, verify that replacement, then remove any repository or
+  broadly scoped organization copy. No secret was read or external setting changed.
+
+  Focused test command:
+
+  ```powershell
+  poetry run pytest tests/test_release_workflow.py -k 'trusted or candidate_build or retry_upload_and_finalization or new_release_finalizes or workflow_serializes or patch_provenance' -q -p no:cacheprovider --basetemp=.test-tmp-p02-b --tb=short
+  poetry run pytest tests/test_release.py -k 'collided_patch_candidate or main_before_first_stable_without_promotion' -q -p no:cacheprovider --basetemp=.test-tmp-p02-controls --tb=short
+  ```
 
 ### P03 Workflow hardening
 

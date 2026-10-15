@@ -58,7 +58,8 @@ def release_tags() -> dict[str, Version]:
 
 
 def configuration() -> tuple[RawConfig, ConventionalCommitParser]:
-    with Path("pyproject.toml").open("rb") as stream:
+    # Release policy belongs to the tooling revision, never the candidate tree.
+    with (Path(__file__).resolve().parents[1] / "pyproject.toml").open("rb") as stream:
         settings = RawConfig.model_validate(
             tomllib.load(stream)["tool"]["semantic_release"]
         )

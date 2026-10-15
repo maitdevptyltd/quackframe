@@ -1,7 +1,7 @@
 # Semantic Versioning And Package Publication
 
 Status: **In Progress**
-Last updated: 2026-10-05
+Last updated: 2026-10-15
 Epic: 05 Releases
 Phase: 01
 Related docs: [Release Guide](../../releases.md), [Roadmap](../../roadmap.md), [Developer API](../../developer-api.md), [Contributing](../../../CONTRIBUTING.md)
@@ -406,6 +406,15 @@ the former is permitted; the latter lacks completed candidate evidence.
   its own project/publisher setup; it must not be mistaken for production proof.
 
 ## Implementation Deliverables
+
+P02 separates trusted planning and publication from candidate builds. Tooling,
+dependencies and version policy use the workflow's default-branch SHA; isolated
+Python imports and independent planner outputs protect the privileged jobs.
+The phase remains In Progress: `main`-only environment restrictions, environment
+App-key placement and hosted release validation still need owner verification.
+See the [release guide](../../releases.md#repository-owner-setup) for activation
+requirements and the [P02 checklist](../../../review-notes/maitland-pr-2.md#p02-trusted-release-execution)
+for focused offline evidence.
 
 - [x] Add a developer-facing versioning and release guide, linked from the docs
   index and `CONTRIBUTING.md`; update applicable agent guidance.

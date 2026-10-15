@@ -16,37 +16,45 @@ permissions:
   contents: read
 
 jobs:
-  package:
-    # GitHub hides draft releases from tokens without push access.
+  plan:
+    # Draft recovery requires push access; only trusted tooling runs here.
     permissions:
       contents: write
       pull-requests: read
     if: >-
       vars.QUACKFRAME_RELEASES_ENABLED == 'true' &&
+      github.ref == 'refs/heads/main' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.plan.outputs.release }}
+      decision: ${{ steps.plan.outputs.decision }}
       tag: ${{ steps.plan.outputs.tag }}
       version: ${{ steps.plan.outputs.version }}
       prerelease: ${{ steps.plan.outputs.prerelease }}
+      retained: ${{ steps.retained.outputs.exists }}
     env:
       SOURCE: ${{ github.event.workflow_run.head_sha }}
-      BRANCH: ${{ github.event.workflow_run.head_branch }}
       GH_TOKEN: ${{ github.token }}
       QUACKFRAME_RELEASES_ENABLED: ${{ vars.QUACKFRAME_RELEASES_ENABLED }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
           ref: ${{ github.event.workflow_run.head_branch }}
+          path: source
           fetch-depth: 0
           persist-credentials: false
       - name: Ignore superseded CI results
         id: current
         run: |
-          if [ "$(git rev-parse HEAD)" = "$SOURCE" ]; then
+          if [ "$(git -C source rev-parse HEAD)" = "$SOURCE" ]; then
             echo 'current=true' >> "$GITHUB_OUTPUT"
           else
             echo 'A newer merge must pass CI before publication.'
@@ -55,35 +63,89 @@ jobs:
         if: steps.current.outputs.current == 'true'
         with:
           python-version: '3.13'
-      - name: Install locked release tools
+      - name: Install trusted locked release tools
         if: steps.current.outputs.current == 'true'
         run: |
           python -m pip install poetry==2.2.1
-          poetry install --no-interaction
+          poetry -C tooling install --no-root --no-interaction
       - name: Calculate or resume the release
         if: steps.current.outputs.current == 'true'
         id: plan
-        run: poetry run python -m scripts.release_workflow plan
+        run: poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" --repository "$GITHUB_WORKSPACE/source" release_workflow plan --decision "$GITHUB_WORKSPACE/release-plan.json"
       - name: Reuse retained artifacts on retry
         if: steps.plan.outputs.release == 'true'
         id: retained
         env:
           TAG: ${{ steps.plan.outputs.tag }}
-        run: python -m scripts.release_workflow authorize
-      - name: Stamp, build and check distributions
-        if: steps.plan.outputs.release == 'true' && steps.retained.outputs.exists != 'true'
-        run: |
-          poetry run python -m scripts.release_workflow prepare
-          poetry run python -m build --no-isolation --outdir release-bundle
-          poetry run python -m twine check release-bundle/*.whl release-bundle/*.tar.gz
-          python -m scripts.release_artifacts seal
-      - name: Test the wheel outside the source checkout
-        if: steps.plan.outputs.release == 'true'
-        env:
-          VERSION: ${{ steps.plan.outputs.version }}
-        run: poetry run python scripts/package_smoke.py release-bundle/*.whl "$VERSION"
+          GH_REPO: ${{ github.repository }}
+        run: python -I tooling/scripts/release_entrypoint.py release_workflow authorize
       - uses: actions/upload-artifact@v4
         if: steps.plan.outputs.release == 'true'
+        with:
+          name: release-decision
+          path: release-plan.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: steps.retained.outputs.exists == 'true'
+        with:
+          name: retained-bundle
+          path: release-bundle/
+          if-no-files-found: error
+
+  package:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    # Candidate build hooks and installed wheels run only in this read-only job.
+    permissions:
+      contents: read
+    env:
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        if: needs.plan.outputs.retained != 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install trusted locked build tools
+        run: |
+          python -m pip install poetry==2.2.1
+          poetry -C tooling install --no-root --no-interaction
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-decision
+          path: decision
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.retained == 'true'
+        with:
+          name: retained-bundle
+          path: release-bundle
+      - name: Select exact build source
+        if: needs.plan.outputs.retained != 'true'
+        run: git -C source checkout -B "$BRANCH" "$SOURCE"
+      - name: Stamp, build and check distributions
+        if: needs.plan.outputs.retained != 'true'
+        run: |
+          poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" --repository "$GITHUB_WORKSPACE/source" release_workflow prepare --decision "$GITHUB_WORKSPACE/decision/release-plan.json" --bundle "$GITHUB_WORKSPACE/release-bundle"
+          poetry -C tooling run python -I -m build --no-isolation --outdir "$GITHUB_WORKSPACE/release-bundle" "$GITHUB_WORKSPACE/source"
+          poetry -C tooling run python -I -m twine check "$GITHUB_WORKSPACE"/release-bundle/*.whl "$GITHUB_WORKSPACE"/release-bundle/*.tar.gz
+          python -I tooling/scripts/release_entrypoint.py release_artifacts seal
+      - name: Test the wheel outside the source checkout
+        run: poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" package_smoke "$GITHUB_WORKSPACE"/release-bundle/*.whl "$VERSION"
+      - uses: actions/upload-artifact@v4
         with:
           name: release-bundle
           path: release-bundle/
@@ -91,18 +153,18 @@ jobs:
           retention-days: 90
 
   retain:
-    needs: package
-    if: needs.package.outputs.release == 'true'
+    needs: [plan, package]
     runs-on: ubuntu-latest
+    environment: pypi
     env:
+      PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}
       GH_REPO: ${{ github.repository }}
       SOURCE: ${{ github.event.workflow_run.head_sha }}
-      TAG: ${{ needs.package.outputs.tag }}
-      PRERELEASE: ${{ needs.package.outputs.prerelease }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -120,10 +182,10 @@ jobs:
       - name: Retain exact artifacts before PyPI upload
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
-        run: python -m scripts.release_workflow retain --decision release-bundle/release.json
+        run: python -I scripts/release_entrypoint.py release_workflow retain
 
   publish:
-    needs: [package, retain]
+    needs: [plan, retain]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -131,38 +193,39 @@ jobs:
       id-token: write
     env:
       SOURCE: ${{ github.event.workflow_run.head_sha }}
-      TAG: ${{ needs.package.outputs.tag }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: release-bundle
           path: release-bundle
       - name: Stage only verified missing distributions
-        run: python -m scripts.release_artifacts stage --source "$SOURCE" --tag "$TAG"
+        run: python -I scripts/release_entrypoint.py release_artifacts stage --source "$SOURCE" --tag "$TAG"
       - name: Publish using PyPI Trusted Publishing
         if: hashFiles('publish-dist/*') != ''
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: publish-dist/
       - name: Verify uploaded hashes
-        run: python -m scripts.release_artifacts verify --source "$SOURCE" --tag "$TAG"
+        run: python -I scripts/release_entrypoint.py release_artifacts verify --source "$SOURCE" --tag "$TAG"
 
   finalize:
-    needs: [package, publish]
+    needs: [plan, publish]
     runs-on: ubuntu-latest
+    environment: pypi
     env:
+      PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}
       GH_REPO: ${{ github.repository }}
       SOURCE: ${{ github.event.workflow_run.head_sha }}
-      TAG: ${{ needs.package.outputs.tag }}
-      PRERELEASE: ${{ needs.package.outputs.prerelease }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -179,4 +242,4 @@ jobs:
       - name: Publish the verified GitHub release
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
-        run: python -m scripts.release_workflow finalize --decision release-bundle/release.json
+        run: python -I scripts/release_entrypoint.py release_workflow finalize

@@ -126,6 +126,7 @@ def workflow_plan(destination: Path) -> None:
     )
     output(
         release="true",
+        decision=json.dumps(asdict(decision)),
         tag=decision.tag,
         version=decision.version,
         prerelease=str(decision.prerelease).lower(),
@@ -295,7 +296,13 @@ def main() -> None:
     if args.operation == "plan":
         workflow_plan(args.decision)
         return
-    release = Release.read(args.decision)
+    # Privileged jobs receive the planner's decision directly through job outputs,
+    # independently of every file produced by the candidate build job.
+    release = (
+        Release(**json.loads(os.environ["PLANNED_RELEASE"]))
+        if "PLANNED_RELEASE" in os.environ
+        else Release.read(args.decision)
+    )
     for name, expected in (("SOURCE", release.source), ("TAG", release.tag)):
         if name in os.environ and os.environ[name] != expected:
             raise ValueError(f"Release decision differs from the workflow {name}.")

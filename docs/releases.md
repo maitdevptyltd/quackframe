@@ -121,13 +121,29 @@ receives OIDC permission. The workflow compares published file hashes with the
 retained artifacts before making the GitHub release public. RCs are marked as
 prereleases and cannot replace the latest stable GitHub release.
 
-The package job uses `GITHUB_TOKEN` with `contents: write` because GitHub requires
+The planning job uses `GITHUB_TOKEN` with `contents: write` because GitHub requires
 push access to list and download draft releases during recovery. Retention and
 finalization use short-lived GitHub App installation tokens with `contents: write`
 and `workflows: write`: candidates may change workflow files relative to the
 default branch, which `GITHUB_TOKEN` cannot authorize. Each token is scoped to
 the current repository, exposed only to its release step, and revoked at job end.
-The package job also needs `pull-requests: read` for merged-PR provenance.
+The planning job also needs `pull-requests: read` for merged-PR provenance.
+
+All release tooling, locked tooling dependencies and version policy come from
+the workflow's immutable default-branch commit (`github.sha`). Candidate files
+provide Git history and the tree to build; they cannot select executable release
+tooling or version policy. Python runs in isolated mode through the trusted
+entrypoint, which excludes candidate modules, `PYTHONPATH` and user site packages.
+Land release-tooling or build-tool dependency changes on `main` before relying
+on them for a candidate.
+
+Planning passes its full release decision directly to retention and finalization
+through job outputs. Those jobs compare the build bundle against that independent
+decision. Building and wheel smoke tests run on a separate runner with read-only
+repository permission, no protected environment, no App key and no OIDC rights.
+Retries use the retained bundle without rebuilding. Retention, staging, upload
+verification and finalization run only trusted code; distributions are inspected
+as data and are never installed or executed in those jobs.
 
 ## Repository Owner Setup
 
@@ -141,20 +157,31 @@ Before the first candidate merge:
 3. Establish `release/next` from the appropriate reviewed `main` base. Protect
    both branches with required CI and review; prevent direct unreviewed pushes.
    Permit ancestry-preserving promotion merges.
-4. Create the GitHub environment `pypi`, limited to the intended trusted release
-   workflow. Configure a PyPI pending Trusted Publisher if the project does not
+4. Create the GitHub environment `pypi`. Set **Deployment branches and tags** to
+   **Selected branches and tags**, with one **branch** rule: `main`. Do not allow
+   tags, `release/next`, wildcard branches or all protected branches. An environment
+   does not restrict access by workflow filename. Configure a PyPI pending Trusted
+   Publisher if the project does not
    exist: owner `maitdevptyltd`, repository `quackframe`, workflow `release.yml`,
    environment `pypi`. Confirm maintainers and account access.
 5. Create and install a GitHub App on this repository with repository **Contents:
    Read and write** and **Workflows: Read and write** permissions. Store its client
    ID in the repository variable `QUACKFRAME_RELEASE_APP_CLIENT_ID` and its private
-   key in the Actions secret `QUACKFRAME_RELEASE_APP_PRIVATE_KEY`. The workflow
+   key as `QUACKFRAME_RELEASE_APP_PRIVATE_KEY` in the `pypi` **environment secrets**,
+   never as a repository or broadly available organization secret. The workflow
    uses `actions/create-github-app-token` to mint a token for the current repository
    in each release-writing job. The App needs no branch-protection bypass.
-6. Verify `workflow_run` environment/ref behaviour and token permissions in
-   GitHub. This trigger runs in the default-branch context while the workflow
-   explicitly validates and checks out the triggering source. Environment
-   restrictions must account for that context. Rehearse recovery from a draft
+   If a repository secret already exists, an owner must set the environment secret
+   from their secure original key; GitHub cannot return its existing value. Confirm
+   the replacement's name and environment scope before removing the repository
+   copy. Do not enable releases while the broadly scoped copy remains available.
+6. Verify `main` is the default branch and confirm environment/ref behaviour and
+   token permissions in GitHub. `workflow_run` executes in the default-branch
+   context, so `main`-only environment rules also permit RC publication. The
+   workflow independently requires `refs/heads/main` and uses its immutable SHA
+   for tooling; the triggering CI SHA identifies only the build source. Retention
+   and finalization also use `pypi` so their App key receives the same restriction.
+   Rehearse recovery from a draft
    release and publication of a candidate containing workflow changes.
 7. Set `QUACKFRAME_RELEASES_ENABLED=true` only when ready for qualifying merges
    to publish. Do not add a routine manual RC/patch approval gate that contradicts
