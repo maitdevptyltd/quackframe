@@ -23,7 +23,7 @@ from quackframe.errors import (
     ConfigurationError,
     ExecutionError,
     error_position,
-    safe_error_reason,
+    error_reason,
 )
 from quackframe.models import SqlFileResult
 
@@ -58,6 +58,7 @@ class PreparedSqlFile:
     path: Path
     source: str
     statements: tuple[PreparedSqlStatement, ...]
+    include_error_details: bool = True
 
 
 def prepare_sql_files(
@@ -65,6 +66,7 @@ def prepare_sql_files(
     *,
     root: Path,
     log_setting: LogSetting,
+    include_error_details: bool = True,
 ) -> tuple[PreparedSqlFile, ...]:
     """Validate an ordered SQL-file list before opening the execution database.
 
@@ -122,13 +124,16 @@ def prepare_sql_files(
                 reason=(
                     str(error)
                     if isinstance(error, _SqlPreparationError)
-                    else safe_error_reason(error)
+                    else error_reason(error, include_details=include_error_details)
                 ),
             ) from None
 
         prepared.append(
             PreparedSqlFile(
-                path=path, source=source, statements=tuple(prepared_statements)
+                path=path,
+                source=source,
+                statements=tuple(prepared_statements),
+                include_error_details=include_error_details,
             )
         )
 
@@ -173,7 +178,7 @@ def execute_sql_file(
             statement_number=statement_number,
             line=line,
             column=column,
-            reason=safe_error_reason(error),
+            reason=error_reason(error, include_details=sql_file.include_error_details),
         ) from None
 
     return SqlFileResult(

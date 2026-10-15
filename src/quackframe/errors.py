@@ -26,9 +26,9 @@ class OptionalDependencyError(ConfigurationError):
 
 
 class ExecutionError(QuackframeError):
-    """Report SQL failure with safe file and statement context.
+    """Report SQL failure with file and statement context.
 
-    The exception intentionally omits full SQL text and returned query data.
+    The selected runtime policy determines whether backend details are included.
     """
 
     def __init__(
@@ -56,6 +56,18 @@ class ExecutionError(QuackframeError):
             if column is not None:
                 location += f", column {column}"
         super().__init__(f"SQL execution failed in {location}: {reason}")
+
+
+def error_reason(error: Exception, *, include_details: bool) -> str:
+    """Select full backend diagnostics only for an authorised destination."""
+
+    if not include_details:
+        return safe_error_reason(error)
+    details = error_details(error)
+    if "exception_message" in details:
+        category = details.get("exception_type", type(error).__name__)
+        return f"{category}: {details['exception_message']}"
+    return str(error)
 
 
 def safe_error_reason(error: Exception) -> str:

@@ -98,11 +98,19 @@ A SQL failure stops subsequent files. The failure should identify:
 - the SQL file;
 - the one-based statement number when known;
 - the original one-based line and column when DuckDB supplies a position;
-- the backend error category and supported, useful diagnostic details;
+- the backend error category and details allowed by the runtime policy;
 - the overall failed outcome and non-zero CLI exit code.
 
 Runtime adapters may enrich the failure with their own run identifier, but the
-core exception remains framework-independent. Quackframe requests structured
+core exception remains framework-independent. Direct execution reports full
+original backend messages regardless of external permission. External runtimes
+use safe diagnostics unless `allow_external_result_logging=true`, which permits
+full errors as well as selected results. The exception retains file/statement
+and available source positions in both modes. Original exception chains remain
+suppressed; the selected message is the only backend error exposed to normal
+traceback rendering.
+
+For safe diagnostics, Quackframe requests structured
 DuckDB errors at connection creation (including locked configurations) and
 constructs diagnostics from supported fields and observed
 message forms, rather than forwarding complete backend messages. Missing object
@@ -118,7 +126,7 @@ Locations remain `None` when unavailable: notably some relation-binding failures
 supply only text even with JSON errors enabled. Unknown formats retain their
 category and available location. Suppressed exception chains do not reintroduce
 omitted messages. This is not general secret detection in caller-authored names
-or messages, and it does not change external-output permissions.
+or messages. Full-detail output bypasses this diagnostic filtering.
 
 See the [diagnostic implementation phase](epics/02-result-logging/02-useful-error-diagnostics.md)
 for coverage and limitations.

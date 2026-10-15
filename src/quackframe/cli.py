@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-external-result-logging",
         action="store_true",
         dest="allow_external_result_logging",
+        help="allow query results and full error details in external logs",
     )
     external_logging_group.add_argument(
         "--deny-external-result-logging",
@@ -49,7 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run ordered SQL files and return a scheduler-friendly process status.
 
     Configuration failures return ``2``. Execution and other Quackframe
-    failures return ``1`` without exposing SQL text or sensitive values.
+    failures return ``1`` with details selected by the runtime output policy.
     """
 
     arguments = build_parser().parse_args(argv)

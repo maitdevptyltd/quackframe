@@ -174,8 +174,19 @@ treat dotenv as a credential store.
 
 `QUACKFRAME_LOG_SETTING` accepts `annotations-only`, `none`, or `all`.
 `QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` is a Boolean permission that defaults
-to `false`. It is required when a non-direct runtime would send selected values
-to an external logging system.
+to false. It controls both selected query results and full error details in an
+external runtime such as Prefect. The Python setting remains
+`allow_external_result_logging`; no separate error setting is required.
+
+| Destination | Permission | Error details |
+| --- | --- | --- |
+| Direct terminal/Python | Either value | Full original backend message |
+| External runtime | false | Useful safe diagnostics, with available location |
+| External runtime | true | Full original backend message |
+
+Errors are always reported. Full messages can contain SQL literals, row values,
+credentials or upstream messages. Result selection still follows `log_setting`
+and annotations; enabling permission does not itself select query results.
 
 Logging selection and external-result permission are deliberately excluded
 from `[tool.quackframe]`: a checked-in repository cannot grant permission to

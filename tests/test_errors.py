@@ -8,7 +8,23 @@ from typing import Literal
 import duckdb
 import pytest
 
+from quackframe import QuackframeConfig
+from quackframe.engine import execute_plan
 from quackframe.errors import safe_error_reason
+from quackframe.models import ExecutionResult
+from quackframe.sql import prepare_sql_files
+
+
+def _run_safe(sql_files: list[Path], *, config: QuackframeConfig) -> ExecutionResult:
+    """Exercise safe diagnostic construction independently of runtime routing."""
+
+    prepared = prepare_sql_files(
+        sql_files,
+        root=config.root,
+        log_setting=config.log_setting,
+        include_error_details=False,
+    )
+    return execute_plan(prepared, config)
 
 
 @pytest.mark.parametrize(
@@ -113,12 +129,14 @@ def test_execution_diagnostics_and_original_locations(
     fragment: str,
     log_setting: Literal["none", "all"],
 ) -> None:
-    from quackframe import ExecutionError, QuackframeConfig, run
+    from quackframe import ExecutionError, QuackframeConfig
 
     path = tmp_path / "diagnostics.sql"
     path.write_text(sql, encoding="utf-8")
     with pytest.raises(ExecutionError) as captured:
-        run([path], config=QuackframeConfig(root=tmp_path, log_setting=log_setting))
+        _run_safe(
+            [path], config=QuackframeConfig(root=tmp_path, log_setting=log_setting)
+        )
     error = captured.value
     assert error.statement_number == statement
     if log_setting == "all" and fragment in {"absent", "missing"}:
@@ -131,7 +149,7 @@ def test_execution_diagnostics_and_original_locations(
 
 
 def test_pivot_counts_source_statements_and_runs_once(tmp_path: Path) -> None:
-    from quackframe import QuackframeConfig, run
+    from quackframe import QuackframeConfig
 
     path = tmp_path / "pivot.sql"
     path.write_text(
@@ -139,7 +157,9 @@ def test_pivot_counts_source_statements_and_runs_once(tmp_path: Path) -> None:
         "SELECT * FROM t;",
         encoding="utf-8",
     )
-    result = run([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
+    result = _run_safe(
+        [path], config=QuackframeConfig(root=tmp_path, log_setting="none")
+    )
     assert result.statement_count == 2
 
 
@@ -155,7 +175,7 @@ def test_pivot_counts_source_statements_and_runs_once(tmp_path: Path) -> None:
 def test_observed_row_failures_through_execution(
     tmp_path: Path, scenario: str, expected: str
 ) -> None:
-    from quackframe import ExecutionError, QuackframeConfig, run
+    from quackframe import ExecutionError, QuackframeConfig
 
     records = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
     case = next(
@@ -165,13 +185,13 @@ def test_observed_row_failures_through_execution(
     path = tmp_path / "rows.sql"
     path.write_text(sql, encoding="utf-8")
     with pytest.raises(ExecutionError) as captured:
-        run([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
+        _run_safe([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
     assert expected in str(captured.value)
     assert "FAKE_ROW_" not in "".join(traceback.format_exception(captured.value))
 
 
 def test_csv_failure_retains_file_line_column_and_expected_type(tmp_path: Path) -> None:
-    from quackframe import ExecutionError, QuackframeConfig, run
+    from quackframe import ExecutionError, QuackframeConfig
 
     csv = tmp_path / "records.csv"
     csv.write_text("v\nprivate-data\n", encoding="utf-8")
@@ -182,7 +202,7 @@ def test_csv_failure_retains_file_line_column_and_expected_type(tmp_path: Path) 
         encoding="utf-8",
     )
     with pytest.raises(ExecutionError) as captured:
-        run([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
+        _run_safe([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
     message = str(captured.value)
     for expected in ("records.csv", "input line 2", "column 'v'", "expected INTEGER"):
         assert expected in message
@@ -193,7 +213,7 @@ def test_csv_failure_retains_file_line_column_and_expected_type(tmp_path: Path) 
 def test_json_functions_omit_stored_values_but_keep_input_position(
     tmp_path: Path, expression: str
 ) -> None:
-    from quackframe import ExecutionError, QuackframeConfig, run
+    from quackframe import ExecutionError, QuackframeConfig
 
     path = tmp_path / "json.sql"
     path.write_text(
@@ -202,7 +222,7 @@ def test_json_functions_omit_stored_values_but_keep_input_position(
         encoding="utf-8",
     )
     with pytest.raises(ExecutionError) as captured:
-        run([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
+        _run_safe([path], config=QuackframeConfig(root=tmp_path, log_setting="none"))
     assert "Invalid Input: Malformed JSON at input byte 0" in str(captured.value)
     assert "private-row-data" not in "".join(traceback.format_exception(captured.value))
 
@@ -210,7 +230,7 @@ def test_json_functions_omit_stored_values_but_keep_input_position(
 def test_locked_configuration_supports_multiple_files_and_diagnostics(
     tmp_path: Path,
 ) -> None:
-    from quackframe import DuckDBConfig, ExecutionError, QuackframeConfig, run
+    from quackframe import DuckDBConfig, ExecutionError, QuackframeConfig
 
     first = tmp_path / "first.sql"
     first.write_text("SELECT 1;", encoding="utf-8")
@@ -221,10 +241,10 @@ def test_locked_configuration_supports_multiple_files_and_diagnostics(
         log_setting="none",
         duckdb=DuckDBConfig(settings={"lock_configuration": "true"}),
     )
-    assert run([first, second], config=config).statement_count == 2
+    assert _run_safe([first, second], config=config).statement_count == 2
 
     second.write_text("SELECT absent;", encoding="utf-8")
     with pytest.raises(ExecutionError) as captured:
-        run([first, second], config=config)
+        _run_safe([first, second], config=config)
     assert "Column 'absent' was not found" in str(captured.value)
     assert (captured.value.line, captured.value.column) == (1, 8)

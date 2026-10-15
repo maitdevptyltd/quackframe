@@ -38,7 +38,8 @@ or another optional runtime dependency installed.
 
 Selected SQL results are rendered with DuckDB's native relation representation
 and written to the terminal. Direct output does not require external-result
-permission.
+permission. Original backend errors are also reported in full, regardless of
+`allow_external_result_logging`.
 
 ## Prefect Runtime
 
@@ -54,7 +55,11 @@ Prefect's run logger. Each result message starts with a newline so the entire
 DuckDB table aligns below the terminal log prefix. Because that logging system
 may retain values, the runtime requires explicit external-result permission
 before project SQL executes and emits one retention warning when result logging
-is enabled.
+is enabled. Errors are always reported: useful safe diagnostics by default,
+and full original backend messages when `allow_external_result_logging=true`.
+SQL failures are converted inside the file task before Prefect records them;
+unexpected core failures are converted inside the flow. Safe exceptions suppress
+original chains so ordinary framework tracebacks do not reintroduce omitted data.
 
 Prefect decorators live only in the optional integration package. Static,
 decorated functions wrap the existing core entry points:
@@ -84,7 +89,8 @@ timestamps, runtime folders, or generated random values.
 The adapter preserves every `QuackframeError` subclass and its original
 identity, including configuration errors raised inside the flow. Configuration
 failures therefore retain CLI exit status `2`; execution and cleanup failures
-retain status `1`. Unexpected runtime errors use fixed safe diagnostics.
+retain status `1`. Unexpected runtime errors use safe diagnostics unless full external details
+are explicitly permitted.
 
 The dependency direction remains one-way: Prefect depends on Quackframe core;
 Quackframe core does not import Prefect.

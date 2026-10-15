@@ -74,8 +74,8 @@ checks.
 
 ## Outside this scope
 
-External-output permissions, full-error routing, progress logging, result
-annotations and a redesign of the logging system.
+Progress logging, result annotations and a redesign of the logging system.
+Output routing is covered by the approved follow-up below.
 
 ## Related Docs
 
@@ -125,3 +125,19 @@ regressions cover `json(v)`, `json_extract(v, '$.key')`, and multiple files with
 `lock_configuration=true`, including a useful error from the locked session.
 The error suite passed **41 tests** after these corrections. Changed-file Ruff,
 format and Pyright checks, documentation links and whitespace checks passed.
+
+## Approved output routing
+
+Direct execution reports full original error details regardless of external
+permission. External runtimes report the useful safe baseline by default; setting
+`allow_external_result_logging=true` permits full original errors as well as
+selected query results. Errors are reported in either case. No new setting is
+introduced. Safe external failures must retain suppressed original exception
+chains; original file/statement/line context remains available where supplied.
+
+Routing validation: 79 focused diagnostic/routing/execution tests passed (7
+unrelated or previously hazardous cases deselected); 11 affected CLI and mocked
+Prefect regression cases passed (34 deselected). No Prefect service was started.
+Changed-file lint/format and source/routing-test types passed. A wider touched-test
+type check also found three pre-existing unknown-lambda typing diagnostics at
+`tests/test_cli.py:240`; that unrelated test code was left unchanged.

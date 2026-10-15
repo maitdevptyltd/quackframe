@@ -10,7 +10,7 @@ from duckdb import DuckDBPyConnection
 from duckdb.func import FunctionNullHandling
 from duckdb.sqltypes import BIGINT, BOOLEAN, DOUBLE, VARCHAR
 
-from quackframe.errors import FunctionDefinitionError, safe_error_reason
+from quackframe.errors import FunctionDefinitionError, error_reason
 from quackframe.resources import SessionResources
 from quackframe.sql_functions.definition import SqlFunction
 from quackframe.sql_functions.registry import resolve_functions
@@ -27,6 +27,8 @@ def install_functions(
     connection: DuckDBPyConnection,
     enabled_names: tuple[str, ...],
     resources: SessionResources | None = None,
+    *,
+    include_error_details: bool = True,
 ) -> None:
     """Install every enabled function through the same shared path.
 
@@ -50,8 +52,9 @@ def install_functions(
         connection.execute("BEGIN TRANSACTION")
     except Exception as error:
         # A rejected begin does not give us ownership of the caller's transaction.
+        reason = error_reason(error, include_details=include_error_details)
         raise FunctionDefinitionError(
-            f"SQL functions could not be installed: {safe_error_reason(error)}"
+            f"SQL functions could not be installed: {reason}"
         ) from None
 
     try:
@@ -70,8 +73,9 @@ def install_functions(
         connection.execute("COMMIT")
     except Exception as error:
         connection.execute("ROLLBACK")
+        reason = error_reason(error, include_details=include_error_details)
         raise FunctionDefinitionError(
-            f"SQL functions could not be installed: {safe_error_reason(error)}"
+            f"SQL functions could not be installed: {reason}"
         ) from None
 
 

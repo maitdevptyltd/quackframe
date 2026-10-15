@@ -7,7 +7,7 @@ from pathlib import Path
 
 from quackframe.config import QuackframeConfig, load_config
 from quackframe.models import ExecutionResult
-from quackframe.runtimes.registry import get_runtime_registration
+from quackframe.runtimes.registry import allows_error_details, get_runtime_registration
 from quackframe.sql import prepare_sql_files, validate_external_result_logging
 
 
@@ -29,6 +29,7 @@ def run(
         sql_files,
         root=resolved_config.root,
         log_setting=resolved_config.log_setting,
+        include_error_details=allows_error_details(resolved_config),
     )
     validate_external_result_logging(
         prepared_files,

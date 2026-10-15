@@ -182,7 +182,7 @@ def test_cli_values_override_process_environment_and_dotenv(
         'SELECT * FROM "protected-query-value";',
     ],
 )
-def test_cli_failure_omits_query_values(
+def test_cli_failure_includes_original_diagnostics(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     sql: str,
@@ -198,7 +198,7 @@ def test_cli_failure_omits_query_values(
     assert exit_code == 1
     assert str(sql_file) in output.err
     assert "statement" in output.err
-    assert "protected-query-value" not in output.err + output.out
+    assert "protected-query-value" in output.err
     assert "Traceback" not in output.err
 
 

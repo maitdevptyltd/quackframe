@@ -12,6 +12,7 @@ from quackframe.config import QuackframeConfig
 from quackframe.database import open_duckdb_session
 from quackframe.models import ExecutionResult, SqlFileResult
 from quackframe.resources import SessionResources
+from quackframe.runtimes.registry import allows_error_details
 from quackframe.sql import PreparedSqlFile, execute_sql_file
 from quackframe.sql_functions.installer import install_functions
 
@@ -43,7 +44,12 @@ def execute_plan(
         open_duckdb_session(config) as connection,
         SessionResources(connection) as resources,
     ):
-        install_functions(connection, config.functions.enabled, resources)
+        install_functions(
+            connection,
+            config.functions.enabled,
+            resources,
+            include_error_details=allows_error_details(config),
+        )
         for sql_file in sql_files:
             file_results.append(execute_file(connection, sql_file))
 
