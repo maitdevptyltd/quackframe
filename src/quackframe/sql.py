@@ -36,6 +36,7 @@ _RETURNING_STATEMENT_TYPES = {
     StatementType.INSERT,
     StatementType.UPDATE,
     StatementType.DELETE,
+    StatementType.MERGE_INTO,
 }
 
 
@@ -312,7 +313,11 @@ def _should_emit_result(
 def _is_result_producing(statement: Statement) -> bool:
     """Recognise the accepted query and data-change result forms."""
 
-    if statement.type == StatementType.SELECT:
+    if statement.type in {
+        StatementType.SELECT,
+        StatementType.CALL,
+        StatementType.EXPLAIN,
+    }:
         return True
     return statement.type in _RETURNING_STATEMENT_TYPES and _contains_sql_keyword(
         statement.query, "returning"

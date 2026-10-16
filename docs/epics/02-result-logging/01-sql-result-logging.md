@@ -129,10 +129,15 @@ deployment or invocation decision.
 - Changing project SQL assertions or verification logic.
 - Building a general-purpose application logging framework.
 
-## Open Decisions
+## Supported Statements
 
-- Which DuckDB statement result types count as result-producing beyond ordinary
-  queries and `RETURNING` clauses.
+R08 adds `CALL`, `EXPLAIN` (including `EXPLAIN ANALYZE`), and `MERGE ... RETURNING`
+to the existing query and INSERT/UPDATE/DELETE RETURNING forms. Both annotations
+and `all` select these results. MERGE without RETURNING remains unselected.
+The existing materialization and native rendering path must execute each selected
+statement once to completion, including side effects, before emitting its preview.
+Offline tests cover all three logging modes, complete execution beyond the preview,
+failure propagation, and the existing independent external logging permissions.
 
 ## Implementation Boundaries
 
@@ -156,6 +161,17 @@ deployment or invocation decision.
   context.
 
 ## Validation
+
+R08 implementation is complete on 2026-10-16. The existing DuckDB materialization
+path handles the newly selected forms without changes. The 82-case execution run
+passed, followed by the final 23-case additional-statement suite including plain
+EXPLAIN. Tests prove 30,000 sequence evaluations occur exactly once, INSERT and
+MERGE side effects complete, native previews stay bounded, late failures stop the
+file, and external result permission remains independent of error permission.
+Scoped Ruff, formatting, Pyright (zero errors), documentation links and whitespace
+checks pass. Test/type checks required running outside the sandbox because its
+temporary-directory and environment access failed. No live services were used.
+The phase remains In Progress for its other criteria.
 
 The 2026-10-13 R02 fix is verified against DuckDB 1.5.5 with offline synthetic
 data. All 12 selected tests passed (11 deselected): late failure and exactly-once

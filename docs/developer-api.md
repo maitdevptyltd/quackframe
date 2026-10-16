@@ -76,6 +76,16 @@ The trailing form also works on the final statement without a semicolon.
 Annotation text inside SQL strings or quoted identifiers does not select results.
 `none` ignores both forms; `all` emits each supported result once.
 
+Supported results include queries, `CALL`, `EXPLAIN` (including `EXPLAIN ANALYZE`),
+and `INSERT`, `UPDATE`, `DELETE`, or `MERGE` with `RETURNING`. Each selected
+statement executes once to completion before its result is rendered:
+
+```sql
+EXPLAIN ANALYZE SELECT count(*) FROM range(10000); -- quackframe: log-result
+```
+
+Plan output is returned data and follows the same result-logging permission.
+
 DuckDB's native relation representation owns table formatting and truncation.
 The same values may be supplied through `QUACKFRAME_LOG_SETTING`; an explicit
 CLI value takes precedence.

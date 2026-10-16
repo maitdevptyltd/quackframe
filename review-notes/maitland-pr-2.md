@@ -47,7 +47,7 @@ this documentation reconciliation.
 | R05 | Empty function installation | Complete; five targeted checks passed | be1ab72, 9b19e0d |
 | R06 | Progress logging | Implemented locally; downstream manual test pending | [Scope](../docs/epics/02-result-logging/03-progress-logging.md) |
 | R07 | Result annotation placement | Complete; independent re-review clear | [Scope](../docs/epics/02-result-logging/01-sql-result-logging.md) |
-| R08 | Supported result statement types | Not started; separate discussion | — |
+| R08 | Supported result statement types | Complete; independent review clear | [Scope](../docs/epics/02-result-logging/01-sql-result-logging.md) |
 | C01 | Python database-path mode | Complete; example updated | d88cd5f, 09d697d |
 | C02 | Configuration runtime root | Complete | 6e2be2f |
 | C03 | Typed DuckDB settings | Complete | 22c1491 |
@@ -78,7 +78,7 @@ this documentation reconciliation.
 - The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
   feedback fixes as already present in the PR. Live PR state was not rechecked
   during this local reconciliation.
-- Remaining implementation decisions/work: **S04 and R08**; R06 awaits the user's
+- Remaining implementation decisions/work: **S04**; R06 awaits the user's
   downstream manual test. Remaining
   delivery/setup: run hosted V01/O02 verification, and finish
   P02 environment configuration before enabling publication.
@@ -332,11 +332,19 @@ git diff --check
 
 ### R08 Supported result statement types
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323378) · [Local file](../src/quackframe/sql.py)
 - Feedback: Review CALL, EXPLAIN ANALYZE and MERGE RETURNING support; annotations reject these statement types and `log_setting = "all"` skips them.
-- Decision: Separate from R07. Defer discussion until annotation placement is settled.
-- Resolution / verification: Pending.
+- Decision: Support CALL, EXPLAIN (including EXPLAIN ANALYZE) and MERGE RETURNING
+  through annotations and all mode, executing each statement once to completion.
+- Resolution / verification: Extended selection while preserving the existing
+  DuckDB materialization and bounded native renderer. The 82-case execution run
+  passed, followed by all 23 final additional-statement cases. Synthetic sequence
+  and table assertions prove full single execution, side effects, returned output,
+  late failure/fail-fast cleanup and independent external result/error permission.
+  Scoped Ruff, formatting, Pyright, docs links and whitespace checks passed.
+  Offline test/type checks ran outside the sandbox after sandbox access failures.
+  Independent review cleared the scoped implementation; no live services used.
 
 ## Configuration and dependencies
 
