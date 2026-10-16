@@ -78,9 +78,10 @@ this documentation reconciliation.
   statements `f43fe79`, and release simplification `6b66252`.
   These commits were pushed to `origin/fix/pr-2-feedback`; the working tree
   was clean and synchronized after the push on 2026-10-16.
-- The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
-  feedback fixes as already present in the PR. Live PR state was not rechecked
-  during this local reconciliation.
+- On 2026-10-16, `feat/setup` was fast-forwarded from `a7ab179` to include all
+  feedback fixes through `cbcfea8`. PR #2 uses `feat/setup`; pushing that branch
+  delivers these fixes for Maitland's second review. Hosted CI results remain
+  separate from the recorded local checks.
 - S04 implementation and independent review are complete. The user's downstream
   run confirmed local detailed diagnostics and sanitized external errors; the
   supplied Prefect export also contained progress records. Remaining
