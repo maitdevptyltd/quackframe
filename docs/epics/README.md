@@ -18,6 +18,7 @@ from the main documentation.
 ## Epic 02: Result Logging
 
 - [01 SQL Result Logging](02-result-logging/01-sql-result-logging.md)
+- [03 File And Statement Progress Logging](02-result-logging/03-progress-logging.md)
 
 ## Epic 03: Configuration
 

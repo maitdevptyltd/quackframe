@@ -110,7 +110,12 @@ def test_prefect_task_receives_selected_error_only(
     assert len(rendered_errors) == 1
     assert ("private-row" in rendered_errors[0]) == allow
     assert "Conversion" in rendered_errors[0]
-    logger.info.assert_not_called()
+    assert logger.info.call_count == 2  # File and statement starts, without results.
+    assert logger.error.call_count == 2
+    for call in logger.method_calls:
+        message, *arguments = call.args
+        assert "private-row" not in message % tuple(arguments)
+        assert not call.kwargs  # No exception or stack trace attached to progress.
 
 
 @pytest.mark.parametrize("allow", [False, True])

@@ -27,6 +27,11 @@ The CLI returns a scheduler-friendly process exit code and identifies the
 failed file and statement without logging full SQL or returned query data by
 default.
 
+File and statement progress appears automatically: starts, completions, failures,
+and elapsed seconds on completion or failure. Direct runs send progress to
+terminal stderr; Prefect runs send it to the corresponding file task's logs.
+The result-selection options below do not suppress progress.
+
 One-run overrides include:
 
 ```powershell

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
+from logging import INFO, Logger, LoggerAdapter, StreamHandler
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
@@ -145,6 +146,7 @@ def execute_sql_file(
     sql_file: PreparedSqlFile,
     *,
     emit_result: ResultEmitter | None = None,
+    progress_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> SqlFileResult:
     """Execute every parsed statement in one file on the shared connection.
 
@@ -152,20 +154,41 @@ def execute_sql_file(
     statements expanded internally by DuckDB. Failures omit SQL excerpts and rows.
     """
 
+    logger = progress_logger if progress_logger is not None else _terminal_logger()
     started_at = perf_counter()
+    logger.info("File started: %s", sql_file.path)
     statement_number: int | None = None
     prepared: PreparedSqlStatement | None = None
+    statement_started_at = started_at
 
     try:
         for next_statement_number, prepared in enumerate(sql_file.statements, start=1):
             statement_number = next_statement_number
+            statement_started_at = perf_counter()
+            logger.info("Statement %d started: %s", statement_number, sql_file.path)
             if prepared.emit_result:
                 (emit_result or _print_result)(
                     _render_complete_result(connection, prepared.query)
                 )
             else:
                 connection.execute(prepared.query)
+            logger.info(
+                "Statement %d completed: %s (%.3fs)",
+                statement_number,
+                sql_file.path,
+                perf_counter() - statement_started_at,
+            )
     except Exception as error:  # DuckDB exposes several exception subclasses.
+        failed_at = perf_counter()
+        # Progress identifies the failed work; error conversion below owns detail
+        # disclosure. Never attach the original exception to these log records.
+        logger.error(
+            "Statement %d failed: %s (%.3fs)",
+            statement_number,
+            sql_file.path,
+            failed_at - statement_started_at,
+        )
+        logger.error("File failed: %s (%.3fs)", sql_file.path, failed_at - started_at)
         line, column = (
             _source_location(
                 sql_file.source, prepared.source_offset, prepared.query, error
@@ -181,11 +204,21 @@ def execute_sql_file(
             reason=error_reason(error, include_details=sql_file.include_error_details),
         ) from None
 
+    elapsed = timedelta(seconds=perf_counter() - started_at)
+    logger.info("File completed: %s (%.3fs)", sql_file.path, elapsed.total_seconds())
     return SqlFileResult(
         path=sql_file.path,
         statement_count=len(sql_file.statements),
-        elapsed=timedelta(seconds=perf_counter() - started_at),
+        elapsed=elapsed,
     )
+
+
+def _terminal_logger() -> Logger:
+    """Report direct progress without changing the caller's logging setup."""
+
+    logger = Logger("quackframe.progress", level=INFO)
+    logger.addHandler(StreamHandler())
+    return logger
 
 
 def _render_complete_result(connection: DuckDBPyConnection, statement: str) -> str:

@@ -155,7 +155,13 @@ def test_prefect_file_task_logs_selected_result(
         expected_result = str(connection.sql("SELECT 'visible' AS value;"))
         prefect_runtime.execute_sql_file_task.fn(connection, sql_file)
 
-    logger.info.assert_called_once_with("\n%s", expected_result)
+    result_calls = [
+        call for call in logger.info.call_args_list if call.args[0] == "\n%s"
+    ]
+    assert len(result_calls) == 1
+    assert result_calls[0].args == ("\n%s", expected_result)
+    assert logger.info.call_args_list[0].args == ("File started: %s", sql_file_path)
+    assert logger.info.call_args_list[-1].args[0] == "File completed: %s (%.3fs)"
 
 
 def test_prefect_warns_once_before_external_results(tmp_path: Path) -> None:
@@ -416,7 +422,8 @@ def test_prefect_file_task_omits_conversion_values(tmp_path: Path) -> None:
     assert "protected-query-value" not in "".join(
         traceback.format_exception(captured.value)
     )
-    logger.info.assert_not_called()
+    assert logger.info.call_count == 2  # File and statement starts, without results.
+    assert logger.error.call_count == 2
 
 
 def test_prefect_configuration_failure_retains_cli_status(

@@ -36,6 +36,7 @@ def execute_sql_file_task(
         connection,
         sql_file,
         emit_result=lambda rendered_result: logger.info("\n%s", rendered_result),
+        progress_logger=logger,
     )
 
 

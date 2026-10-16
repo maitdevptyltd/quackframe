@@ -31,6 +31,8 @@ service integrations.
 - [SQL Result Logging Scope](epics/02-result-logging/01-sql-result-logging.md):
   implemented statement selection, native DuckDB rendering, and safe runtime
   delivery.
+- [Progress Logging Scope](epics/02-result-logging/03-progress-logging.md): file
+  and statement lifecycle messages in the terminal and Prefect task logs.
 - [Dotenv Configuration Scope](epics/03-configuration/01-dotenv-loading.md):
   implemented runtime-root `.env` loading for Quackframe-owned settings.
 

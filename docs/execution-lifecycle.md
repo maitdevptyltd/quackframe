@@ -74,12 +74,18 @@ parser rather than string splitting. The prepared file retains those statements
 and their resolved result-selection metadata, so policy validation, adapter
 warnings, and execution all consume the same analysis.
 
-By default, diagnostics may include:
+Execution reports each file and source statement starting, completing, or
+failing. Statement numbers are one-based within each file. Completion and failure
+messages include elapsed seconds measured with `perf_counter()`; statement time
+includes selected result rendering and delivery. A failure reports both the
+failed statement and file, then stops subsequent work.
 
-- execution and file start or completion;
-- statement number and completion state;
-- statement results selected by the resolved result-logging policy;
-- elapsed time and the final process outcome.
+Progress contains paths, statement numbers and durations, without SQL text,
+returned values or exception details. It is independent of `log_setting` and
+both external logging permissions, so `--log-setting none` still shows progress.
+Selected statement results and error diagnostics retain their separate policies.
+Preparation and session setup failures retain their existing diagnostics without
+reporting file or statement execution that never started.
 
 Diagnostics must not include credentials, bound secret values, full SQL text,
 or unselected returned query data. Selected results use DuckDB's native

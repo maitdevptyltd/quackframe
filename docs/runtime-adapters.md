@@ -36,6 +36,10 @@ files, or credential providers must be local.
 Direct execution remains a first-class path and must work without Prefect
 or another optional runtime dependency installed.
 
+File and statement progress is written to terminal stderr through a standard
+Python logger without changing the application's root logging configuration.
+This works for CLI, F5, Python calls and scheduled invocations.
+
 Selected SQL results are rendered with DuckDB's native relation representation
 and written to the terminal. Direct output does not require external-result
 permission. Original backend errors are also reported in full, regardless of
@@ -49,6 +53,12 @@ The optional Prefect adapter provides:
 - one filename-named Prefect task run for each SQL file;
 - Prefect logging, timing, state, and failure visibility;
 - the same shared connection and file order as direct execution.
+
+The adapter supplies the file task's run logger to core execution. File and
+statement starts, completions and failures therefore appear in that task's logs,
+including elapsed seconds on completion or failure. Statements do not create
+additional Prefect tasks. Progress is available without either external logging
+permission because its messages contain no SQL text, values or error details.
 
 Selected SQL results are written from inside the corresponding file task with
 Prefect's run logger. Each result message starts with a newline so the entire
@@ -67,7 +77,7 @@ decorated functions wrap the existing core entry points:
 ```python
 @task(cache_policy=NO_CACHE, retries=0, persist_result=False)
 def execute_sql_file_task(connection, sql_file):
-    return execute_sql_file(connection, sql_file)
+    return execute_sql_file(connection, sql_file, progress_logger=get_run_logger())
 
 
 @flow(retries=0, persist_result=False)

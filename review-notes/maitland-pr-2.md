@@ -39,12 +39,12 @@ this documentation reconciliation.
 | S03 | Temporary database paths | Complete | 841323d |
 | S04 | Release recovery machinery | Not started; decision needed | — |
 | S05 | Separate flow work | Agreed separate PR; outside this checklist’s remaining work | — |
-| R01 | Useful errors and output routing | Complete and reviewed on logging branch; integration pending | fbbcb71, e7652a9, f8259ed |
+| R01 | Useful errors and output routing | Complete and integrated; separate result/error permissions | fbbcb71, e7652a9, f8259ed, 1e7deda; merge 0bf04df |
 | R02 | Complete result execution | Complete | 476aff5 |
 | R03 | Base NumPy dependency | Complete; clean wheel verified | af93d25, 9b19e0d |
 | R04 | TOML extension loading | Addressed: awaiting clarification | db03680; comment 4267371558 |
 | R05 | Empty function installation | Complete; five targeted checks passed | be1ab72, 9b19e0d |
-| R06 | Progress logging | Not started; separate logging work | — |
+| R06 | Progress logging | Implemented locally; downstream manual test pending | [Scope](../docs/epics/02-result-logging/03-progress-logging.md) |
 | R07 | Result selection and annotations | Not started; separate logging work | — |
 | C01 | Python database-path mode | Complete; example updated | d88cd5f, 09d697d |
 | C02 | Configuration runtime root | Complete | 6e2be2f |
@@ -69,19 +69,16 @@ this documentation reconciliation.
 
 ### Branch and verification handover
 
-- `fix/pr-2-feedback` was clean at `642a090` before this tracker update and
-  27 commits ahead of the locally recorded `origin/fix/pr-2-feedback`.
-  This reconciliation does not push changes or refresh remote refs.
-- `refactor/error-logging` is clean at `f8259ed`, in worktree
-  `C:/Users/RowanFarquharson/.codex/worktrees/6e53/quackframe`.
-  Its three exclusive commits are `fbbcb71`, `e7652a9` and `f8259ed`.
-  They are not integrated into `fix/pr-2-feedback`; the logging branch has no
-  configured remote tracking branch. The recorded work was not pushed.
+- `fix/pr-2-feedback` includes `refactor/error-logging` through merge `0bf04df`.
+  Error logging includes `fbbcb71`, `e7652a9`, `f8259ed` and the independent
+  result/error permission change `1e7deda`. R06 is implemented locally here.
+  This update does not push changes or refresh remote refs.
 - The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
   feedback fixes as already present in the PR. Live PR state was not rechecked
   during this local reconciliation.
-- Remaining implementation decisions/work: **S04, R06 and R07**. Remaining
-  delivery/setup: integrate R01, run hosted V01/O02 verification, and finish
+- Remaining implementation decisions/work: **S04 and R07**; R06 awaits the user's
+  downstream manual test. Remaining
+  delivery/setup: run hosted V01/O02 verification, and finish
   P02 environment configuration before enabling publication.
 - **S02, R04 and C07 are addressed pending reviewer clarification**, not active
   implementation tasks. Reply state is from the last recorded PR check; check
@@ -197,14 +194,15 @@ git diff --check
 
 ### R01 Useful SQL errors
 
-- [x] Addressed — implemented on separate branch; integration pending
+- [x] Addressed — integrated into `fix/pr-2-feedback` at `0bf04df`
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323234) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/errors.py#L49) · [Local file](../src/quackframe/errors.py)
 - Feedback: Restore actionable error details and file locations; correct statement attribution including PIVOT. Decide terminal versus external-log disclosure policy without exposing sensitive values.
 - Decision: Implement a useful safe baseline from the practical DuckDB error
   investigation. Direct execution always shows full original errors; external
-  runtimes show the safe baseline unless `allow_external_result_logging=true`,
-  which permits full errors and selected results. Errors are reported either way;
-  no extra setting. Ordinary identifiers are not treated as secrets merely
+  runtimes show the safe baseline unless `allow_external_error_logging=true`.
+  Selected results require the independent `allow_external_result_logging`
+  permission. Both permissions default to false. Errors are reported either way.
+  Ordinary identifiers are not treated as secrets merely
   because a caller could deliberately put a password in them.
 - Resolution / verification: Complete on `refactor/error-logging`: `fbbcb71`
   implements useful diagnostics/source attribution; `e7652a9` fixes JSON-function
@@ -218,11 +216,11 @@ git diff --check
   passed four offline checks. Changed-file checks passed except three documented
   pre-existing CLI-test lambda typing diagnostics. No full suite or live Prefect
   service was used. R06/R07 are not included.
-  Remaining step: integrate the three commits into the feedback branch; neither
-  integration nor push has occurred. Branch-only documents are
+  Independent permissions were committed as `1e7deda`; merge `0bf04df`
+  integrated the logging branch into the feedback branch. No push is recorded.
+  The owning documents are
   `docs/duckdb-error-investigation.md` and
-  `docs/epics/02-result-logging/02-useful-error-diagnostics.md`; read them in the
-  logging worktree until integration. Some relation binder failures lack position
+  `docs/epics/02-result-logging/02-useful-error-diagnostics.md`. Some relation binder failures lack position
   metadata; candidate suggestions are omitted because they can contain PIVOT
   row values. Composite-key errors retain the first identifiable column.
 
@@ -280,11 +278,23 @@ git diff --check
 
 ### R06 Progress logging
 
-- [ ] Addressed
+- [x] Addressed — implemented locally; downstream manual test pending
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323264) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/engine.py#L46) · [Local file](../src/quackframe/engine.py)
 - Feedback: Report file and statement start, completion, failure and elapsed time in the terminal and Prefect without logging SQL values.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Approved core file and statement start/completion/failure messages,
+  with elapsed seconds on completion/failure. Direct execution writes terminal
+  progress; Prefect uses each file task's logger. No SQL or values in progress,
+  and no changes to result/error permissions or R07 selection behaviour.
+- Resolution / verification: 71 focused progress/execution/error-routing cases
+  and five mocked Prefect-task/CLI cases passed. Scoped lint, source/routing-test
+  types, links and diff checks passed; execution-test types retain one existing
+  DuckDB overload diagnostic. See the
+  [implementation scope](../docs/epics/02-result-logging/03-progress-logging.md).
+  Independent review found no actionable R06 findings; a suggested external
+  safe-progress assertion was added and four permission combinations passed.
+  Reviewer validation also exposed an unrelated existing CLI cleanup-test mock
+  signature mismatch, recorded in the scope. Changes remain local and
+  uncommitted; no live services were used.
 
 ### R07 Result statement selection and annotations
 

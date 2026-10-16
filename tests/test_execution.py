@@ -63,7 +63,11 @@ def test_elapsed_uses_monotonic_time_despite_wall_clock_changes(
             module, "datetime", Mock(now=Mock(side_effect=[start, end])), raising=False
         )
     monkeypatch.setattr(engine_module, "perf_counter", Mock(side_effect=[10.0, 15.5]))
-    monkeypatch.setattr(sql_module, "perf_counter", Mock(side_effect=[11.0, 12.25]))
+    monkeypatch.setattr(
+        sql_module,
+        "perf_counter",
+        Mock(side_effect=[11.0, 11.1, 11.5, 11.6, 12.0, 12.25]),
+    )
 
     result = execute_plan(prepared, config)
 
