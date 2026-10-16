@@ -183,6 +183,7 @@ def test_defaults_use_current_working_directory_and_memory(
     assert config.runtime == "direct"
     assert config.log_setting == "annotations-only"
     assert config.allow_external_result_logging is False
+    assert config.allow_external_error_logging is False
     assert config.database.mode == "memory"
     assert config.functions.enabled == ()
 
@@ -586,6 +587,7 @@ def test_explicit_logging_values_override_environment() -> None:
 
     assert config.log_setting == "none"
     assert config.allow_external_result_logging is False
+    assert config.allow_external_error_logging is False
 
 
 @pytest.mark.parametrize(
@@ -593,6 +595,7 @@ def test_explicit_logging_values_override_environment() -> None:
     [
         ("log_setting", '"all"'),
         ("allow_external_result_logging", "true"),
+        ("allow_external_error_logging", "true"),
     ],
 )
 def test_logging_controls_are_rejected_from_project_config(
@@ -755,3 +758,35 @@ def test_temporary_override_clears_inherited_persistent_path(
     )
     assert config.database.mode == "temporary"
     assert config.database.path is None
+
+
+@pytest.mark.parametrize("explicit", [None, False, True])
+def test_error_permission_environment_and_explicit_override(
+    tmp_path: Path, explicit: bool | None
+) -> None:
+    config = load_config(
+        root=tmp_path,
+        allow_external_error_logging=explicit,
+        environ={"QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING": "true"},
+    )
+
+    assert config.allow_external_error_logging is (
+        True if explicit is None else explicit
+    )
+    assert config.allow_external_result_logging is False
+
+
+def test_error_permission_environment_overrides_synthetic_dotenv(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING=true\n", encoding="utf-8"
+    )
+
+    assert load_config(root=tmp_path, environ={}).allow_external_error_logging is True
+    assert (
+        load_config(
+            root=tmp_path, environ={"QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING": "false"}
+        ).allow_external_error_logging
+        is False
+    )

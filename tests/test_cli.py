@@ -96,6 +96,7 @@ def test_cli_logging_overrides_default_to_unspecified() -> None:
 
     assert arguments.log_setting is None
     assert arguments.allow_external_result_logging is None
+    assert arguments.allow_external_error_logging is None
 
 
 def test_cli_passes_logging_overrides_to_configuration(
@@ -118,6 +119,7 @@ def test_cli_passes_logging_overrides_to_configuration(
             "--log-setting",
             "none",
             "--deny-external-result-logging",
+            "--allow-external-error-logging",
             "example.sql",
         ]
     )
@@ -125,6 +127,7 @@ def test_cli_passes_logging_overrides_to_configuration(
     assert exit_code == 0
     assert load_config.call_args.kwargs["log_setting"] == "none"
     assert load_config.call_args.kwargs["allow_external_result_logging"] is False
+    assert load_config.call_args.kwargs["allow_external_error_logging"] is True
 
 
 def test_cli_values_override_process_environment_and_dotenv(
@@ -182,7 +185,7 @@ def test_cli_values_override_process_environment_and_dotenv(
         'SELECT * FROM "protected-query-value";',
     ],
 )
-def test_cli_failure_omits_query_values(
+def test_cli_failure_includes_original_diagnostics(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     sql: str,
@@ -198,7 +201,7 @@ def test_cli_failure_omits_query_values(
     assert exit_code == 1
     assert str(sql_file) in output.err
     assert "statement" in output.err
-    assert "protected-query-value" not in output.err + output.out
+    assert "protected-query-value" in output.err
     assert "Traceback" not in output.err
 
 
@@ -256,3 +259,19 @@ def test_cli_temporary_database_configuration(
     else:
         assert "cannot be used with temporary mode" in capsys.readouterr().err
     assert not (tmp_path / "caller.duckdb").exists()
+
+
+@pytest.mark.parametrize(
+    "flag, expected",
+    [
+        ("--allow-external-error-logging", True),
+        ("--deny-external-error-logging", False),
+    ],
+)
+def test_cli_external_error_flags_override_in_both_directions(
+    flag: str, expected: bool
+) -> None:
+    arguments = cli.build_parser().parse_args(["run", flag, "example.sql"])
+
+    assert arguments.allow_external_error_logging is expected
+    assert arguments.allow_external_result_logging is None

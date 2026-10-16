@@ -76,6 +76,11 @@ direction. Without permission, a non-direct run that would emit results fails
 before project SQL executes. Direct terminal output does not require this
 permission.
 
+External errors always use useful sanitised diagnostics by default, independently
+of result permission. Use `--allow-external-error-logging` to permit full error
+details, which may contain sensitive data, or `--deny-external-error-logging` to
+override `QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING` back to sanitised diagnostics.
+
 The CLI and `load_config()` also read Quackframe-owned settings from exactly
 `.env` at the resolved runtime root. Process environment values override that
 file, and the CLI flags above override both. Quackframe never exports parsed
@@ -147,8 +152,9 @@ config = QuackframeConfig(
 result = run(["sql/example.sql"], config=config)
 ```
 
-Embedded non-direct callers grant retained-log permission explicitly with
-`allow_external_result_logging=True`.
+Embedded non-direct callers permit selected results with
+`allow_external_result_logging=True`. Full error details require the independent
+`allow_external_error_logging=True` permission. Both default to false.
 
 An `ExecutionPlan` may be introduced for callers that construct or validate
 runs programmatically, but ordinary use should not require it.

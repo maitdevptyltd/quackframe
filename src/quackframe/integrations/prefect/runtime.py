@@ -6,7 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 from quackframe.config import QuackframeConfig
 from quackframe.engine import execute_plan
-from quackframe.errors import QuackframeError, safe_error_reason
+from quackframe.errors import QuackframeError, error_reason
 from quackframe.models import ExecutionResult, SqlFileResult
 from quackframe.sql import (
     PreparedSqlFile,
@@ -48,7 +48,16 @@ def execute_plan_flow(
 
     if config.allow_external_result_logging and result_logging_can_emit(sql_files):
         get_run_logger().warning(_RETENTION_WARNING)
-    return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
+    try:
+        return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
+    except QuackframeError:
+        raise
+    except Exception as error:
+        # Convert unexpected core failures before Prefect records the flow error.
+        reason = error_reason(
+            error, include_details=config.allow_external_error_logging
+        )
+        raise QuackframeError(f"Execution setup failed: {reason}") from None
 
 
 def execute_with_prefect(
@@ -72,9 +81,10 @@ def execute_with_prefect(
     except QuackframeError:
         raise
     except Exception as error:
-        raise QuackframeError(
-            f"Prefect runtime failed: {safe_error_reason(error)}"
-        ) from None
+        reason = error_reason(
+            error, include_details=config.allow_external_error_logging
+        )
+        raise QuackframeError(f"Prefect runtime failed: {reason}") from None
 
 
 def _execute_named_file_task(

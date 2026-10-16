@@ -32,7 +32,7 @@ The happy path is:
 1. Accept a non-empty, ordered list of SQL files.
 2. Resolve `QuackframeConfig` from defaults, repository configuration,
    environment, and explicit overrides.
-3. Validate paths, parse and classify each statement once, and validate runtime
+3. Validate paths, parse and classify each source statement, and validate runtime
    result-log policy before executing SQL.
 4. Ask the selected runtime adapter to represent the invocation.
 5. Open one DuckDB session owned by the invocation.
@@ -97,14 +97,39 @@ A SQL failure stops subsequent files. The failure should identify:
 
 - the SQL file;
 - the one-based statement number when known;
-- a fixed, safe reason selected from the backend exception category;
+- the original one-based line and column when DuckDB supplies a position;
+- the backend error category and details allowed by the runtime policy;
 - the overall failed outcome and non-zero CLI exit code.
 
 Runtime adapters may enrich the failure with their own run identifier, but the
-core exception remains framework-independent. Backend diagnostic text is never
-copied into the reported reason: even its first line may contain query data,
-SQL literals, or credentials. Unknown failures receive a generic reason.
-Quackframe's own fixed SQL-preparation diagnostics remain actionable.
+core exception remains framework-independent. Direct execution reports full
+original backend messages regardless of external permission. External runtimes
+use safe diagnostics unless `allow_external_error_logging=true`. Selected results
+require the independent `allow_external_result_logging` permission. The exception
+retains file/statement and available source positions in both modes. Original
+exception chains remain suppressed; the selected message is the only backend error exposed to normal
+traceback rendering.
+
+For safe diagnostics, Quackframe requests structured
+DuckDB errors at connection creation (including locked configurations) and
+constructs diagnostics from supported fields and observed
+message forms, rather than forwarding complete backend messages. Missing object
+names, conversion target types, constraint columns and CSV input file/line/column
+remain useful; rejected values, CSV rows and SQL excerpts are omitted. URL
+userinfo, query parameters and fragments are removed from supported path errors.
+Ordinary identifiers and filenames are retained. Candidate suggestions are omitted
+because PIVOT can generate them from table values.
+
+`ExecutionError.line` and `.column` refer to the original UTF-8 SQL file, not
+DuckDB's internal statements. Dynamic PIVOT counts as one source statement.
+Locations remain `None` when unavailable: notably some relation-binding failures
+supply only text even with JSON errors enabled. Unknown formats retain their
+category and available location. Suppressed exception chains do not reintroduce
+omitted messages. This is not general secret detection in caller-authored names
+or messages. Full-detail output bypasses this diagnostic filtering.
+
+See the [diagnostic implementation phase](epics/02-result-logging/02-useful-error-diagnostics.md)
+for coverage and limitations.
 
 Extension resource cleanup attempts every registered callback. A cleanup failure
 on an otherwise successful run raises `QuackframeError`, which the CLI reports

@@ -12,7 +12,8 @@ import duckdb
 from duckdb import DuckDBPyConnection
 
 from quackframe.config import QuackframeConfig
-from quackframe.errors import ConfigurationError, safe_error_reason
+from quackframe.errors import ConfigurationError, error_reason
+from quackframe.runtimes.registry import allows_error_details
 
 _EXTENSION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
@@ -32,7 +33,11 @@ def open_duckdb_session(
     primary_error: BaseException | None = None
     try:
         connection = _open_connection(database_path, config)
-        _load_extensions(connection, config.duckdb.extensions)
+        _load_extensions(
+            connection,
+            config.duckdb.extensions,
+            include_error_details=allows_error_details(config),
+        )
         yield connection
     except BaseException as error:
         primary_error = error
@@ -57,11 +62,13 @@ def _open_connection(
     try:
         return duckdb.connect(
             database=database_path,
-            config=dict(config.duckdb.settings),
+            # Request diagnostics before lock_configuration can prevent SET.
+            config={**config.duckdb.settings, "errors_as_json": "true"},
         )
     except Exception as error:
+        reason = error_reason(error, include_details=allows_error_details(config))
         raise ConfigurationError(
-            f"DuckDB database could not be opened: {safe_error_reason(error)}"
+            f"DuckDB database could not be opened: {reason}"
         ) from None
 
 
@@ -97,6 +104,8 @@ def _prepare_parent(path: Path) -> None:
 def _load_extensions(
     connection: DuckDBPyConnection,
     extensions: tuple[str, ...],
+    *,
+    include_error_details: bool = True,
 ) -> None:
     """Install and load explicitly configured DuckDB extensions in order."""
 
@@ -109,7 +118,7 @@ def _load_extensions(
         except Exception as error:
             raise ConfigurationError(
                 f"DuckDB extension '{extension}' could not be loaded: "
-                f"{safe_error_reason(error)}"
+                f"{error_reason(error, include_details=include_error_details)}"
             ) from None
 
 

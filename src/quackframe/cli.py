@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-external-result-logging",
         action="store_true",
         dest="allow_external_result_logging",
+        help="allow selected query results in external logs",
     )
     external_logging_group.add_argument(
         "--deny-external-result-logging",
@@ -37,6 +38,20 @@ def build_parser() -> argparse.ArgumentParser:
         dest="allow_external_result_logging",
     )
     run_parser.set_defaults(allow_external_result_logging=None)
+
+    external_error_group = run_parser.add_mutually_exclusive_group()
+    external_error_group.add_argument(
+        "--allow-external-error-logging",
+        action="store_true",
+        dest="allow_external_error_logging",
+        help="allow full error details (may include sensitive data) in external logs",
+    )
+    external_error_group.add_argument(
+        "--deny-external-error-logging",
+        action="store_false",
+        dest="allow_external_error_logging",
+    )
+    run_parser.set_defaults(allow_external_error_logging=None)
 
     database_group = run_parser.add_mutually_exclusive_group()
     database_group.add_argument("--memory", action="store_true")
@@ -49,7 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run ordered SQL files and return a scheduler-friendly process status.
 
     Configuration failures return ``2``. Execution and other Quackframe
-    failures return ``1`` without exposing SQL text or sensitive values.
+    failures return ``1`` with details selected by the runtime output policy.
     """
 
     arguments = build_parser().parse_args(argv)
@@ -68,6 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             runtime=arguments.runtime,
             log_setting=arguments.log_setting,
             allow_external_result_logging=arguments.allow_external_result_logging,
+            allow_external_error_logging=arguments.allow_external_error_logging,
             database_mode=database_mode,
             database_path=arguments.database_path,
         )

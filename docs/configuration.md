@@ -31,6 +31,7 @@ QuackframeConfig
   project_name (loaded metadata when available)
   log_setting
   allow_external_result_logging
+  allow_external_error_logging
   database
     mode
     path
@@ -152,6 +153,7 @@ QUACKFRAME_DATABASE_MODE
 QUACKFRAME_DATABASE_PATH
 QUACKFRAME_LOG_SETTING
 QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING
+QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING
 DUCKDB_TEMP_DIRECTORY
 ```
 
@@ -173,16 +175,32 @@ secret-bearing `.env` files from Git even though Quackframe itself does not
 treat dotenv as a credential store.
 
 `QUACKFRAME_LOG_SETTING` accepts `annotations-only`, `none`, or `all`.
-`QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` is a Boolean permission that defaults
-to `false`. It is required when a non-direct runtime would send selected values
-to an external logging system.
+`QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` permits selected query results in an
+external runtime such as Prefect. Independently,
+`QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING` permits full error details externally.
+Both Boolean permissions default to false. Their Python settings are
+`allow_external_result_logging` and `allow_external_error_logging`. Enabling
+selected results does not disclose full errors; enabling full errors does not
+grant permission to log results.
 
-Logging selection and external-result permission are deliberately excluded
+| Destination | Error permission | Error details |
+| --- | --- | --- |
+| Direct terminal/Python | Either value | Full original backend message |
+| External runtime | false | Useful safe diagnostics, with available location |
+| External runtime | true | Full original backend message |
+
+Errors are always reported. Full messages can contain SQL literals, row values,
+credentials or upstream messages. Result selection still follows `log_setting`
+and annotations; enabling result permission does not itself select query results.
+
+Logging selection and both external permissions are deliberately excluded
 from `[tool.quackframe]`: a checked-in repository cannot grant permission to
-retain returned values. They come from environment, explicit CLI arguments, or
-direct Python configuration. The CLI can override environment values with
+retain returned values or full error details. They come from environment,
+explicit CLI arguments, or direct Python configuration. The CLI can override
+environment values with
 `--log-setting`, `--allow-external-result-logging`, and
-`--deny-external-result-logging`.
+`--deny-external-result-logging`. Error permission has its own
+`--allow-external-error-logging` and `--deny-external-error-logging` flags.
 
 Quackframe should not create aliases for every setting owned by another
 product. Optional adapters should first respect that product's native

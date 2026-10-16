@@ -91,6 +91,7 @@ def test_prefect_file_task_uses_the_path_stem(tmp_path: Path) -> None:
     task_call = Mock()
     sql_file = PreparedSqlFile(
         path=tmp_path / "01-load-data.sql",
+        source="",
         statements=(),
     )
 
@@ -395,7 +396,9 @@ def test_prefect_file_task_omits_conversion_values(tmp_path: Path) -> None:
     sql_path.write_text(
         "SELECT CAST('protected-query-value' AS INTEGER);", encoding="utf-8"
     )
-    sql_file = prepare_sql_files([sql_path], root=tmp_path, log_setting="none")[0]
+    sql_file = prepare_sql_files(
+        [sql_path], root=tmp_path, log_setting="none", include_error_details=False
+    )[0]
     logger = Mock()
 
     with (
@@ -407,7 +410,8 @@ def test_prefect_file_task_omits_conversion_values(tmp_path: Path) -> None:
 
     assert captured.value.statement_number == 1
     assert (
-        captured.value.reason == "A value could not be converted to the required type"
+        captured.value.reason
+        == "ConversionException: A value could not be converted to the required type"
     )
     assert "protected-query-value" not in "".join(
         traceback.format_exception(captured.value)
