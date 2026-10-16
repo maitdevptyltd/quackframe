@@ -159,7 +159,7 @@ def test_no_functions_permits_read_only_execution(
 
     sql_file = tmp_path / "read.sql"
     sql_file.write_text("SELECT value FROM caller_data;", encoding="utf-8")
-    settings = {
+    settings: dict[str, object] = {
         "root": tmp_path,
         "database": {"mode": "persistent", "path": database_path},
         "duckdb": {"settings": {"access_mode": "READ_ONLY"}},

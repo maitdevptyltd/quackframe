@@ -1,5 +1,6 @@
 """Generated temporary database ownership and cleanup."""
 
+from logging import Logger, LoggerAdapter
 from pathlib import Path
 
 import pytest
@@ -70,7 +71,12 @@ def test_failed_connection_removes_partial_temporary_files(
 ) -> None:
     config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
 
-    def fail_open(path: str, config: QuackframeConfig) -> DuckDBPyConnection:
+    def fail_open(
+        path: str,
+        config: QuackframeConfig,
+        *,
+        error_logger: Logger | LoggerAdapter[Logger] | None = None,
+    ) -> DuckDBPyConnection:
         Path(path).write_bytes(b"partial database")
         Path(f"{path}.wal").write_bytes(b"partial WAL")
         raise ConfigurationError("Connection failed")

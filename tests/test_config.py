@@ -23,7 +23,7 @@ def test_database_paths_expand_home_before_resolving_runtime_root(
     root.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    monkeypatch.setattr("quackframe.config._read_dotenv", Mock(return_value={}))
     paths = {
         "home": (Path("~/example.duckdb"), home / "example.duckdb"),
         "relative": (Path("data/example.duckdb"), root / "data/example.duckdb"),
@@ -106,7 +106,7 @@ memory_limit = "1GB"
         "enable_object_cache": "true",
         "memory_limit": "1GB",
     }
-    with duckdb.connect(":memory:", config=config.duckdb.settings) as connection:
+    with duckdb.connect(":memory:", config={**config.duckdb.settings}) as connection:
         assert connection.execute(
             "SELECT current_setting('threads'), "
             "current_setting('index_scan_percentage'), "
@@ -707,7 +707,7 @@ def test_unknown_configuration_is_rejected() -> None:
 def test_explicit_temporary_database_paths_are_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
-    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    monkeypatch.setattr("quackframe.config._read_dotenv", Mock(return_value={}))
     path = tmp_path / "caller.duckdb"
     path.write_bytes(b"caller-owned")
     database_values = {"mode": "temporary", "path": str(path)}
@@ -742,7 +742,7 @@ def test_explicit_temporary_database_paths_are_rejected(
 def test_temporary_override_clears_inherited_persistent_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
-    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    monkeypatch.setattr("quackframe.config._read_dotenv", Mock(return_value={}))
     (tmp_path / "pyproject.toml").write_text(
         '[tool.quackframe.database]\nmode = "persistent"\npath = "caller.duckdb"',
         encoding="utf-8",

@@ -410,7 +410,7 @@ def test_ordered_files_cleanup_on_success_and_failure(
             run([first, second], config=config)
         assert captured.value.sql_file == second
         assert captured.value.statement_number == 2
-        assert "deliberate" not in str(captured.value)
+        assert "deliberate" in str(captured.value)
     else:
         run([first, second], config=config)
     assert MemoryFilesystem.closed == ["source-files"]

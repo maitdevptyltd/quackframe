@@ -1,5 +1,6 @@
 """Command-line behaviour tests."""
 
+from logging import Logger, LoggerAdapter
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -218,7 +219,12 @@ def test_cli_reports_resource_cleanup_failure_without_traceback(
     cleanup = Mock(side_effect=RuntimeError("protected-cleanup-value"))
 
     def install_resources(
-        connection: object, enabled: tuple[str, ...], resources: SessionResources
+        connection: object,
+        enabled: tuple[str, ...],
+        resources: SessionResources,
+        *,
+        include_error_details: bool = True,
+        error_logger: Logger | LoggerAdapter[Logger] | None = None,
     ) -> None:
         resources.add_cleanup(cleanup)
 
@@ -227,9 +233,10 @@ def test_cli_reports_resource_cleanup_failure_without_traceback(
     exit_code = main(["run", "--root", str(tmp_path), str(sql_file)])
 
     assert exit_code == 1
-    assert capsys.readouterr().err == (
-        "Quackframe error: Session resource cleanup failed\n"
-    )
+    error = capsys.readouterr().err
+    assert error.endswith("Quackframe error: Session resource cleanup failed\n")
+    assert "Traceback" not in error
+    assert "protected-cleanup-value" not in error
     cleanup.assert_called_once()
 
 
@@ -240,7 +247,7 @@ def test_cli_temporary_database_configuration(
     capsys: pytest.CaptureFixture[str],
     explicit_temporary: bool,
 ) -> None:
-    monkeypatch.setattr("quackframe.config._read_dotenv", lambda path: {})
+    monkeypatch.setattr("quackframe.config._read_dotenv", Mock(return_value={}))
     monkeypatch.delenv("QUACKFRAME_DATABASE_MODE", raising=False)
     monkeypatch.delenv("QUACKFRAME_DATABASE_PATH", raising=False)
     (tmp_path / "pyproject.toml").write_text(

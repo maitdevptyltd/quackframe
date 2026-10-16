@@ -423,7 +423,12 @@ def test_prefect_file_task_omits_conversion_values(tmp_path: Path) -> None:
         traceback.format_exception(captured.value)
     )
     assert logger.info.call_count == 2  # File and statement starts, without results.
-    assert logger.error.call_count == 2
+    assert logger.error.call_count == 3
+    statement_failure, file_failure, diagnostic = logger.error.call_args_list
+    assert "protected-query-value" in diagnostic.args[1]
+    assert diagnostic.kwargs == {"extra": {"send_to_api": False}}
+    for progress in (statement_failure, file_failure):
+        assert "protected-query-value" not in str(progress)
 
 
 def test_prefect_configuration_failure_retains_cli_status(

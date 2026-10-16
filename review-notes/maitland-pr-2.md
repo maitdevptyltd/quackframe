@@ -55,7 +55,7 @@ this documentation reconciliation.
 | C05 | TOML authority | Complete | 439302c |
 | C06 | DuckDB compatible range | Complete | 7fe2f92 |
 | C07 | fsspec upper bound | Addressed: awaiting clarification | 3deccbc; comment 4266977546 |
-| V01 | Linux and package CI | Hosted package passed; formatting blocker corrected locally; test matrix rerun pending | 642a090; follow-up below |
+| V01 | Linux and package CI | Hosted package and formatting passed; stale test expectations corrected; matrix verification pending | 642a090, d42f69a; follow-up below |
 | V02 | Opt-in upstream controls | Complete; collection verified | c537209 |
 | V03 | Repository cleanup | Complete; package inventories and targeted checks passed | 67d279b, 2aa2c02, a42732d |
 | V04 | Credential table | Complete | d387309 |
@@ -71,6 +71,20 @@ this documentation reconciliation.
 
 ### Branch and verification handover
 
+- Follow-up [CI run 38864749194](https://github.com/maitdevptyltd/quackframe/actions/runs/38864749194)
+  passed formatting in all seven jobs and passed the package job after `d42f69a`.
+  Windows core jobs then reported four stale tests: two test doubles lacked new
+  diagnostic keyword parameters, and two launcher cases still expected sanitized
+  local errors. Updated these contracts and the cleanup assertion to permit
+  progress messages while retaining failure, traceback and sensitive-value checks.
+  Also corrected test typing exposed by full Pyright. All 199 tests in the six
+  affected files, full Pyright, and exact CI lint/format commands pass locally.
+  A broader offline run exposed two further stale logging assertions: the Prefect
+  task now emits two safe progress failures plus a detailed local-only diagnostic,
+  and direct filesystem failures retain details. Their three focused cases pass
+  after correction, including an explicit `send_to_api=False` assertion for the
+  diagnostic. The broader run is still in progress; no full-suite pass is claimed.
+  Hosted matrix success is not yet established.
 - Hosted [CI run 38863934256](https://github.com/maitdevptyltd/quackframe/actions/runs/38863934256)
   passed the package build and clean-wheel smoke check, but all seven test jobs
   stopped at Ruff formatting; tests, types and documentation checks were skipped.

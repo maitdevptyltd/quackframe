@@ -361,7 +361,9 @@ def test_result_logging_executes_every_row_exactly_once(
     output: list[str] = []
 
     with duckdb.connect() as connection:
-        connection.create_function("counted", counted, side_effects=True)
+        connection.create_function(  # pyright: ignore[reportUnknownMemberType]
+            "counted", counted, side_effects=True
+        )
         execute_sql_file(connection, prepared, emit_result=output.append)
 
         assert calls == [1] * 30000
