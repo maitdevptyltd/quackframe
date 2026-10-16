@@ -38,16 +38,16 @@ this documentation reconciliation.
 | S01 | Azure fsspec removal | Complete; re-review clear | 68cf333, 16a4468 |
 | S02 | DuckDB SSHFS route | Addressed: awaiting clarification | Comment 4255240046; no removal |
 | S03 | Temporary database paths | Complete | 841323d |
-| S04 | Release recovery machinery | Not started; decision needed | — |
+| S04 | Release recovery machinery | Complete; independent review clear; publication disabled | 6b66252 |
 | S05 | Separate flow work | Agreed separate PR; outside this checklist’s remaining work | — |
-| R01 | Useful errors and output routing | Complete and integrated; terminal/API correction reviewed locally | fbbcb71, e7652a9, f8259ed, 1e7deda; merge 0bf04df |
+| R01 | Useful errors and output routing | Complete; terminal/API correction reviewed and downstream test confirmed | cab2c51; earlier integration 0bf04df |
 | R02 | Complete result execution | Complete | 476aff5 |
 | R03 | Base NumPy dependency | Complete; clean wheel verified | af93d25, 9b19e0d |
 | R04 | TOML extension loading | Addressed: awaiting clarification | db03680; comment 4267371558 |
 | R05 | Empty function installation | Complete; five targeted checks passed | be1ab72, 9b19e0d |
-| R06 | Progress logging | Implemented locally; downstream manual test pending | [Scope](../docs/epics/02-result-logging/03-progress-logging.md) |
-| R07 | Result annotation placement | Complete; independent re-review clear | [Scope](../docs/epics/02-result-logging/01-sql-result-logging.md) |
-| R08 | Supported result statement types | Complete; independent review clear | [Scope](../docs/epics/02-result-logging/01-sql-result-logging.md) |
+| R06 | Progress logging | Complete; downstream progress observed | bc2ceb7 |
+| R07 | Result annotation placement | Complete; independent re-review clear | 8ca8de9 |
+| R08 | Supported result statement types | Complete; independent review clear | f43fe79 |
 | C01 | Python database-path mode | Complete; example updated | d88cd5f, 09d697d |
 | C02 | Configuration runtime root | Complete | 6e2be2f |
 | C03 | Typed DuckDB settings | Complete | 22c1491 |
@@ -73,13 +73,17 @@ this documentation reconciliation.
 
 - `fix/pr-2-feedback` includes `refactor/error-logging` through merge `0bf04df`.
   Error logging includes `fbbcb71`, `e7652a9`, `f8259ed` and the independent
-  result/error permission change `1e7deda`. R06 is implemented locally here.
-  This update does not push changes or refresh remote refs.
+  result/error permission change `1e7deda`, terminal/API correction `cab2c51`,
+  progress logging `bc2ceb7`, annotation placement `8ca8de9`, supported result
+  statements `f43fe79`, and release simplification `6b66252`.
+  These commits were pushed to `origin/fix/pr-2-feedback`; the working tree
+  was clean and synchronized after the push on 2026-10-16.
 - The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
   feedback fixes as already present in the PR. Live PR state was not rechecked
   during this local reconciliation.
-- S04 implementation and independent review are complete; R06 awaits the user's
-  downstream manual test. Remaining
+- S04 implementation and independent review are complete. The user's downstream
+  run confirmed local detailed diagnostics and sanitized external errors; the
+  supplied Prefect export also contained progress records. Remaining
   delivery/setup: run hosted V01/O02 verification, and finish
   P02 environment configuration before enabling publication.
 - **S02, R04 and C07 are addressed pending reviewer clarification**, not active
@@ -189,6 +193,7 @@ git diff --check
   RC lineage/tree equality and smoke validation. Promotion uses the latest
   reachable RC; normal review owns consuming-project acceptance.
 - Resolution / verification: Implementation and owning release docs updated.
+  Committed and pushed as `6b66252`.
   Failed publication jobs reuse the original 90-day workflow artifact; partial
   uploads only stage missing matching files. Finalization accepts a matching
   tag-only state and completed matching release. Unrelated drafts do not block.
@@ -239,15 +244,17 @@ git diff --check
   pre-existing CLI-test lambda typing diagnostics. No full suite or live Prefect
   service was used. R06/R07 are not included.
   Independent permissions were committed as `1e7deda`; merge `0bf04df`
-  integrated the logging branch into the feedback branch. No push is recorded.
-  The terminal/API correction is implemented and independently reviewed locally:
+  integrated the logging branch into the feedback branch.
+  The terminal/API correction is committed and pushed as `cab2c51`:
   full Prefect diagnostic records use `send_to_api` to control API retention,
   while raised failures contain only permitted detail and no original chain.
   Validation: 107 focused tests plus six direct CLI/mocked-Prefect cases passed;
   reviewer independently passed 57 cases. Changed-file lint/types, documentation
-  links and whitespace checks passed. Manual configured-Prefect verification is
-  pending; synthetic commands are in the developer API guide. Commit/push of this
-  correction remains for the coordinating agent.
+  links and whitespace checks passed. The user's downstream verification showed
+  detailed terminal diagnostics while the supplied nine-record Prefect export
+  contained safe errors and progress without the local diagnostic marker.
+  This confirms the tested external-error-disabled path; it does not claim a
+  live check of every permission combination.
   The owning documents are
   `docs/duckdb-error-investigation.md` and
   `docs/epics/02-result-logging/02-useful-error-diagnostics.md`. Some relation binder failures lack position
@@ -308,7 +315,7 @@ git diff --check
 
 ### R06 Progress logging
 
-- [x] Addressed — implemented locally; downstream manual test pending
+- [x] Addressed — committed, pushed and downstream progress observed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323264) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/engine.py#L46) · [Local file](../src/quackframe/engine.py)
 - Feedback: Report file and statement start, completion, failure and elapsed time in the terminal and Prefect without logging SQL values.
 - Decision: Approved core file and statement start/completion/failure messages,
@@ -323,8 +330,10 @@ git diff --check
   Independent review found no actionable R06 findings; a suggested external
   safe-progress assertion was added and four permission combinations passed.
   Reviewer validation also exposed an unrelated existing CLI cleanup-test mock
-  signature mismatch, recorded in the scope. Changes remain local and
-  uncommitted; no live services were used.
+  signature mismatch, recorded in the scope. Committed and pushed as `bc2ceb7`.
+  Automated checks used no live services. The user's subsequent downstream run
+  and supplied Prefect log export provided manual evidence of progress logging;
+  this does not claim exhaustive downstream coverage of every lifecycle event.
 
 ### R07 Result annotation placement
 
@@ -346,7 +355,7 @@ git diff --check
   with the preceding statement. Regressions cover ordinary and nested block
   comments. Independent re-review cleared both findings with 45 focused
   annotation/RETURNING tests passing and a clean whitespace check. Implemented
-  in the commit containing this entry; R08 remains outside this change.
+  in `8ca8de9`, committed and pushed; R08 remains outside this change.
 
 ### R08 Supported result statement types
 
@@ -363,6 +372,7 @@ git diff --check
   Scoped Ruff, formatting, Pyright, docs links and whitespace checks passed.
   Offline test/type checks ran outside the sandbox after sandbox access failures.
   Independent review cleared the scoped implementation; no live services used.
+  Committed and pushed as `f43fe79`.
 
 ## Configuration and dependencies
 
