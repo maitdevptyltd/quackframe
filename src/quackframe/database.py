@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Generator
 from contextlib import contextmanager
+from logging import Logger, LoggerAdapter
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,7 +13,7 @@ import duckdb
 from duckdb import DuckDBPyConnection
 
 from quackframe.config import QuackframeConfig
-from quackframe.errors import ConfigurationError, error_reason
+from quackframe.errors import ConfigurationError, report_error_reason
 from quackframe.runtimes.registry import allows_error_details
 
 _EXTENSION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -21,6 +22,8 @@ _EXTENSION_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 @contextmanager
 def open_duckdb_session(
     config: QuackframeConfig,
+    *,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> Generator[DuckDBPyConnection, None, None]:
     """Open one configured session and clean up Quackframe-owned files.
 
@@ -32,11 +35,12 @@ def open_duckdb_session(
     connection: DuckDBPyConnection | None = None
     primary_error: BaseException | None = None
     try:
-        connection = _open_connection(database_path, config)
+        connection = _open_connection(database_path, config, error_logger=error_logger)
         _load_extensions(
             connection,
             config.duckdb.extensions,
             include_error_details=allows_error_details(config),
+            error_logger=error_logger,
         )
         yield connection
     except BaseException as error:
@@ -56,6 +60,8 @@ def open_duckdb_session(
 def _open_connection(
     database_path: str,
     config: QuackframeConfig,
+    *,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> DuckDBPyConnection:
     """Open DuckDB with the final settings and report setup failures clearly."""
 
@@ -66,10 +72,13 @@ def _open_connection(
             config={**config.duckdb.settings, "errors_as_json": "true"},
         )
     except Exception as error:
-        reason = error_reason(error, include_details=allows_error_details(config))
-        raise ConfigurationError(
-            f"DuckDB database could not be opened: {reason}"
-        ) from None
+        reason = report_error_reason(
+            error,
+            include_details=allows_error_details(config),
+            error_logger=error_logger,
+        )
+        failure = ConfigurationError(f"DuckDB database could not be opened: {reason}")
+    raise failure from None
 
 
 def _database_path(config: QuackframeConfig) -> tuple[str, Path | None]:
@@ -106,6 +115,7 @@ def _load_extensions(
     extensions: tuple[str, ...],
     *,
     include_error_details: bool = True,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> None:
     """Install and load explicitly configured DuckDB extensions in order."""
 
@@ -116,10 +126,15 @@ def _load_extensions(
             connection.execute(f'INSTALL "{extension}"')
             connection.execute(f'LOAD "{extension}"')
         except Exception as error:
-            raise ConfigurationError(
-                f"DuckDB extension '{extension}' could not be loaded: "
-                f"{error_reason(error, include_details=include_error_details)}"
-            ) from None
+            reason = report_error_reason(
+                error, include_details=include_error_details, error_logger=error_logger
+            )
+            failure = ConfigurationError(
+                f"DuckDB extension '{extension}' could not be loaded: {reason}"
+            )
+        else:
+            continue
+        raise failure from None
 
 
 def _remove_managed_database(path: Path) -> None:

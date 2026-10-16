@@ -24,7 +24,7 @@ from quackframe.errors import (
     ConfigurationError,
     ExecutionError,
     error_position,
-    error_reason,
+    report_error_reason,
 )
 from quackframe.models import SqlFileResult
 
@@ -92,8 +92,9 @@ def prepare_sql_files(
         statement_number: int | None = None
         offset = 0
         query = source
+        failure: ExecutionError | None = None
+        prepared_statements: list[PreparedSqlStatement] = []
         try:
-            prepared_statements: list[PreparedSqlStatement] = []
             # DuckDB expands dynamic PIVOT into internal statements. Keep source
             # boundaries for attribution and execute each source statement whole.
             with connect(config={"errors_as_json": "true"}) as parser:
@@ -117,7 +118,7 @@ def prepare_sql_files(
             raise
         except Exception as error:
             line, column = _source_location(source, offset, query, error)
-            raise ExecutionError(
+            failure = ExecutionError(
                 sql_file=path,
                 statement_number=statement_number,
                 line=line,
@@ -125,9 +126,13 @@ def prepare_sql_files(
                 reason=(
                     str(error)
                     if isinstance(error, _SqlPreparationError)
-                    else error_reason(error, include_details=include_error_details)
+                    else report_error_reason(
+                        error, include_details=include_error_details
+                    )
                 ),
-            ) from None
+            )
+        if failure is not None:
+            raise failure from None
 
         prepared.append(
             PreparedSqlFile(
@@ -147,6 +152,7 @@ def execute_sql_file(
     *,
     emit_result: ResultEmitter | None = None,
     progress_logger: Logger | LoggerAdapter[Logger] | None = None,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> SqlFileResult:
     """Execute every parsed statement in one file on the shared connection.
 
@@ -160,6 +166,7 @@ def execute_sql_file(
     statement_number: int | None = None
     prepared: PreparedSqlStatement | None = None
     statement_started_at = started_at
+    failure: ExecutionError | None = None
 
     try:
         for next_statement_number, prepared in enumerate(sql_file.statements, start=1):
@@ -196,13 +203,19 @@ def execute_sql_file(
             if prepared is not None
             else (None, None)
         )
-        raise ExecutionError(
+        failure = ExecutionError(
             sql_file=sql_file.path,
             statement_number=statement_number,
             line=line,
             column=column,
-            reason=error_reason(error, include_details=sql_file.include_error_details),
-        ) from None
+            reason=report_error_reason(
+                error,
+                include_details=sql_file.include_error_details,
+                error_logger=error_logger,
+            ),
+        )
+    if failure is not None:
+        raise failure from None
 
     elapsed = timedelta(seconds=perf_counter() - started_at)
     logger.info("File completed: %s (%.3fs)", sql_file.path, elapsed.total_seconds())

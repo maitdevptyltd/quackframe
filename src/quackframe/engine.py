@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import timedelta
+from logging import Logger, LoggerAdapter
 from time import perf_counter
 
 from duckdb import DuckDBPyConnection
@@ -27,6 +28,7 @@ def execute_plan(
     config: QuackframeConfig,
     *,
     execute_file: FileExecutor = execute_sql_file,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> ExecutionResult:
     """Run validated files serially in one owned DuckDB session.
 
@@ -41,7 +43,7 @@ def execute_plan(
     # One run owns exactly one database session. Optional runtimes may report
     # each file separately, but every file must keep using this connection.
     with (
-        open_duckdb_session(config) as connection,
+        open_duckdb_session(config, error_logger=error_logger) as connection,
         SessionResources(connection) as resources,
     ):
         install_functions(
@@ -49,6 +51,7 @@ def execute_plan(
             config.functions.enabled,
             resources,
             include_error_details=allows_error_details(config),
+            error_logger=error_logger,
         )
         for sql_file in sql_files:
             file_results.append(execute_file(connection, sql_file))

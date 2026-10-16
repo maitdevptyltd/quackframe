@@ -109,11 +109,12 @@ A SQL failure stops subsequent files. The failure should identify:
 
 Runtime adapters may enrich the failure with their own run identifier, but the
 core exception remains framework-independent. Direct execution reports full
-original backend messages regardless of external permission. External runtimes
+original backend messages regardless of external permission. Prefect also emits
+full diagnostics to its terminal handler. Its API logs and failure states
 use safe diagnostics unless `allow_external_error_logging=true`. Selected results
 require the independent `allow_external_result_logging` permission. The exception
 retains file/statement and available source positions in both modes. Original
-exception chains remain suppressed; the selected message is the only backend error exposed to normal
+exceptions do not retain the original backend exception; the selected message is the only backend error exposed to normal
 traceback rendering.
 
 For safe diagnostics, Quackframe requests structured

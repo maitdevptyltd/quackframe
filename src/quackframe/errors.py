@@ -2,6 +2,7 @@
 
 import json
 import re
+from logging import Logger, LoggerAdapter, StreamHandler
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit, urlunsplit
@@ -58,16 +59,31 @@ class ExecutionError(QuackframeError):
         super().__init__(f"SQL execution failed in {location}: {reason}")
 
 
-def error_reason(error: Exception, *, include_details: bool) -> str:
-    """Select full backend diagnostics only for an authorised destination."""
+def report_error_reason(
+    error: Exception,
+    *,
+    include_details: bool,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
+) -> str:
+    """Show full diagnostics locally and select what the raised error may retain."""
 
-    if not include_details:
-        return safe_error_reason(error)
     details = error_details(error)
     if "exception_message" in details:
         category = details.get("exception_type", type(error).__name__)
-        return f"{category}: {details['exception_message']}"
-    return str(error)
+        full_reason = f"{category}: {details['exception_message']}"
+    else:
+        full_reason = str(error)
+
+    # A run logger separates console records from API records. Before a run
+    # exists, a private terminal logger also avoids Prefect's print capture.
+    if error_logger is not None:
+        error_logger.error("%s", full_reason, extra={"send_to_api": include_details})
+    elif not include_details:
+        terminal = Logger("quackframe.errors")
+        terminal.addHandler(StreamHandler())
+        terminal.error("%s", full_reason)
+
+    return full_reason if include_details else safe_error_reason(error)
 
 
 def safe_error_reason(error: Exception) -> str:

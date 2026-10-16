@@ -6,7 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 from quackframe.config import QuackframeConfig
 from quackframe.engine import execute_plan
-from quackframe.errors import QuackframeError, error_reason
+from quackframe.errors import QuackframeError, report_error_reason
 from quackframe.models import ExecutionResult, SqlFileResult
 from quackframe.sql import (
     PreparedSqlFile,
@@ -37,6 +37,7 @@ def execute_sql_file_task(
         sql_file,
         emit_result=lambda rendered_result: logger.info("\n%s", rendered_result),
         progress_logger=logger,
+        error_logger=logger,
     )
 
 
@@ -50,15 +51,23 @@ def execute_plan_flow(
     if config.allow_external_result_logging and result_logging_can_emit(sql_files):
         get_run_logger().warning(_RETENTION_WARNING)
     try:
-        return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
+        return execute_plan(
+            sql_files,
+            config,
+            execute_file=_execute_named_file_task,
+            error_logger=get_run_logger(),
+        )
     except QuackframeError:
         raise
     except Exception as error:
         # Convert unexpected core failures before Prefect records the flow error.
-        reason = error_reason(
-            error, include_details=config.allow_external_error_logging
+        reason = report_error_reason(
+            error,
+            include_details=config.allow_external_error_logging,
+            error_logger=get_run_logger(),
         )
-        raise QuackframeError(f"Execution setup failed: {reason}") from None
+        failure = QuackframeError(f"Execution setup failed: {reason}")
+    raise failure from None
 
 
 def execute_with_prefect(
@@ -82,10 +91,11 @@ def execute_with_prefect(
     except QuackframeError:
         raise
     except Exception as error:
-        reason = error_reason(
+        reason = report_error_reason(
             error, include_details=config.allow_external_error_logging
         )
-        raise QuackframeError(f"Prefect runtime failed: {reason}") from None
+        failure = QuackframeError(f"Prefect runtime failed: {reason}")
+    raise failure from None
 
 
 def _execute_named_file_task(

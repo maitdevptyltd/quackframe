@@ -39,7 +39,7 @@ this documentation reconciliation.
 | S03 | Temporary database paths | Complete | 841323d |
 | S04 | Release recovery machinery | Not started; decision needed | — |
 | S05 | Separate flow work | Agreed separate PR; outside this checklist’s remaining work | — |
-| R01 | Useful errors and output routing | Complete and integrated; separate result/error permissions | fbbcb71, e7652a9, f8259ed, 1e7deda; merge 0bf04df |
+| R01 | Useful errors and output routing | Complete and integrated; terminal/API correction reviewed locally | fbbcb71, e7652a9, f8259ed, 1e7deda; merge 0bf04df |
 | R02 | Complete result execution | Complete | 476aff5 |
 | R03 | Base NumPy dependency | Complete; clean wheel verified | af93d25, 9b19e0d |
 | R04 | TOML extension loading | Addressed: awaiting clarification | db03680; comment 4267371558 |
@@ -198,8 +198,9 @@ git diff --check
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323234) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/errors.py#L49) · [Local file](../src/quackframe/errors.py)
 - Feedback: Restore actionable error details and file locations; correct statement attribution including PIVOT. Decide terminal versus external-log disclosure policy without exposing sensitive values.
 - Decision: Implement a useful safe baseline from the practical DuckDB error
-  investigation. Direct execution always shows full original errors; external
-  runtimes show the safe baseline unless `allow_external_error_logging=true`.
+  investigation. The terminal always shows full original errors for direct and
+  Prefect execution. External logs and task/flow failure states show the safe
+  baseline unless `allow_external_error_logging=true`.
   Selected results require the independent `allow_external_result_logging`
   permission. Both permissions default to false. Errors are reported either way.
   Ordinary identifiers are not treated as secrets merely
@@ -218,6 +219,14 @@ git diff --check
   service was used. R06/R07 are not included.
   Independent permissions were committed as `1e7deda`; merge `0bf04df`
   integrated the logging branch into the feedback branch. No push is recorded.
+  The terminal/API correction is implemented and independently reviewed locally:
+  full Prefect diagnostic records use `send_to_api` to control API retention,
+  while raised failures contain only permitted detail and no original chain.
+  Validation: 107 focused tests plus six direct CLI/mocked-Prefect cases passed;
+  reviewer independently passed 57 cases. Changed-file lint/types, documentation
+  links and whitespace checks passed. Manual configured-Prefect verification is
+  pending; synthetic commands are in the developer API guide. Commit/push of this
+  correction remains for the coordinating agent.
   The owning documents are
   `docs/duckdb-error-investigation.md` and
   `docs/epics/02-result-logging/02-useful-error-diagnostics.md`. Some relation binder failures lack position

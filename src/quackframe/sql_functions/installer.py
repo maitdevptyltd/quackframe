@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import types
+from logging import Logger, LoggerAdapter
 from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
 import duckdb
@@ -10,7 +11,7 @@ from duckdb import DuckDBPyConnection
 from duckdb.func import FunctionNullHandling
 from duckdb.sqltypes import BIGINT, BOOLEAN, DOUBLE, VARCHAR
 
-from quackframe.errors import FunctionDefinitionError, error_reason
+from quackframe.errors import FunctionDefinitionError, report_error_reason
 from quackframe.resources import SessionResources
 from quackframe.sql_functions.definition import SqlFunction
 from quackframe.sql_functions.registry import resolve_functions
@@ -29,6 +30,7 @@ def install_functions(
     resources: SessionResources | None = None,
     *,
     include_error_details: bool = True,
+    error_logger: Logger | LoggerAdapter[Logger] | None = None,
 ) -> None:
     """Install every enabled function through the same shared path.
 
@@ -48,14 +50,20 @@ def install_functions(
         parameter_types, return_type = _duckdb_signature(definition)
         prepared.append((definition, parameter_types, return_type))
 
+    failure: FunctionDefinitionError | None = None
     try:
         connection.execute("BEGIN TRANSACTION")
     except Exception as error:
         # A rejected begin does not give us ownership of the caller's transaction.
-        reason = error_reason(error, include_details=include_error_details)
-        raise FunctionDefinitionError(
+        reason = report_error_reason(
+            error, include_details=include_error_details, error_logger=error_logger
+        )
+        failure = FunctionDefinitionError(
             f"SQL functions could not be installed: {reason}"
-        ) from None
+        )
+
+    if failure is not None:
+        raise failure from None
 
     try:
         connection.execute('CREATE SCHEMA IF NOT EXISTS "quackframe"')
@@ -73,10 +81,15 @@ def install_functions(
         connection.execute("COMMIT")
     except Exception as error:
         connection.execute("ROLLBACK")
-        reason = error_reason(error, include_details=include_error_details)
-        raise FunctionDefinitionError(
+        reason = report_error_reason(
+            error, include_details=include_error_details, error_logger=error_logger
+        )
+        failure = FunctionDefinitionError(
             f"SQL functions could not be installed: {reason}"
-        ) from None
+        )
+
+    if failure is not None:
+        raise failure from None
 
 
 def _duckdb_signature(

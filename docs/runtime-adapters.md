@@ -65,8 +65,11 @@ Prefect's run logger. Each result message starts with a newline so the entire
 DuckDB table aligns below the terminal log prefix. Because that logging system
 may retain values, the runtime requires explicit external-result permission
 before project SQL executes and emits one retention warning when result logging
-is enabled. Errors are always reported: useful safe diagnostics by default,
-and full original backend messages when `allow_external_error_logging=true`.
+is enabled. Full error diagnostics always reach the terminal. Prefect API logs
+and task/flow failure records use useful safe diagnostics by default;
+`allow_external_error_logging=true` also permits full details there.
+The full diagnostic log record uses `send_to_api` to keep console and API
+destinations separate, including when Prefect captures print output.
 Result permission does not enable full error details. SQL failures are converted inside the file task before Prefect records them;
 unexpected core failures are converted inside the flow. Safe exceptions suppress
 original chains so ordinary framework tracebacks do not reintroduce omitted data.

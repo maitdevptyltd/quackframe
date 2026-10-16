@@ -128,8 +128,9 @@ format and Pyright checks, documentation links and whitespace checks passed.
 
 ## Approved output routing
 
-Direct execution reports full original error details regardless of external
-permission. External runtimes report the useful safe baseline by default; setting
+Terminal output reports full original error details for direct and Prefect
+execution regardless of external permission. External logs and failure states
+report the useful safe baseline by default; setting
 `allow_external_error_logging=true` permits full original errors. The independent
 `allow_external_result_logging` permission controls selected query results only.
 Both permissions default to false and accept environment, explicit Python and
@@ -166,3 +167,40 @@ Tests used the existing main-checkout Poetry environment with this worktree's
 Independent review found no actionable correctness or readability issues. The
 reviewer reran all 43 error-routing cases successfully and confirmed the final
 whitespace check passed.
+
+
+## Terminal and external destinations
+
+Full backend diagnostics must reach the terminal for both direct and Prefect
+execution. Prefect emits the full diagnostic through its run logger with
+`extra={"send_to_api": config.allow_external_error_logging}`. Its console handler
+receives that record in either mode; its API handler omits it when permission is
+false. The exception raised into Prefect remains sanitised unless permission is
+true, so task/flow failure records cannot disclose the original data indirectly.
+
+Preparation before a Prefect run uses terminal logging directly. Core accepts an
+optional error logger from the adapter for SQL execution, database setup and
+function installation. No full diagnostics are stored on sanitised exceptions;
+converted exceptions are raised after leaving the original exception handler.
+Result permission and progress logging are unchanged.
+
+Validate with installed Prefect API/console handlers and failed-state conversion,
+using synthetic data and an intercepted outbound log sink without a live server.
+Check both permission values, print capture, preparation, execution and setup.
+
+
+Focused validation: 107 tests passed across destination routing, error
+sanitisation, SQL-function installation and progress logging. Installed Prefect
+handlers receive real records under a real task context with print capture;
+only the outbound API-log sink is intercepted. Tests verify console detail in
+both modes, permission-controlled outgoing records and failed-state messages,
+serialised exception payloads, and absence of raw exception chains. Changed-file
+Ruff and Pyright, documentation links and `git diff --check` pass. No live Prefect
+service or customer data was used.
+
+Independent review found no actionable correctness or readability issues and
+reran 57 destination/routing/progress cases successfully. Six additional direct
+CLI and mocked Prefect regressions passed (41 unrelated cases deselected).
+Manual verification against the user's configured Prefect environment remains
+for the user; [developer API](../../developer-api.md#check-error-destinations)
+contains the synthetic SQL and the two acceptance commands.

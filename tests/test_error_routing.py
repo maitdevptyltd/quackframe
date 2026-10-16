@@ -111,8 +111,10 @@ def test_prefect_task_receives_selected_error_only(
     assert ("private-row" in rendered_errors[0]) == allow
     assert "Conversion" in rendered_errors[0]
     assert logger.info.call_count == 2  # File and statement starts, without results.
-    assert logger.error.call_count == 2
-    for call in logger.method_calls:
+    assert logger.error.call_count == 3
+    assert logger.error.call_args.kwargs == {"extra": {"send_to_api": allow}}
+    assert "private-row" in logger.error.call_args.args[1]
+    for call in logger.method_calls[:-1]:
         message, *arguments = call.args
         assert "private-row" not in message % tuple(arguments)
         assert not call.kwargs  # No exception or stack trace attached to progress.
@@ -127,6 +129,7 @@ def test_prefect_flow_selects_details_before_framework_records_failure(
     from quackframe.errors import QuackframeError
     from quackframe.integrations.prefect import runtime as prefect_runtime
 
+    monkeypatch.setattr(prefect_runtime, "get_run_logger", Mock(return_value=Mock()))
     monkeypatch.setattr(
         prefect_runtime, "execute_plan", Mock(side_effect=RuntimeError("private-setup"))
     )

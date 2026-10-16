@@ -185,11 +185,14 @@ grant permission to log results.
 
 | Destination | Error permission | Error details |
 | --- | --- | --- |
-| Direct terminal/Python | Either value | Full original backend message |
-| External runtime | false | Useful safe diagnostics, with available location |
-| External runtime | true | Full original backend message |
+| Terminal (direct or Prefect) | Either value | Full original backend message |
+| External logs and failure state | false | Useful safe diagnostics, with available location |
+| External logs and failure state | true | Full original backend message |
 
-Errors are always reported. Full messages can contain SQL literals, row values,
+Errors are always reported. With Prefect, full diagnostics always reach its
+console handler. When permission is false, those records use `send_to_api=false`
+and the raised exception contains only the safe diagnostic. This also works when
+Prefect captures `print` output. Full messages can contain SQL literals, row values,
 credentials or upstream messages. Result selection still follows `log_setting`
 and annotations; enabling result permission does not itself select query results.
 

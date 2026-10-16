@@ -81,7 +81,8 @@ direction. Without permission, a non-direct run that would emit results fails
 before project SQL executes. Direct terminal output does not require this
 permission.
 
-External errors always use useful sanitised diagnostics by default, independently
+Full diagnostics always reach the terminal, including with Prefect. External
+logs and failure states use useful sanitised diagnostics by default, independently
 of result permission. Use `--allow-external-error-logging` to permit full error
 details, which may contain sensitive data, or `--deny-external-error-logging` to
 override `QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING` back to sanitised diagnostics.
@@ -243,3 +244,25 @@ is `overrides`. Both positional and named arguments are supported. See
 - [Runtime Adapters](runtime-adapters.md): direct and Prefect execution.
 - [SQL Function Extensions](python-extensions.md): function packaging and
   registration.
+
+
+## Check Error Destinations
+
+Create `error-destinations.sql` with synthetic data:
+
+```sql
+SELECT CAST('LOCAL_ONLY_TEST_42' AS INTEGER);
+```
+
+Against your own configured Prefect environment, compare:
+
+```powershell
+quackframe run --runtime prefect --log-setting none --deny-external-result-logging --deny-external-error-logging error-destinations.sql
+quackframe run --runtime prefect --log-setting none --deny-external-result-logging --allow-external-error-logging error-destinations.sql
+```
+
+Both commands intentionally fail with exit status 1, and both show
+`LOCAL_ONLY_TEST_42` in the terminal. With error permission denied, Prefect's
+retained logs and task/flow failure messages must omit that marker. With error
+permission allowed, they may include it. Result permission remains denied in
+both commands.
