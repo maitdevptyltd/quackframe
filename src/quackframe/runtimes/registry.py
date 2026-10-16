@@ -114,6 +114,4 @@ def allows_error_details(config: QuackframeConfig) -> bool:
     """Keep direct diagnostics detailed and require permission externally."""
 
     runtime = get_runtime_registration(config.runtime)
-    return (
-        not runtime.result_logging_is_external or config.allow_external_result_logging
-    )
+    return not runtime.result_logging_is_external or config.allow_external_error_logging

@@ -39,7 +39,7 @@ or another optional runtime dependency installed.
 Selected SQL results are rendered with DuckDB's native relation representation
 and written to the terminal. Direct output does not require external-result
 permission. Original backend errors are also reported in full, regardless of
-`allow_external_result_logging`.
+`allow_external_error_logging`.
 
 ## Prefect Runtime
 
@@ -56,8 +56,8 @@ DuckDB table aligns below the terminal log prefix. Because that logging system
 may retain values, the runtime requires explicit external-result permission
 before project SQL executes and emits one retention warning when result logging
 is enabled. Errors are always reported: useful safe diagnostics by default,
-and full original backend messages when `allow_external_result_logging=true`.
-SQL failures are converted inside the file task before Prefect records them;
+and full original backend messages when `allow_external_error_logging=true`.
+Result permission does not enable full error details. SQL failures are converted inside the file task before Prefect records them;
 unexpected core failures are converted inside the flow. Safe exceptions suppress
 original chains so ordinary framework tracebacks do not reintroduce omitted data.
 

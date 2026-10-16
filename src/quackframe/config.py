@@ -31,6 +31,7 @@ _INVOCATION_ONLY_SETTINGS = (
     "root",
     "log_setting",
     "allow_external_result_logging",
+    "allow_external_error_logging",
 )
 
 
@@ -118,6 +119,7 @@ class QuackframeConfig(BaseModel):
     project_name: str | None = Field(default=None, exclude=True, repr=False)
     log_setting: LogSetting = "annotations-only"
     allow_external_result_logging: bool = False
+    allow_external_error_logging: bool = False
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     functions: FunctionsConfig = Field(default_factory=FunctionsConfig)
     duckdb: DuckDBConfig = Field(default_factory=DuckDBConfig)
@@ -151,6 +153,7 @@ def load_config(
     runtime: RuntimeName | None = None,
     log_setting: LogSetting | None = None,
     allow_external_result_logging: bool | None = None,
+    allow_external_error_logging: bool | None = None,
     database_mode: DatabaseMode | None = None,
     database_path: str | Path | None = None,
     environ: Mapping[str, str] | None = None,
@@ -190,6 +193,7 @@ def load_config(
             runtime=runtime,
             log_setting=log_setting,
             allow_external_result_logging=allow_external_result_logging,
+            allow_external_error_logging=allow_external_error_logging,
             database_mode=database_mode,
             database_path=database_path,
         ),
@@ -276,6 +280,8 @@ def _environment_config(environment: Mapping[str, str]) -> dict[str, Any]:
         values["log_setting"] = value
     if value := environment.get("QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING"):
         values["allow_external_result_logging"] = value
+    if value := environment.get("QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING"):
+        values["allow_external_error_logging"] = value
     if value := environment.get("QUACKFRAME_DATABASE_MODE"):
         values.setdefault("database", {})["mode"] = value
         if value in {"memory", "temporary"}:
@@ -297,6 +303,7 @@ def _explicit_config(
     runtime: RuntimeName | None,
     log_setting: LogSetting | None,
     allow_external_result_logging: bool | None,
+    allow_external_error_logging: bool | None,
     database_mode: DatabaseMode | None,
     database_path: str | Path | None,
 ) -> dict[str, Any]:
@@ -311,6 +318,8 @@ def _explicit_config(
         values["log_setting"] = log_setting
     if allow_external_result_logging is not None:
         values["allow_external_result_logging"] = allow_external_result_logging
+    if allow_external_error_logging is not None:
+        values["allow_external_error_logging"] = allow_external_error_logging
     if database_mode is not None:
         values.setdefault("database", {})["mode"] = database_mode
         if database_mode in {"memory", "temporary"}:

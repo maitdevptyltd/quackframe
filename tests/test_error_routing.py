@@ -17,6 +17,7 @@ from quackframe.sql import PreparedSqlFile
 
 @pytest.mark.parametrize("external", [False, True])
 @pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("allow_results", [False, True])
 @pytest.mark.parametrize(
     "sql",
     [
@@ -30,6 +31,7 @@ def test_error_routing(
     monkeypatch: pytest.MonkeyPatch,
     external: bool,
     allow: bool,
+    allow_results: bool,
     sql: str,
 ) -> None:
     # Use the real capability boundary without starting an external service.
@@ -43,7 +45,8 @@ def test_error_routing(
             config=QuackframeConfig(
                 root=tmp_path,
                 log_setting="none",
-                allow_external_result_logging=allow,
+                allow_external_error_logging=allow,
+                allow_external_result_logging=allow_results,
             ),
         )
     rendered = "".join(traceback.format_exception(captured.value))
@@ -59,10 +62,12 @@ def test_error_routing(
 
 
 @pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("allow_results", [False, True])
 def test_prefect_task_receives_selected_error_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     allow: bool,
+    allow_results: bool,
 ) -> None:
     pytest.importorskip("prefect")
     from quackframe.integrations.prefect import runtime as prefect_runtime
@@ -98,7 +103,8 @@ def test_prefect_task_receives_selected_error_only(
                 root=tmp_path,
                 runtime="prefect",
                 log_setting="none",
-                allow_external_result_logging=allow,
+                allow_external_error_logging=allow,
+                allow_external_result_logging=allow_results,
             ),
         )
     assert len(rendered_errors) == 1
@@ -108,8 +114,9 @@ def test_prefect_task_receives_selected_error_only(
 
 
 @pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("allow_results", [False, True])
 def test_prefect_flow_selects_details_before_framework_records_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, allow: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, allow: bool, allow_results: bool
 ) -> None:
     pytest.importorskip("prefect")
     from quackframe.errors import QuackframeError
@@ -124,7 +131,8 @@ def test_prefect_flow_selects_details_before_framework_records_failure(
             QuackframeConfig(
                 root=tmp_path,
                 runtime="prefect",
-                allow_external_result_logging=allow,
+                allow_external_error_logging=allow,
+                allow_external_result_logging=allow_results,
             ),
         )
     rendered = "".join(traceback.format_exception(captured.value))
@@ -133,8 +141,13 @@ def test_prefect_flow_selects_details_before_framework_records_failure(
 
 @pytest.mark.parametrize("external", [False, True])
 @pytest.mark.parametrize("allow", [False, True])
+@pytest.mark.parametrize("allow_results", [False, True])
 def test_connection_errors_follow_runtime_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external: bool, allow: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    external: bool,
+    allow: bool,
+    allow_results: bool,
 ) -> None:
     import duckdb
 
@@ -153,8 +166,60 @@ def test_connection_errors_follow_runtime_policy(
             config=QuackframeConfig(
                 root=tmp_path,
                 log_setting="none",
-                allow_external_result_logging=allow,
+                allow_external_error_logging=allow,
+                allow_external_result_logging=allow_results,
             ),
         )
     rendered = "".join(traceback.format_exception(captured.value))
     assert ("private-path" in rendered) == (not external or allow)
+
+
+@pytest.mark.parametrize("allow_errors", [False, True])
+def test_error_permission_does_not_grant_result_permission(
+    tmp_path: Path, allow_errors: bool
+) -> None:
+    from quackframe import ConfigurationError
+
+    path = tmp_path / "result.sql"
+    path.write_text("SELECT 42", encoding="utf-8")
+    with pytest.raises(
+        ConfigurationError, match="QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING"
+    ):
+        run(
+            [path],
+            config=QuackframeConfig(
+                root=tmp_path,
+                runtime="prefect",
+                log_setting="all",
+                allow_external_error_logging=allow_errors,
+            ),
+        )
+
+
+def test_selected_results_can_be_logged_with_sanitised_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime = replace(registry.RUNTIME_REGISTRY[0], result_logging_is_external=True)
+    monkeypatch.setattr(registry, "RUNTIME_REGISTRY", (runtime,))
+    path = tmp_path / "results_then_failure.sql"
+    path.write_text(
+        "-- quackframe: log-result\nSELECT 'published-result';\n"
+        "SELECT CAST('private-row' AS INTEGER);",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ExecutionError) as captured:
+        run(
+            [path],
+            config=QuackframeConfig(
+                root=tmp_path,
+                allow_external_result_logging=True,
+            ),
+        )
+
+    assert "published-result" in capsys.readouterr().out
+    rendered = "".join(traceback.format_exception(captured.value))
+    assert "Conversion" in rendered
+    assert "private-row" not in rendered

@@ -55,7 +55,7 @@ def execute_plan_flow(
     except Exception as error:
         # Convert unexpected core failures before Prefect records the flow error.
         reason = error_reason(
-            error, include_details=config.allow_external_result_logging
+            error, include_details=config.allow_external_error_logging
         )
         raise QuackframeError(f"Execution setup failed: {reason}") from None
 
@@ -82,7 +82,7 @@ def execute_with_prefect(
         raise
     except Exception as error:
         reason = error_reason(
-            error, include_details=config.allow_external_result_logging
+            error, include_details=config.allow_external_error_logging
         )
         raise QuackframeError(f"Prefect runtime failed: {reason}") from None
 

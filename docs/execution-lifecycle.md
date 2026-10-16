@@ -104,10 +104,10 @@ A SQL failure stops subsequent files. The failure should identify:
 Runtime adapters may enrich the failure with their own run identifier, but the
 core exception remains framework-independent. Direct execution reports full
 original backend messages regardless of external permission. External runtimes
-use safe diagnostics unless `allow_external_result_logging=true`, which permits
-full errors as well as selected results. The exception retains file/statement
-and available source positions in both modes. Original exception chains remain
-suppressed; the selected message is the only backend error exposed to normal
+use safe diagnostics unless `allow_external_error_logging=true`. Selected results
+require the independent `allow_external_result_logging` permission. The exception
+retains file/statement and available source positions in both modes. Original
+exception chains remain suppressed; the selected message is the only backend error exposed to normal
 traceback rendering.
 
 For safe diagnostics, Quackframe requests structured
