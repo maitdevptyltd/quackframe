@@ -1,4 +1,4 @@
-"""Publication retries must preserve byte identity, including retained evidence."""
+"""Publication retries compare the original build bytes with PyPI."""
 
 import io
 import json
@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from scripts import release_artifacts
-from scripts.release_artifacts import digest, reconcile, seal, verify
+from scripts.release_artifacts import reconcile, verify
 
 
 @pytest.fixture
@@ -28,18 +28,13 @@ def bundle(tmp_path: Path) -> Path:
         json.dumps({"source": "abc", "tag": "v0.1.0", "version": "0.1.0"}),
         encoding="utf-8",
     )
-    seal(tmp_path)
     return tmp_path
 
 
-def test_retained_artifacts_require_original_source_and_hashes(bundle: Path) -> None:
-    expected = verify(bundle, "abc", "v0.1.0")
-    assert len(expected) == 2
+def test_bundle_requires_original_source(bundle: Path) -> None:
+    assert len(verify(bundle, "abc", "v0.1.0")) == 2
     with pytest.raises(ValueError, match="another source"):
         verify(bundle, "different", "v0.1.0")
-    (bundle / "quackframe-0.1.0.whl").write_bytes(b"tampered")
-    with pytest.raises(ValueError, match="checksum"):
-        verify(bundle, "abc", "v0.1.0")
 
 
 def test_partial_upload_stages_only_missing_files() -> None:
@@ -56,41 +51,26 @@ def test_partial_upload_stages_only_missing_files() -> None:
 def test_missing_distribution_is_not_a_complete_bundle(bundle: Path) -> None:
     (bundle / "quackframe-0.1.0.tar.gz").unlink()
     with pytest.raises(ValueError, match="exactly"):
-        seal(bundle)
+        verify(bundle, "abc", "v0.1.0")
 
 
-def test_manifest_cannot_escape_bundle(bundle: Path) -> None:
-    (bundle / "SHA256SUMS.json").write_text(
-        json.dumps({"../outside.whl": "hash"}), encoding="utf-8"
-    )
-    with pytest.raises(ValueError, match="checksum"):
+def test_unexpected_file_is_rejected(bundle: Path) -> None:
+    (bundle / "unexpected.whl").write_bytes(b"invalid")
+    with pytest.raises(ValueError, match="exactly"):
         verify(bundle, "abc", "v0.1.0")
 
 
 def test_distribution_version_must_match_release_plan(bundle: Path) -> None:
-    (bundle / "release.json").write_text(
-        json.dumps({"version": "0.2.0"}), encoding="utf-8"
-    )
+    metadata = json.loads((bundle / "release.json").read_text())
+    metadata.update(tag="v0.2.0", version="0.2.0")
+    (bundle / "release.json").write_text(json.dumps(metadata))
     with pytest.raises(ValueError, match="identity"):
-        seal(bundle)
-
-
-def test_verified_hashes_cannot_hide_conflicting_version(bundle: Path) -> None:
-    metadata_path = bundle / "release.json"
-    metadata = json.loads(metadata_path.read_text())
-    metadata["version"] = "0.2.0"
-    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-    hashes_path = bundle / "SHA256SUMS.json"
-    hashes = json.loads(hashes_path.read_text())
-    hashes["release.json"] = digest(metadata_path)
-    hashes_path.write_text(json.dumps(hashes), encoding="utf-8")
-    with pytest.raises(ValueError, match="identity"):
-        verify(bundle, "abc", "v0.1.0")
+        verify(bundle, "abc", "v0.2.0")
 
 
 @pytest.mark.parametrize(
     "outcome",
-    ["delayed", "timeout", "hash", "extra", "http", "network", "malformed", "local"],
+    ["delayed", "timeout", "hash", "extra", "http", "network", "malformed"],
 )
 def test_pypi_verification_polling(
     bundle: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
@@ -136,24 +116,8 @@ def test_pypi_verification_polling(
     monkeypatch.setattr(release_artifacts.time, "monotonic", lambda: elapsed)
     monkeypatch.setattr(release_artifacts.time, "sleep", sleep)
     monkeypatch.setattr(release_artifacts, "urlopen", urlopen)
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "release_artifacts",
-            "verify",
-            "--bundle",
-            str(bundle),
-            "--source",
-            "abc",
-            "--tag",
-            "v0.1.0",
-        ],
-    )
-    if outcome == "local":
-        (bundle / "quackframe-0.1.0.whl").write_bytes(b"tampered")
-
     if outcome == "delayed":
-        release_artifacts.main()
+        release_artifacts.verify_publication(expected, "0.1.0")
         assert requests == [0, 20, 40, 60, 80, 100]
         return
 
@@ -164,14 +128,11 @@ def test_pypi_verification_polling(
         "http": (HTTPError, "503"),
         "network": (URLError, "offline"),
         "malformed": (json.JSONDecodeError, "Expecting value"),
-        "local": (ValueError, "checksum mismatch"),
     }[outcome]
     with pytest.raises(error, match=message) as failure:
-        release_artifacts.main()
+        release_artifacts.verify_publication(expected, "0.1.0")
     if outcome == "timeout":
         assert requests == list(range(0, 181, 20))
         assert all(name in str(failure.value) for name in expected)
-    elif outcome == "local":
-        assert requests == []
     else:
         assert requests == [0, 20, 40, 60, 80]

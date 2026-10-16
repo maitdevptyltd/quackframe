@@ -484,7 +484,7 @@ def test_bootstrap_rejects_conflicting_tag_history(history: Path) -> None:
         plan("release/next")
 
 
-def test_preparation_rejects_changed_decision_and_reserved_rebuild(
+def test_preparation_rejects_changed_decision_and_published_rebuild(
     history: Path,
 ) -> None:
     from dataclasses import replace
@@ -498,7 +498,7 @@ def test_preparation_rejects_changed_decision_and_reserved_rebuild(
         )
     assert not Path("bundle").exists()
     git("tag", decision.tag)
-    with pytest.raises(ValueError, match="reuse retained"):
+    with pytest.raises(ValueError, match="reuse the original"):
         prepare(decision, Path("bundle"))
     commit("fix: later source")
     with pytest.raises(ValueError, match="source changed"):

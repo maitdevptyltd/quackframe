@@ -22,26 +22,15 @@ Promote candidates with an ancestry-preserving merge
 from `release/next` to `main`, not a squash. Use a neutral promotion message such
 as `chore(release): promote Quackframe 0.1.0`.
 
-The promotion PR identifies the exact published candidate and records its
-consuming-project acceptance with these two lines in its description:
-
-```text
-Candidate: v0.1.0-rc.1
-Acceptance: Link to the consuming-project smoke result and reviewed limitations.
-```
-
-Use the actual candidate tag and acceptance evidence. The workflow reads the
-merged PR associated with the validated source commit to distinguish promotions
-from direct fixes. Missing or ambiguous provenance stops publication. A patch
-candidate follows the same promotion checks as a minor or major candidate.
-The selected RC needs a completed GitHub prerelease, matching retained source
-and artifact evidence, and both matching distributions on PyPI. A tag alone,
-a draft, a partial upload or an evidence-read error cannot authorize promotion.
-
-The PR's explicit selection is read before candidate validation. An earlier
-accepted RC can be promoted if its exact tree and ancestry match, even when a
-newer RC has a different tree. The workflow does not replace your selection with
-the newest candidate.
+The workflow uses the latest reachable RC for the calculated stable version.
+The promotion PR records consuming-project acceptance in normal prose; there are
+no machine-parsed `Candidate:` or `Acceptance:` fields. The merged PR's source
+branch distinguishes promotion from a direct stable fix. Missing or ambiguous
+merge provenance stops publication. An older RC cannot be selected through PR
+text: if the latest RC does not match, validate and publish a fresh candidate.
+The selected RC needs a completed GitHub prerelease, matching source/version
+records, and both matching distributions on PyPI. A tag alone, draft, partial
+upload or evidence-read error cannot authorize promotion.
 
 The promotion tree must match the published RC's source tree exactly. Review
 the candidate's scope, migration notes and a consuming-project smoke test before
@@ -107,58 +96,41 @@ The source distribution contains the package source, README, licence and project
 metadata (plus Hatchling's build metadata and `.gitignore`). Tests, release scripts, development
 documentation and the Poetry lock remain in the repository, not the package.
 
-Each release retains its wheel, source distribution, generated `CHANGELOG.md`,
-`release.json` source/version record, and `SHA256SUMS.json` in a draft GitHub
-release before upload. The tag points at the tested source commit; the source
-distribution includes the stamped version. The workflow tests installation,
-Python and CLI execution, shared session state, and fail-fast behaviour in a
-clean Poetry consumer without Prefect.
+The workflow has four jobs: plan, package, publish, and finalize. Packaging builds
+one wheel and one source distribution, checks their metadata, and smoke-tests
+installation, Python/CLI execution, shared state and fail-fast behaviour in a
+clean Poetry consumer without Prefect. Its immutable `release-bundle` workflow
+artifact contains those files, generated `CHANGELOG.md` and a small `release.json`
+source/version/flow record. GitHub keeps this artifact for 90 days. There is no
+sealed hash manifest, pre-upload tag reservation or retained draft release.
 
-The saved decision records candidate, promotion or direct-patch flow and, for
-promotions, the selected candidate tag and source. Preparation revalidates that
-decision before generating notes and stamping metadata. Each release's notes
-describe delivery since the preceding stable release, so initial and promoted
-releases retain the feature, fix and migration descriptions from candidate work.
+The publish job compares distribution metadata and the source/version record
+against the planner's independent job output, computes hashes from the original
+build, and uploads only missing files through PyPI Trusted Publishing. Existing
+files must have identical hashes. After bounded visibility polling verifies both
+files, finalization creates the tag at the tested source commit and the GitHub
+release with the original bundle attached. RCs are marked prereleases and do not
+replace the latest stable release. Notes describe delivery since the preceding
+stable release, including candidate work and supplied migration guidance.
 
-PyPI upload uses Trusted Publishing in the `pypi` environment. Only that job
-receives OIDC permission. The workflow compares published file hashes with the
-retained artifacts before making the GitHub release public. RCs are marked as
-prereleases and cannot replace the latest stable GitHub release.
+All tooling, locked dependencies and version policy come from the workflow's
+immutable default-branch commit (`github.sha`). Candidate files supply only Git
+history and build source. Python isolated mode and the trusted entrypoint exclude
+candidate modules, `PYTHONPATH` and user site packages. Land tooling changes on
+`main` before relying on them for a candidate.
 
-The planning job uses `GITHUB_TOKEN` with `contents: write` because GitHub requires
-push access to list and download draft releases during recovery. Retention and
-finalization use short-lived GitHub App installation tokens with `contents: write`
-and `workflows: write`: candidates may change workflow files relative to the
-default branch, which `GITHUB_TOKEN` cannot authorize. Each token is scoped to
-the current repository, exposed only to its release step, and revoked at job end.
-The planning job also needs `pull-requests: read` for merged-PR provenance.
-Its `GH_TOKEN` environment variable is supplied only to planning and retained
-artifact authorization. GitHub permissions apply to whole jobs, not individual
-steps; this limits environment inheritance without removing the planning job's
-token rights. Checkout never persists credentials. The App-token and PyPI
-publishing actions are pinned to verified upstream commit SHAs with version
-annotations.
+The plan job has read-only contents and PR access. Candidate builds and smoke
+tests run separately with read-only repository permission, no protected
+environment, App key or OIDC rights. Only publish has OIDC permission. Publish
+and finalize consume the planner's decision through job outputs and inspect
+packages as data; they never execute the wheel. Finalize alone uses a short-lived
+GitHub App token with contents/workflows write permission, because candidates
+may change workflow files. The token is scoped to this repository, exposed only
+to finalization, and revoked at job end. Checkout never persists credentials.
+App-token and PyPI actions remain pinned to verified commit SHAs.
 
-Job timeouts bound the shared release queue: planning has 15 minutes for tool
-installation and provenance checks, packaging has 30 minutes for builds and
-consumer installation, retention and finalization have 10 minutes each, and
-publication has 15 minutes for upload and the bounded PyPI visibility checks.
-
-All release tooling, locked tooling dependencies and version policy come from
-the workflow's immutable default-branch commit (`github.sha`). Candidate files
-provide Git history and the tree to build; they cannot select executable release
-tooling or version policy. Python runs in isolated mode through the trusted
-entrypoint, which excludes candidate modules, `PYTHONPATH` and user site packages.
-Land release-tooling or build-tool dependency changes on `main` before relying
-on them for a candidate.
-
-Planning passes its full release decision directly to retention and finalization
-through job outputs. Those jobs compare the build bundle against that independent
-decision. Building and wheel smoke tests run on a separate runner with read-only
-repository permission, no protected environment, no App key and no OIDC rights.
-Retries use the retained bundle without rebuilding. Retention, staging, upload
-verification and finalization run only trusted code; distributions are inspected
-as data and are never installed or executed in those jobs.
+Both branches share one non-cancelling publication queue. Timeouts are 15 minutes
+for planning, 30 for packaging, 15 for publication and 10 for finalization.
 
 ## Repository Owner Setup
 
@@ -194,10 +166,10 @@ Before the first candidate merge:
    token permissions in GitHub. `workflow_run` executes in the default-branch
    context, so `main`-only environment rules also permit RC publication. The
    workflow independently requires `refs/heads/main` and uses its immutable SHA
-   for tooling; the triggering CI SHA identifies only the build source. Retention
-   and finalization also use `pypi` so their App key receives the same restriction.
-   Rehearse recovery from a draft
-   release and publication of a candidate containing workflow changes.
+   for tooling; the triggering CI SHA identifies only the build source.
+   Finalization uses `pypi` so its App key receives the same restriction. Rehearse
+   partial-upload and finalization retries using the original workflow artifact,
+   including a candidate containing workflow changes.
 7. Set `QUACKFRAME_RELEASES_ENABLED=true` only when ready for qualifying merges
    to publish. Do not add a routine manual RC/patch approval gate that contradicts
    the agreed automatic flow.
@@ -208,53 +180,40 @@ Recheck before activation. Forks must configure their own identity and workflow.
 
 ## Validation And Recovery
 
-`poetry run python -m scripts.release release/next` previews a release when the
-checkout is on that branch. Without `--prepare`, it changes no files. Use an
-isolated checkout for `--prepare`, which stamps metadata and generates notes but
-does not commit, tag, push or publish. Local builds are not production releases.
-Local plans are proposals; the workflow still verifies merged-PR provenance and
-remote publication evidence. A reserved release cannot be prepared again: use
-its original retained bundle instead.
+`poetry run python -m scripts.release release/next` previews a release on that
+branch. Without `--prepare`, it changes no files. Use an isolated checkout for
+`--prepare`; it stamps metadata and notes without committing, tagging or
+publishing. Local plans remain proposals until the workflow checks provenance.
 
-Rerun the failed GitHub Release workflow after fixing transient access problems.
-Before a tag exists, the run can rebuild. Once a tag exists, retries download the
-original retained assets and verify source identity and checksums; they do not
-rebuild. Existing PyPI files must match, and only missing files are uploaded.
-An already complete upload becomes a no-op before GitHub release finalization.
-After upload, verification polls missing files every 20 seconds for three
-minutes to tolerate cached PyPI 404 responses. An in-flight request can take
-up to another 30 seconds. Hash conflicts and unrelated errors fail immediately;
-exhausting the polling budget reports the filenames still missing.
+Use **Re-run failed jobs** on the original Release run after correcting a
+transient failure. Successful package jobs are not rerun, so publication and
+finalization download the same `release-bundle`. **Re-run all jobs** is rejected
+with instructions; it must not rebuild a version whose upload may have begun.
+A superseded source also fails explicitly during planning. If planning failed,
+rerun CI for the current commit to start a fresh release run. Maintenance-only
+changes and disabled publication are intentional no-release outcomes.
 
-Recovery finds both drafts and published releases through GitHub's paginated
-release listing with push access. A 404 from the published-release-by-tag
-endpoint does not establish that a retained draft is missing. Promotion still
-requires a published candidate; finding its draft does not authorize promotion.
+| Failure | Action |
+| --- | --- |
+| Before upload | No release tag or draft has been reserved. Rerun failed jobs; a failed package job can build again because publish has not run. |
+| Partial upload or visibility timeout | Rerun failed jobs on the original run. The original bundle is compared with PyPI; only missing identical-build files are uploaded. Conflicts stop immediately and never overwrite files or choose another version. |
+| PyPI complete, GitHub finalization failed | Rerun failed jobs. Finalization rechecks PyPI hashes and uses the original bundle. A matching existing tag is accepted; a conflicting tag fails. An already complete matching GitHub release is a no-op. |
+| GitHub CLI left an incomplete draft during finalization | A maintainer inspects that release, removes only the incomplete draft while preserving its matching tag, then reruns failed jobs. Unrelated drafts never block publication. |
+| Original workflow artifact expired or was deleted | Automatic recovery ends. Recover the original bundle from a trusted copy and compare its identity and PyPI hashes before maintainer-reviewed completion. Do not rebuild and assume byte identity, move tags, overwrite PyPI files, or rerun all jobs. If original bytes cannot be recovered, stop and resolve the interrupted version explicitly before proceeding. |
 
-A remote tag reserves its version even if publication fails. If draft creation
-fails before a draft exists, a later qualifying merge may publish a newer version.
-The earlier tag remains part of release history, and that version may remain
-unpublished. A newer publication does not repair or reuse the earlier version.
-An incomplete GitHub draft still blocks later publications until recovery.
+Complete an interrupted publication before merging further release work. There
+is no global draft lock or automatic search across earlier runs. A later run
+does not repair an earlier upload. A defective published package requires a
+corrected version; yanking is a separate maintainer action.
 
-To recover a tagged version whose draft or assets are missing, do not delete or
-move the tag to force a retry. Recover the exact artifacts from the original
-workflow's retained `release-bundle`, reconcile them with the original source
-and hashes, and restore missing draft assets through a maintainer-reviewed
-recovery. If identity cannot be proved, stop that recovery and investigate.
-Conflicting PyPI files for the version being uploaded stop its publication.
-A defective published package needs a corrected version; yanking is a separate
-maintainer action.
+Verification polls missing PyPI files every 20 seconds for up to three minutes;
+an in-flight request may take another 30 seconds. Hash conflicts and unrelated
+errors fail immediately. No upload is retried by this polling loop.
 
-Both release lines share one non-cancelling concurrency group with `queue: max`,
-so pending stable and candidate runs do not replace each other. GitHub's
-[concurrency queue](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
-holds up to 100 waiting runs; investigate and rerun any rejected overflow.
-Superseded runs skip publication until their branch's newest source passes CI.
-To retain automatic retry of the failed version, keep its branch at the original
-source until recovery is complete: automatic retries reject superseded source.
-If the branch advances, preserve the original source/artifacts for manual
-recovery. Advancing to a newer release remains subject to the draft guard above.
+Hosted acceptance remains pending: the local synthetic tests cannot establish
+GitHub environment restrictions, queued reruns, App permissions, PyPI OIDC or
+actual upload/finalization behaviour. Keep `QUACKFRAME_RELEASES_ENABLED` unset
+or false until an owner completes the setup and authorised hosted rehearsal.
 
 ## Related Docs
 
@@ -266,6 +225,6 @@ recovery. Advancing to a newer release remains subject to the draft guard above.
   version analysis and multi-branch release engine.
 - [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/): publisher setup.
 - [GitHub release permissions](https://docs.github.com/en/rest/releases/releases):
-  draft visibility and workflow-write requirements.
+  release creation and workflow-write requirements.
 - [GitHub App token action](https://github.com/actions/create-github-app-token):
   installation credentials, repository scope and token revocation.

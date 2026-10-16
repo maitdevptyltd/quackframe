@@ -78,7 +78,7 @@ this documentation reconciliation.
 - The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
   feedback fixes as already present in the PR. Live PR state was not rechecked
   during this local reconciliation.
-- Remaining implementation decisions/work: **S04**; R06 awaits the user's
+- S04 implementation and independent review are complete; R06 awaits the user's
   downstream manual test. Remaining
   delivery/setup: run hosted V01/O02 verification, and finish
   P02 environment configuration before enabling publication.
@@ -179,11 +179,29 @@ git diff --check
 
 ### S04 Release recovery machinery
 
-- [ ] Addressed
+- [x] Addressed — implementation and independent review complete
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323304) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/scripts/release_workflow.py#L185) · [Local file](../scripts/release_workflow.py)
 - Feedback: Decide whether draft retention, sealed hashes, tag reservations and PR-body metadata are needed for 0.1.0. Consider the documented stuck/retry states and rehearse remote publication steps.
-- Decision: Pending discussion.
-- Resolution / verification: Pending.
+- Decision: Use plan, build, publish, then tag/release. Remove pre-publication tag
+  reservations, retained draft recovery, sealed checksum manifests and PR-body
+  selection fields. Keep original workflow artifacts, independent release
+  decisions, distribution/PyPI hash checks, trust/CI gates, serialized publication,
+  RC lineage/tree equality and smoke validation. Promotion uses the latest
+  reachable RC; normal review owns consuming-project acceptance.
+- Resolution / verification: Implementation and owning release docs updated.
+  Failed publication jobs reuse the original 90-day workflow artifact; partial
+  uploads only stage missing matching files. Finalization accepts a matching
+  tag-only state and completed matching release. Unrelated drafts do not block.
+  Rerun-all and superseded planning fail explicitly, with operator instructions.
+  Hosted acceptance remains pending and publication stays disabled. Scoped
+  checks passed: 144 release tests in the first run, then all 49 final workflow
+  cases across the final workflow and two targeted failure runs; scoped Ruff,
+  Pyright (zero errors), docs links and whitespace checks passed. Sandbox
+  temporary-directory/import failures required approved offline checks outside
+  the sandbox. Independent review cleared with no blocking findings after
+  61 workflow/artifact tests, 24 ancestry/promotion/pre-stable controls, and scoped
+  lint, formatting, Pyright, links and whitespace checks. Hosted Actions and live
+  publication were not run; activation remains pending.
 
 ### S05 Separate flow work
 

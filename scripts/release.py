@@ -241,7 +241,8 @@ def prepare(release: Release, destination: Path) -> None:
         raise ValueError("Preparation requires an unchanged source checkout.")
     if release.tag in release_tags():
         raise ValueError(
-            "Reserved releases must reuse retained artifacts; do not rebuild."
+            "Published releases must reuse the original workflow artifact; "
+            "do not rebuild."
         )
     if (
         plan(release.branch, flow=release.flow, candidate_tag=release.candidate_tag)

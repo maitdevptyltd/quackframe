@@ -1,4 +1,4 @@
-"""Seal release artifacts and reconcile PyPI uploads by exact file identity."""
+"""Validate release distributions and compare PyPI uploads with the original build."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def digest(path: Path) -> str:
 
 
 def verify_distributions(files: list[Path], version: str) -> None:
-    """Inspect package metadata even when the retained hashes match."""
+    """Check the built wheel and sdist against the planned package version."""
     for path in files:
         if path.suffix == ".whl":
             with zipfile.ZipFile(path) as archive:
@@ -52,46 +52,24 @@ def verify_distributions(files: list[Path], version: str) -> None:
             raise ValueError("Distribution identity differs from the release plan.")
 
 
-def seal(bundle: Path) -> None:
-    files = sorted([*bundle.glob("*.whl"), *bundle.glob("*.tar.gz")])
-    if len(files) != 2 or len(list(bundle.glob("*.whl"))) != 1:
-        raise ValueError("A release must contain exactly one wheel and one sdist.")
-    metadata = json.loads((bundle / "release.json").read_text(encoding="utf-8"))
-    verify_distributions(files, metadata["version"])
-    files.extend([bundle / "release.json", bundle / "CHANGELOG.md"])
-    hashes = {path.name: digest(path) for path in files}
-    (bundle / "SHA256SUMS.json").write_text(
-        json.dumps(hashes, indent=2) + "\n", encoding="utf-8"
-    )
-
-
 def verify(bundle: Path, source: str, tag: str) -> dict[str, str]:
-    hashes: dict[str, str] = json.loads(
-        (bundle / "SHA256SUMS.json").read_text(encoding="utf-8")
-    )
-    for name, expected in hashes.items():
-        if Path(name).name != name or digest(bundle / name) != expected:
-            raise ValueError(f"Release artifact checksum mismatch: {name}")
-    if not {"release.json", "CHANGELOG.md"} <= hashes.keys():
-        raise ValueError("Missing sealed release evidence.")
+    """Check build identity and compute hashes directly from the distributions."""
     metadata = json.loads((bundle / "release.json").read_text(encoding="utf-8"))
     if metadata["source"] != source or metadata["tag"] != tag:
         raise ValueError("Release assets belong to another source or version.")
     if metadata["version"] != package_version(tag):
         raise ValueError("Release tag and package version identity disagree.")
-    distributions = {
-        name: value
-        for name, value in hashes.items()
-        if name.endswith((".whl", ".tar.gz"))
-    }
-    if len(distributions) != 2 or sum(n.endswith(".whl") for n in distributions) != 1:
-        raise ValueError("Missing sealed distributions.")
-    if set(hashes) != {*distributions, "release.json", "CHANGELOG.md"} or {
-        path.name for path in bundle.iterdir()
-    } != {*hashes, "SHA256SUMS.json"}:
-        raise ValueError("Unexpected artifacts outside the sealed release bundle.")
-    verify_distributions([bundle / name for name in distributions], metadata["version"])
-    return distributions
+    files = sorted([*bundle.glob("*.whl"), *bundle.glob("*.tar.gz")])
+    if len(files) != 2 or len(list(bundle.glob("*.whl"))) != 1:
+        raise ValueError("A release must contain exactly one wheel and one sdist.")
+    if {path.name for path in bundle.iterdir()} != {
+        *[path.name for path in files],
+        "release.json",
+        "CHANGELOG.md",
+    }:
+        raise ValueError("Unexpected artifacts in the release bundle.")
+    verify_distributions(files, metadata["version"])
+    return {path.name: digest(path) for path in files}
 
 
 def published_hashes(version: str) -> dict[str, str]:
@@ -132,33 +110,26 @@ def verify_publication(expected: dict[str, str], version: str) -> None:
         time.sleep(min(20, remaining))
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "operation", choices=["seal", "stage", "verify", "verify-local"]
-    )
-    parser.add_argument("--bundle", type=Path, default=Path("release-bundle"))
-    parser.add_argument("--source", default="")
-    parser.add_argument("--tag", default="")
-    args = parser.parse_args()
-    if args.operation == "seal":
-        seal(args.bundle)
-        return
-    expected = verify(args.bundle, args.source, args.tag)
-    if args.operation == "verify-local":
-        return
-    metadata = json.loads((args.bundle / "release.json").read_text(encoding="utf-8"))
-    if args.operation == "verify":
-        verify_publication(expected, metadata["version"])
-        return
-    missing = reconcile(expected, published_hashes(metadata["version"]))
+def stage(bundle: Path, expected: dict[str, str], version: str) -> None:
+    """Retry only missing files from this workflow's original build artifact."""
+    missing = reconcile(expected, published_hashes(version))
     destination = Path("publish-dist")
     destination.mkdir(exist_ok=True)
     if any(destination.iterdir()):
         raise ValueError("Upload staging directory must be empty.")
     for name in missing:
-        shutil.copy2(args.bundle / name, destination / name)
+        shutil.copy2(bundle / name, destination / name)
     print(f"{len(missing)} distribution(s) need uploading.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("operation", choices=["verify-local"])
+    parser.add_argument("--bundle", type=Path, default=Path("release-bundle"))
+    parser.add_argument("--source", required=True)
+    parser.add_argument("--tag", required=True)
+    args = parser.parse_args()
+    verify(args.bundle, args.source, args.tag)
 
 
 if __name__ == "__main__":

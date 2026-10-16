@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import tempfile
 from dataclasses import asdict
@@ -42,20 +41,6 @@ def pages(endpoint: str) -> list[dict[str, Any]]:
     return [item for page in result for item in page]
 
 
-def github_release(repository: str, tag: str) -> dict[str, Any] | None:
-    """Find retained evidence, including drafts, with the token's push access."""
-    # GitHub's by-tag endpoint only finds published releases. Recovery must
-    # inspect the authorized listing so an existing draft is not mistaken for loss.
-    matches = [
-        record
-        for record in pages(f"repos/{repository}/releases?per_page=100")
-        if record["tag_name"] == tag
-    ]
-    if len(matches) > 1:
-        raise ValueError("Multiple GitHub releases claim the same tag.")
-    return matches[0] if matches else None
-
-
 def output(**values: str) -> None:
     if destination := os.environ.get("GITHUB_OUTPUT"):
         with Path(destination).open("a", encoding="utf-8") as stream:
@@ -72,6 +57,13 @@ def workflow_plan(destination: Path) -> None:
     run = event["workflow_run"]
     repository = os.environ["GITHUB_REPOSITORY"]
     branch, source = run["head_branch"], run["head_sha"]
+    if int(os.environ.get("GITHUB_RUN_ATTEMPT", "1")) > 1:
+        raise ValueError(
+            "Do not rerun all release jobs. Rerun failed jobs to reuse the original "
+            "build; if planning failed, rerun CI for the current commit."
+        )
+    if source != git("rev-parse", "HEAD"):
+        raise ValueError("CI source is superseded. Run CI for the current commit.")
     if not all(
         (
             os.environ.get("QUACKFRAME_RELEASES_ENABLED") == "true",
@@ -79,13 +71,10 @@ def workflow_plan(destination: Path) -> None:
             run["event"] == "push",
             run["head_repository"]["full_name"] == repository,
             branch in {"main", "release/next"},
-            source == git("rev-parse", "HEAD"),
         )
     ):
         output(release="false")
         return
-    # Resolve the reviewed selection before planning; an implicit newest-RC
-    # precheck can reject the exact tree of an explicitly accepted older RC.
     prs = pages(f"repos/{repository}/commits/{source}/pulls?per_page=100")
     merged = [
         pr
@@ -102,25 +91,17 @@ def workflow_plan(destination: Path) -> None:
         )
     pr = merged[0]
     flow: Flow = "candidate" if branch == "release/next" else "patch"
-    candidate: str | None = None
     if branch == "main" and pr["head"]["ref"] == "release/next":
         if not pr["head"]["repo"] or pr["head"]["repo"]["full_name"] != repository:
             raise ValueError(
                 "Promotion must originate from this repository's release/next."
             )
         flow = "promotion"
-        body = pr["body"] or ""
-        candidates = re.findall(r"^Candidate: (v\d+\.\d+\.\d+-rc\.\d+)\s*$", body, re.M)
-        if len(candidates) != 1 or not re.search(r"^Acceptance: \S.+$", body, re.M):
-            raise ValueError(
-                "Promotion PR must identify Candidate: and "
-                "consuming-project Acceptance: evidence."
-            )
-        candidate = candidates[0]
-    decision = plan(branch, flow=flow, candidate_tag=candidate)
+    decision = plan(branch, flow=flow)
     if decision is None:
         output(release="false")
         return
+    candidate_published(decision, repository)
     destination.write_text(
         json.dumps(asdict(decision), indent=2) + "\n", encoding="utf-8"
     )
@@ -136,9 +117,7 @@ def workflow_plan(destination: Path) -> None:
 def verify_bundle(bundle: Path, release: Release) -> dict[str, str]:
     hashes = verify(bundle, release.source, release.tag)
     if Release.read(bundle / "release.json") != release:
-        raise ValueError(
-            "Retained release decision conflicts with the planned identity."
-        )
+        raise ValueError("Build release decision conflicts with the planned identity.")
     return hashes
 
 
@@ -176,119 +155,55 @@ def candidate_published(release: Release, repository: str) -> None:
         hashes = verify(bundle, str(release.candidate_source), str(candidate))
         metadata = Release.read(bundle / "release.json")
         if metadata.flow != "candidate" or metadata.branch != "release/next":
-            raise ValueError("Selected RC has conflicting retained candidate identity.")
+            raise ValueError("Selected RC has conflicting candidate identity.")
         if reconcile(hashes, published_hashes(metadata.version)):
             raise ValueError("Selected RC publication on PyPI is incomplete.")
 
 
-def authorize(release: Release, bundle: Path, repository: str) -> None:
-    """Gate new builds and retries before any version reservation or upload."""
-    pending = [
-        r["tag_name"]
-        for r in pages(f"repos/{repository}/releases?per_page=100")
-        if r["draft"]
-    ]
-    if any(tag != release.tag for tag in pending):
-        raise ValueError(
-            "An earlier publication needs recovery before another release."
-        )
-    candidate_published(release, repository)
-    # A remote tag is a reservation even when its GitHub release is missing.
-    tagged = api(f"repos/{repository}/git/ref/tags/{release.tag}", optional=True)
-    if tagged is not None:
-        if api(f"repos/{repository}/commits/{release.tag}")["sha"] != release.source:
-            raise ValueError("Reserved tag belongs to another source.")
-        record = github_release(repository, release.tag)
-        if record is None:
-            raise ValueError("Reserved tag lacks retained GitHub release evidence.")
-        verify_github_identity(record, release)
-        download(release.tag, bundle)
-        verify_bundle(bundle, release)
-        output(exists="true")
-
-
-def retain(release: Release, bundle: Path, repository: str) -> None:
-    """Reserve a new identity once; retries require the original retained bundle."""
-    verify_bundle(bundle, release)
+def finalize(release: Release, bundle: Path, repository: str) -> None:
+    """Create the GitHub release only after the exact build is present on PyPI."""
+    hashes = verify_bundle(bundle, release)
+    if reconcile(hashes, published_hashes(release.version)):
+        raise ValueError("PyPI publication incomplete; cannot finalize.")
     candidate_published(release, repository)
     tagged = api(f"repos/{repository}/git/ref/tags/{release.tag}", optional=True)
-    record = github_release(repository, release.tag)
-    if tagged is not None:
-        if api(f"repos/{repository}/commits/{release.tag}")["sha"] != release.source:
-            raise ValueError("Reserved tag belongs to another source.")
-        if record is None:
-            raise ValueError(
-                "Reserved tag lacks retained evidence; "
-                "restore original assets through reviewed recovery."
-            )
-        verify_github_identity(record, release)
-        with tempfile.TemporaryDirectory(prefix="quackframe-retained-") as directory:
-            retained = Path(directory)
-            download(release.tag, retained)
-            verify_bundle(retained, release)
-            if (retained / "SHA256SUMS.json").read_bytes() != (
-                bundle / "SHA256SUMS.json"
-            ).read_bytes():
-                raise ValueError("Retained artifacts conflict with this bundle.")
-        return
+    if tagged is not None and (
+        api(f"repos/{repository}/commits/{release.tag}")["sha"] != release.source
+    ):
+        raise ValueError("Release tag belongs to another source.")
+    record = api(f"repos/{repository}/releases/tags/{release.tag}", optional=True)
     if record is not None:
-        raise ValueError("GitHub release exists without its reserved tag.")
-    command(
-        "gh",
-        "api",
-        "--method",
-        "POST",
-        f"repos/{repository}/git/refs",
-        "-f",
-        f"ref=refs/tags/{release.tag}",
-        "-f",
-        f"sha={release.source}",
-    )
+        if tagged is None:
+            raise ValueError("GitHub release has no matching source tag.")
+        verify_github_identity(record, release)
+        with tempfile.TemporaryDirectory(prefix="quackframe-release-") as directory:
+            existing = Path(directory)
+            download(release.tag, existing)
+            if verify_bundle(existing, release) != hashes:
+                raise ValueError("GitHub release artifacts differ from this build.")
+        return
+    # gh creates the tag at this exact commit together with the public release.
+    # If only the tag survived a failed request, the identity check above permits retry.
     command(
         "gh",
         "release",
         "create",
         release.tag,
-        *[str(p) for p in sorted(bundle.iterdir())],
+        *[str(path) for path in sorted(bundle.iterdir())],
         "--target",
         release.source,
-        "--draft",
         "--title",
         release.tag,
         "--notes-file",
         str(bundle / "CHANGELOG.md"),
-        *(["--prerelease"] if release.prerelease else []),
-    )
-
-
-def finalize(release: Release, bundle: Path, repository: str) -> None:
-    """Verify the remote tag, retained bytes and PyPI before completing GitHub."""
-    if api(f"repos/{repository}/git/ref/tags/{release.tag}", optional=True) is None:
-        raise ValueError("Finalization requires the original tag reservation.")
-    retain(release, bundle, repository)
-    if reconcile(verify_bundle(bundle, release), published_hashes(release.version)):
-        raise ValueError("PyPI publication incomplete; cannot finalize.")
-    record = github_release(repository, release.tag)
-    if record is None:
-        raise ValueError("Retained GitHub release disappeared before finalization.")
-    verify_github_identity(record, release)
-    if not record["draft"]:
-        return
-    command(
-        "gh",
-        "release",
-        "edit",
-        release.tag,
-        "--draft=false",
-        "--prerelease" if release.prerelease else "--prerelease=false",
-        "--latest=false" if release.prerelease else "--latest",
+        *(["--prerelease", "--latest=false"] if release.prerelease else ["--latest"]),
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "operation", choices=["plan", "authorize", "prepare", "retain", "finalize"]
+        "operation", choices=["plan", "prepare", "stage", "verify", "finalize"]
     )
     parser.add_argument("--decision", type=Path, default=Path("release-plan.json"))
     parser.add_argument("--bundle", type=Path, default=Path("release-bundle"))
@@ -311,8 +226,16 @@ def main() -> None:
 
         prepare(release, args.bundle)
         return
-    operations = {"authorize": authorize, "retain": retain, "finalize": finalize}
-    operations[args.operation](release, args.bundle, os.environ["GITHUB_REPOSITORY"])
+    if args.operation in {"stage", "verify"}:
+        from scripts.release_artifacts import stage, verify_publication
+
+        hashes = verify_bundle(args.bundle, release)
+        if args.operation == "stage":
+            stage(args.bundle, hashes, release.version)
+        else:
+            verify_publication(hashes, release.version)
+        return
+    finalize(release, args.bundle, os.environ["GITHUB_REPOSITORY"])
 
 
 if __name__ == "__main__":
