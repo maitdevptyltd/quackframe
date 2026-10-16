@@ -8,7 +8,8 @@ Review: 2026-10-08, commit `a7ab17974d25a5c9289fbacef22db4a9144e9324`
 
 This is a temporary working checklist of Maitland's feedback, not a new public
 contract. Summaries below are paraphrases; linked GitHub comments are authoritative.
-All 28 inline comments are represented once. Overview-only actions are separate.
+All 28 inline comments are represented. R07 and R08 separately track the two
+issues raised in one comment. Overview-only actions are separate.
 
 A checked box means implemented, clarification requested, deliberately declined,
 or assigned an agreed follow-up; it does not mean every item has shipped. Record the decision, implementation/commit, and verification in its
@@ -27,8 +28,8 @@ status and previously completed verification.
 
 ## Reconciled status — 2026-10-16
 
-This table covers **32 tracking entries: 28 inline comments and four overview
-items**, not 32 separate comments. Detailed decisions and verification evidence
+This table covers **33 tracking entries from 28 inline comments and four overview
+items**; one inline comment is split into R07 and R08. Detailed decisions and verification evidence
 follow below. Verification results are recorded evidence, not tests rerun during
 this documentation reconciliation.
 
@@ -45,7 +46,8 @@ this documentation reconciliation.
 | R04 | TOML extension loading | Addressed: awaiting clarification | db03680; comment 4267371558 |
 | R05 | Empty function installation | Complete; five targeted checks passed | be1ab72, 9b19e0d |
 | R06 | Progress logging | Implemented locally; downstream manual test pending | [Scope](../docs/epics/02-result-logging/03-progress-logging.md) |
-| R07 | Result selection and annotations | Not started; separate logging work | — |
+| R07 | Result annotation placement | Pending discussion; current focus | — |
+| R08 | Supported result statement types | Not started; separate discussion | — |
 | C01 | Python database-path mode | Complete; example updated | d88cd5f, 09d697d |
 | C02 | Configuration runtime root | Complete | 6e2be2f |
 | C03 | Typed DuckDB settings | Complete | 22c1491 |
@@ -76,7 +78,7 @@ this documentation reconciliation.
 - The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
   feedback fixes as already present in the PR. Live PR state was not rechecked
   during this local reconciliation.
-- Remaining implementation decisions/work: **S04 and R07**; R06 awaits the user's
+- Remaining implementation decisions/work: **S04, R07 and R08**; R06 awaits the user's
   downstream manual test. Remaining
   delivery/setup: run hosted V01/O02 verification, and finish
   P02 environment configuration before enabling publication.
@@ -104,7 +106,8 @@ this documentation reconciliation.
   - [R04: Community extensions](#r04-community-extensions)
   - [R05: Read-only databases](#r05-read-only-databases)
   - [R06: Progress logging](#r06-progress-logging)
-  - [R07: Result statement selection and annotations](#r07-result-statement-selection-and-annotations)
+  - [R07: Result annotation placement](#r07-result-annotation-placement)
+  - [R08: Supported result statement types](#r08-supported-result-statement-types)
 - [Configuration and dependencies](#configuration-and-dependencies)
   - [C01: Python database-path consistency](#c01-python-database-path-consistency)
   - [C02: Relative configuration paths](#c02-relative-configuration-paths)
@@ -305,12 +308,20 @@ git diff --check
   signature mismatch, recorded in the scope. Changes remain local and
   uncommitted; no live services were used.
 
-### R07 Result statement selection and annotations
+### R07 Result annotation placement
 
 - [ ] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323378) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql.py#L202) · [Local file](../src/quackframe/sql.py)
-- Feedback: Review CALL, EXPLAIN ANALYZE and MERGE RETURNING support; fix trailing annotations attaching to the next statement.
-- Decision: Pending discussion.
+- Feedback: A trailing `-- quackframe: log-result` after a statement's semicolon attaches to the next statement.
+- Decision: Discuss placement independently of supported statement types. Placement behaviour is not yet agreed; no implementation authorised by this split.
+- Resolution / verification: Pending.
+
+### R08 Supported result statement types
+
+- [ ] Addressed
+- Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323378) · [Local file](../src/quackframe/sql.py)
+- Feedback: Review CALL, EXPLAIN ANALYZE and MERGE RETURNING support; annotations reject these statement types and `log_setting = "all"` skips them.
+- Decision: Separate from R07. Defer discussion until annotation placement is settled.
 - Resolution / verification: Pending.
 
 ## Configuration and dependencies
