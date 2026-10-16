@@ -83,7 +83,12 @@ this documentation reconciliation.
   task now emits two safe progress failures plus a detailed local-only diagnostic,
   and direct filesystem failures retain details. Their three focused cases pass
   after correction, including an explicit `send_to_api=False` assertion for the
-  diagnostic. The broader run is still in progress; no full-suite pass is claimed.
+  diagnostic. The broader run completed with 823 passed, five failures and four
+  opt-in controls deselected. Two failures used assertions already corrected in
+  `6d60c51`; the remaining three shared one stale SFTP probe assertion expecting
+  a missing filename to be hidden in direct execution. Corrected that assertion;
+  all three loopback SFTP cases pass. Each of the five full-run failures has now
+  passed a focused rerun; this is not a fresh all-green full-suite run.
   Hosted matrix success is not yet established.
 - Hosted [CI run 38863934256](https://github.com/maitdevptyltd/quackframe/actions/runs/38863934256)
   passed the package build and clean-wheel smoke check, but all seven test jobs
