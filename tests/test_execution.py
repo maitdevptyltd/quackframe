@@ -222,7 +222,9 @@ def test_trailing_annotation_never_selects_next_result(
 ) -> None:
     sql_file = _write(
         tmp_path / "results.sql",
-        "SELECT 'shown-é' AS value; " + comment + "-- quackframe: log-result"
+        "SELECT 'shown-é' AS value; "
+        + comment
+        + "-- quackframe: log-result"
         + newline
         + "SELECT 'private-next' AS value;",
     )
@@ -262,7 +264,7 @@ def test_final_trailing_annotation_emits_result(
     [
         "SELECT '-- quackframe: log-result'",
         "SELECT $$-- quackframe: log-result$$",
-        "SELECT 1 AS \"-- quackframe: log-result\"",
+        'SELECT 1 AS "-- quackframe: log-result"',
         "SELECT 1 /* -- quackframe: log-result */",
         "SELECT 1/* -- quackframe: log-result */",
         "SELECT 1/* -- quackframe: log-result\n*/",

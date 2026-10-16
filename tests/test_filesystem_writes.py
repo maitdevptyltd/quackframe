@@ -37,7 +37,6 @@ def writable_sftp(tmp_path: Path) -> Iterator[LoopbackServer]:
         server.close()
 
 
-
 @pytest.mark.parametrize("format", ["CSV", "PARQUET"])
 @pytest.mark.parametrize("partitioned", [False, True])
 @pytest.mark.parametrize("rows", [0, 10000])
@@ -114,7 +113,6 @@ def test_sftp_exports_and_reads_back(
     writable_sftp.wait_disconnected()
 
 
-
 @pytest.mark.parametrize("operation", ["read", "write", "flush", "commit", "close"])
 def test_deferred_errors_never_expose_backend_payloads(operation: str) -> None:
     file = Mock()
@@ -125,7 +123,6 @@ def test_deferred_errors_never_expose_backend_payloads(operation: str) -> None:
         ) if operation == "write" else getattr(SafeFile(file), operation)()
     assert "protected" not in str(error.value)
     assert error.value.__suppress_context__
-
 
 
 def test_sftp_read_only_account_rejects_writes(
@@ -164,7 +161,6 @@ def test_sftp_read_only_account_rejects_writes(
     writable_sftp.wait_disconnected()
 
 
-
 def test_sftp_parallel_reads_and_writes_share_the_exchange_lock(
     writable_sftp: LoopbackServer,
     tmp_path: Path,
@@ -195,7 +191,6 @@ def test_sftp_parallel_reads_and_writes_share_the_exchange_lock(
     writable_sftp.wait_disconnected()
 
 
-
 def test_sftp_close_acknowledgement_failure_is_not_suppressed() -> None:
     from quackframe.sql_functions.register_filesystem.sftp import SerializedSFTPFile
 
@@ -211,7 +206,6 @@ def test_sftp_close_acknowledgement_failure_is_not_suppressed() -> None:
     assert "protected" not in str(error.value)
     assert file._closed is True
     file.flush.assert_called_once()
-
 
 
 def test_file_cleanup_preserves_primary_failure() -> None:

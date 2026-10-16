@@ -137,10 +137,13 @@ def test_empty_installation_preserves_caller_transaction_and_catalog() -> None:
         install_functions(connection, ())
 
         assert connection.execute("SELECT * FROM caller_work").fetchall() == [(1,)]
-        assert connection.execute(
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name = 'quackframe'"
-        ).fetchall() == []
+        assert (
+            connection.execute(
+                "SELECT schema_name FROM information_schema.schemata "
+                "WHERE schema_name = 'quackframe'"
+            ).fetchall()
+            == []
+        )
         connection.execute("ROLLBACK")
         assert connection.execute("SELECT * FROM caller_work").fetchall() == []
 
@@ -170,10 +173,13 @@ def test_no_functions_permits_read_only_execution(
     assert result.statement_count == 1
     with duckdb.connect(str(database_path), read_only=True) as connection:
         assert connection.execute("SELECT * FROM caller_data").fetchall() == [(42,)]
-        assert connection.execute(
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name = 'quackframe'"
-        ).fetchall() == []
+        assert (
+            connection.execute(
+                "SELECT schema_name FROM information_schema.schemata "
+                "WHERE schema_name = 'quackframe'"
+            ).fetchall()
+            == []
+        )
 
 
 def test_failed_begin_leaves_caller_responsible_for_transaction(

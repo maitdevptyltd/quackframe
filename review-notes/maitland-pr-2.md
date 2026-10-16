@@ -55,7 +55,7 @@ this documentation reconciliation.
 | C05 | TOML authority | Complete | 439302c |
 | C06 | DuckDB compatible range | Complete | 7fe2f92 |
 | C07 | fsspec upper bound | Addressed: awaiting clarification | 3deccbc; comment 4266977546 |
-| V01 | Linux and package CI | Committed; local smoke passed; hosted matrix pending | 642a090 |
+| V01 | Linux and package CI | Hosted package passed; formatting blocker corrected locally; test matrix rerun pending | 642a090; follow-up below |
 | V02 | Opt-in upstream controls | Complete; collection verified | c537209 |
 | V03 | Repository cleanup | Complete; package inventories and targeted checks passed | 67d279b, 2aa2c02, a42732d |
 | V04 | Credential table | Complete | d387309 |
@@ -71,6 +71,14 @@ this documentation reconciliation.
 
 ### Branch and verification handover
 
+- Hosted [CI run 38863934256](https://github.com/maitdevptyltd/quackframe/actions/runs/38863934256)
+  passed the package build and clean-wheel smoke check, but all seven test jobs
+  stopped at Ruff formatting; tests, types and documentation checks were skipped.
+  Applied Ruff formatting only to `test_config.py`, `test_database.py`,
+  `test_execution.py`, `test_filesystem_writes.py` and `test_sql_functions.py`.
+  The exact CI lint and format commands now pass locally (83 files formatted).
+  The diff contains formatting changes only; hosted test matrix success remains
+  unverified until the follow-up run completes.
 - On 2026-10-16, posted and verified 24 commit-linked replies to Maitland's
   inline threads, covering implemented changes and explicitly distinguishing
   outstanding hosted verification and external release setup. An
@@ -518,8 +526,11 @@ git diff --check
   runs. WSL's installed Poetry 1.8.2 could not parse current wheel metadata;
   a disposable Poetry 2.2.1 environment completed the Linux checks without
   changing installed tools. The V03-built sdist and wheel also passed Twine.
-  Hosted matrix execution, Linux/Python 3.14 and optional-extras coverage remain
-  pending. No full suite, hosted workflow or publication was triggered.
+  Subsequent hosted run 38863934256 passed the package job, including its
+  Linux/Python 3.14 clean-wheel smoke check. All seven test jobs failed formatting
+  before tests ran. The five flagged files have now been formatted and the exact
+  CI lint/format commands pass locally; hosted test and optional-extras coverage
+  remain pending the follow-up run. No publication was triggered.
 
 ### V02 Opt-in upstream deadlock controls
 

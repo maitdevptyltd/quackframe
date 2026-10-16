@@ -730,7 +730,7 @@ def test_explicit_temporary_database_paths_are_rejected(
             )
         else:
             (tmp_path / "pyproject.toml").write_text(
-                '[tool.quackframe.database]\n'
+                "[tool.quackframe.database]\n"
                 'mode = "temporary"\npath = "caller.duckdb"',
                 encoding="utf-8",
             )
@@ -751,9 +751,7 @@ def test_temporary_override_clears_inherited_persistent_path(
         root=tmp_path,
         database_mode="temporary" if source == "python" else None,
         environ=(
-            {"QUACKFRAME_DATABASE_MODE": "temporary"}
-            if source == "environment"
-            else {}
+            {"QUACKFRAME_DATABASE_MODE": "temporary"} if source == "environment" else {}
         ),
     )
     assert config.database.mode == "temporary"

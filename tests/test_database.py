@@ -68,9 +68,7 @@ def test_default_temporary_directory_failure_has_configuration_cli_exit_code(
 def test_failed_connection_removes_partial_temporary_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary")
-    )
+    config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
 
     def fail_open(path: str, config: QuackframeConfig) -> DuckDBPyConnection:
         Path(path).write_bytes(b"partial database")
@@ -91,9 +89,7 @@ def test_failed_connection_removes_partial_temporary_files(
 
 
 def test_sql_failure_removes_temporary_files(tmp_path: Path) -> None:
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary")
-    )
+    config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
     with (
         pytest.raises(CatalogException, match="missing_table"),
         database.open_duckdb_session(config) as connection,
@@ -115,9 +111,7 @@ def test_cleanup_failure_preserves_execution_outcome(
         "SELECT 1; SELECT * FROM missing_table" if sql_fails else "SELECT 1",
         encoding="utf-8",
     )
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary")
-    )
+    config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
     original_unlink = Path.unlink
 
     def fail_unlink(target: Path, missing_ok: bool = False) -> None:
@@ -160,9 +154,7 @@ def test_failed_database_cleanup_keeps_sql_cli_exit_code(
 def test_cleanup_failure_preserves_setup_or_interruption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool
 ) -> None:
-    config = QuackframeConfig(
-        root=tmp_path, database=DatabaseConfig(mode="temporary")
-    )
+    config = QuackframeConfig(root=tmp_path, database=DatabaseConfig(mode="temporary"))
     primary_error = (
         KeyboardInterrupt() if interrupted else ConfigurationError("Setup failed")
     )
