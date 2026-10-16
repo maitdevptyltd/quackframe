@@ -46,7 +46,7 @@ this documentation reconciliation.
 | R04 | TOML extension loading | Addressed: awaiting clarification | db03680; comment 4267371558 |
 | R05 | Empty function installation | Complete; five targeted checks passed | be1ab72, 9b19e0d |
 | R06 | Progress logging | Implemented locally; downstream manual test pending | [Scope](../docs/epics/02-result-logging/03-progress-logging.md) |
-| R07 | Result annotation placement | Pending discussion; current focus | — |
+| R07 | Result annotation placement | Complete; independent re-review clear | [Scope](../docs/epics/02-result-logging/01-sql-result-logging.md) |
 | R08 | Supported result statement types | Not started; separate discussion | — |
 | C01 | Python database-path mode | Complete; example updated | d88cd5f, 09d697d |
 | C02 | Configuration runtime root | Complete | 6e2be2f |
@@ -78,7 +78,7 @@ this documentation reconciliation.
 - The last verified PR head was `feat/setup` at `a7ab179`; do not describe local
   feedback fixes as already present in the PR. Live PR state was not rechecked
   during this local reconciliation.
-- Remaining implementation decisions/work: **S04, R07 and R08**; R06 awaits the user's
+- Remaining implementation decisions/work: **S04 and R08**; R06 awaits the user's
   downstream manual test. Remaining
   delivery/setup: run hosted V01/O02 verification, and finish
   P02 environment configuration before enabling publication.
@@ -310,11 +310,25 @@ git diff --check
 
 ### R07 Result annotation placement
 
-- [ ] Addressed
+- [x] Addressed
 - Source: [GitHub comment](https://github.com/maitdevptyltd/quackframe/pull/2#discussion_r4213323378) · [Reviewed code](https://github.com/maitdevptyltd/quackframe/blob/a7ab17974d25a5c9289fbacef22db4a9144e9324/src/quackframe/sql.py#L202) · [Local file](../src/quackframe/sql.py)
 - Feedback: A trailing `-- quackframe: log-result` after a statement's semicolon attaches to the next statement.
-- Decision: Discuss placement independently of supported statement types. Placement behaviour is not yet agreed; no implementation authorised by this split.
-- Resolution / verification: Pending.
+- Decision: Standalone annotations immediately before SQL select the next
+  statement. Same-line trailing annotations select the preceding statement,
+  including the final statement without a semicolon. R08 remains separate.
+- Resolution / verification: Implemented locally with 43 focused annotation and
+  RETURNING tests plus eight final-statement cases passing. Scoped Ruff,
+  documentation links and whitespace checks
+  pass. Scoped Pyright reports an existing unknown DuckDB `create_function`
+  overload in unchanged test code; the SQL module passes scoped Pyright.
+  Independent review's block-comment false-positive finding is fixed: unquoted
+  token matching stops before block comments, and adjacent single-line/multiline
+  block comments have regression coverage. A second review finding is fixed by
+  keeping intervening same-line block comments and the trailing line annotation
+  with the preceding statement. Regressions cover ordinary and nested block
+  comments. Independent re-review cleared both findings with 45 focused
+  annotation/RETURNING tests passing and a clean whitespace check. Implemented
+  in the commit containing this entry; R08 remains outside this change.
 
 ### R08 Supported result statement types
 

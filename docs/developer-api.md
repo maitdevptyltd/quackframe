@@ -64,6 +64,18 @@ SELECT verification_status, mismatch_count
 FROM verification_summary;
 ```
 
+An annotation on its own line selects the following statement. Alternatively,
+put it on the same line after SQL to select that preceding statement:
+
+```sql
+SELECT 'visible'; -- quackframe: log-result
+SELECT 'not logged';
+```
+
+The trailing form also works on the final statement without a semicolon.
+Annotation text inside SQL strings or quoted identifiers does not select results.
+`none` ignores both forms; `all` emits each supported result once.
+
 DuckDB's native relation representation owns table formatting and truncation.
 The same values may be supplied through `QUACKFRAME_LOG_SETTING`; an explicit
 CLI value takes precedence.

@@ -1,7 +1,7 @@
 # SQL Result Logging
 
 Status: **In Progress**
-Last updated: 2026-10-13
+Last updated: 2026-10-16
 Epic: 02 Result Logging
 Phase: 01
 Related docs: [Developer API](../../developer-api.md), [Execution Lifecycle](../../execution-lifecycle.md), [Runtime Adapters](../../runtime-adapters.md)
@@ -36,6 +36,15 @@ FROM verification_summary;
 
 Each selected result is emitted once. An annotation does not duplicate output
 when `all` is selected.
+
+R07 approved placement: an annotation on its own line immediately before SQL
+selects the following statement. A `-- quackframe: log-result` comment on the
+same line after a statement selects that preceding statement, including after
+its semicolon or on the final statement without a semicolon. It must never
+select the next statement. Existing result-type support and external permissions
+are unchanged; CALL, EXPLAIN and MERGE support belongs to R08. Implementation
+and focused annotation regression validation are complete, with independent
+review clearance. The phase remains in progress for its other criteria.
 
 The setting is also available as `QUACKFRAME_LOG_SETTING`. An explicit
 `--log-setting` CLI value or direct Python configuration value takes precedence
@@ -129,7 +138,8 @@ deployment or invocation decision.
 
 - Use DuckDB's parser and execution result metadata; do not implement a general
   SQL parser or split statements on semicolons.
-- Associate an annotation with exactly the next DuckDB statement and reject or
+- Associate an annotation with its intended DuckDB statement according to
+  standalone or trailing placement and reject or
   report misplaced annotations clearly.
 - Materialize a selected relation once in a uniquely named temporary DuckDB
   table, then use that table's native relation rendering as the complete payload.
@@ -172,6 +182,24 @@ Validation: 19 focused adapter and execution tests, source/test Ruff checks,
 Pyright, documentation links, and whitespace checks pass. Repository-wide Ruff
 still reports existing prototype issues under `MAD.Utilities.DuckDB`.
 The phase remains in progress; this fix does not reassess all phase criteria.
+
+The 2026-10-16 annotation placement fix keeps same-line comments in the preceding
+source statement and checks annotations against the original SQL, including
+trailing comments omitted by DuckDB's parsed statement. Validation: 43 focused
+annotation and RETURNING tests plus eight final-statement cases passed, as did
+scoped Ruff, documentation links,
+and whitespace checks. Scoped Pyright reports one existing unknown
+`create_function` overload in the unchanged execution test; the SQL module
+passes scoped Pyright. Independent review found that an adjacent block comment
+could be consumed as part of an unquoted token, allowing its annotation text to
+select a result. The token match now stops before block comments, with regression
+coverage for single-line and multiline comments. A second finding showed that
+an intervening block comment could leave a same-line annotation attached to the
+next statement. Statement splitting and annotation detection now share a small
+comment reader that skips whole block comments and recognises the trailing line
+annotation. Regressions cover ordinary and nested block comments. Independent
+re-review cleared both findings with 45 focused annotation/RETURNING tests
+passing and a clean whitespace check. R08 remains outside this change.
 
 - Prove that omitted `--log-setting` resolves to `annotations-only`.
 - Prove `--log-setting` overrides `QUACKFRAME_LOG_SETTING`.

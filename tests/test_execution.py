@@ -208,6 +208,88 @@ SELECT 'shown;value' AS visible;
     assert "returning" not in output
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize(
+    "comment", ["", "/* ordinary comment */ ", "/* outer /* inner */ comment */ "]
+)
+@pytest.mark.parametrize("log_setting", ["annotations-only", "none", "all"])
+def test_trailing_annotation_never_selects_next_result(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    newline: str,
+    comment: str,
+    log_setting: LogSetting,
+) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        "SELECT 'shown-é' AS value; " + comment + "-- quackframe: log-result"
+        + newline
+        + "SELECT 'private-next' AS value;",
+    )
+
+    run([sql_file], config=QuackframeConfig(root=tmp_path, log_setting=log_setting))
+
+    output = capsys.readouterr().out
+    assert output.count("shown-é") == (0 if log_setting == "none" else 1)
+    assert output.count("private-next") == (1 if log_setting == "all" else 0)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 'shown' -- quackframe: log-result",
+        "SELECT 'shown'; -- quackframe: log-result",
+        "SELECT 'shown' /* ordinary comment */ -- quackframe: log-result",
+        "SELECT 'shown' -- quackframe: log-result\n-- ordinary final comment",
+        "SELECT 'shown' AS \"quoted -- name\" -- quackframe: log-result",
+        "SELECT $$shown$$ -- quackframe: log-result",
+        "SELECT $tag$shown$tag$ -- quackframe: log-result",
+        "SELECT 'it''s shown' -- quackframe: log-result",
+    ],
+)
+def test_final_trailing_annotation_emits_result(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sql: str
+) -> None:
+    sql_file = _write(tmp_path / "results.sql", sql)
+
+    run([sql_file], config=QuackframeConfig(root=tmp_path))
+
+    assert "shown" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT '-- quackframe: log-result'",
+        "SELECT $$-- quackframe: log-result$$",
+        "SELECT 1 AS \"-- quackframe: log-result\"",
+        "SELECT 1 /* -- quackframe: log-result */",
+        "SELECT 1/* -- quackframe: log-result */",
+        "SELECT 1/* -- quackframe: log-result\n*/",
+        "SELECT -- quackframe: log-result\n1;",
+        "SELECT 1; -- ordinary comment\nSELECT 'private-next';",
+    ],
+)
+def test_annotation_text_inside_sql_does_not_select_results(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], sql: str
+) -> None:
+    sql_file = _write(tmp_path / "results.sql", sql)
+
+    run([sql_file], config=QuackframeConfig(root=tmp_path))
+
+    assert capsys.readouterr().out == ""
+
+
+def test_trailing_annotation_rejects_non_result_statement(tmp_path: Path) -> None:
+    sql_file = _write(
+        tmp_path / "results.sql",
+        "CREATE TABLE example(value INTEGER); -- quackframe: log-result\nSELECT 1;",
+    )
+
+    with pytest.raises(ExecutionError, match="requires a result-producing statement"):
+        prepare_sql_files([sql_file], root=tmp_path, log_setting="annotations-only")
+
+
 def test_native_relation_rendering_owns_truncation(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -107,7 +108,9 @@ def prepare_sql_files(
                     prepared_statements.append(
                         PreparedSqlStatement(
                             statement=statement,
-                            emit_result=_should_emit_result(statement, log_setting),
+                            emit_result=_should_emit_result(
+                                statement, log_setting, query
+                            ),
                             query=query,
                             source_offset=offset,
                         )
@@ -282,25 +285,28 @@ def result_logging_can_emit(
     )
 
 
-def _should_emit_result(statement: Statement, log_setting: LogSetting) -> bool:
+def _should_emit_result(
+    statement: Statement, log_setting: LogSetting, query: str
+) -> bool:
     """Apply the resolved selection rule to one DuckDB-parsed statement."""
 
     if log_setting == "none":
         return False
 
-    annotation_state = _annotation_state(statement.query)
+    annotation_state = _annotation_state(query)
     if annotation_state == "misplaced":
         raise _SqlPreparationError(
             "The quackframe result annotation must be the final comment "
             "immediately before its statement"
         )
 
+    selected = annotation_state == "selected" or _has_trailing_annotation(query)
     result_producing = _is_result_producing(statement)
-    if annotation_state == "selected" and not result_producing:
+    if selected and not result_producing:
         raise _SqlPreparationError(
             "The quackframe result annotation requires a result-producing statement"
         )
-    return result_producing and (log_setting == "all" or annotation_state == "selected")
+    return result_producing and (log_setting == "all" or selected)
 
 
 def _is_result_producing(statement: Statement) -> bool:
@@ -358,6 +364,57 @@ def _leading_comments(query: str) -> tuple[str, ...]:
     return tuple(comments)
 
 
+def _has_trailing_annotation(query: str) -> bool:
+    """Recognise a line annotation immediately after the last SQL token."""
+
+    position, _ = tokenize(query)[-1]
+    tail = query.encode("utf-8")[position:].decode("utf-8")
+    # Start at DuckDB's last token so comments elsewhere in SQL cannot select it.
+    # Quoted tokens can contain comment markers. Unquoted tokens must stop before
+    # a block comment so its contents cannot opt a result into logging.
+    token = r"(?:'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"|\$(\w*)\$.*?\$\1\$|[^\s'\"$/-]+)"
+    matched = re.match(token, tail, flags=re.DOTALL)
+    if matched is None:
+        return False
+    _, selected = _trailing_comments(tail[matched.end() :].encode("utf-8"), 0)
+    return selected
+
+
+def _trailing_comments(source: bytes, start: int) -> tuple[int, bool]:
+    """Keep same-line comments with SQL and recognise its line annotation."""
+
+    position = start
+    while position < len(source):
+        if source[position : position + 1] in (b" ", b"\t", b"\r"):
+            position += 1
+            continue
+        if source.startswith(b"--", position):
+            end = source.find(b"\n", position)
+            if end == -1:
+                end = len(source)
+            selected = source[position + 2 : end].strip() == b"quackframe: log-result"
+            return end, selected
+        if not source.startswith(b"/*", position):
+            break
+
+        # Skip whole block comments, including nested ones. Their contents must
+        # not be mistaken for the line annotation that follows them.
+        depth = 1
+        end = position + 2
+        for marker in re.finditer(rb"/\*|\*/", source[end:]):
+            depth += 1 if marker.group() == b"/*" else -1
+            if depth == 0:
+                end += marker.end()
+                break
+        if depth:
+            break
+        if b"\n" in source[position:end]:
+            return end, False
+        position = end
+
+    return position, False
+
+
 def _contains_sql_keyword(query: str, keyword: str) -> bool:
     """Find one keyword using DuckDB's own SQL tokenization rules."""
 
@@ -395,8 +452,12 @@ def _source_statements(source: str) -> Iterable[tuple[int, str]]:
     start = 0
     for position, kind in tokenize(source):
         if kind == token_type.operator and encoded[position : position + 1] == b";":
-            yield start, encoded[start : position + 1].decode("utf-8")
-            start = position + 1
+            end = position + 1
+            # A same-line comment belongs to this statement. Leaving it in the
+            # next slice could expose the next statement's unselected result.
+            end, _ = _trailing_comments(encoded, end)
+            yield start, encoded[start:end].decode("utf-8")
+            start = end
     if start < len(encoded):
         yield start, encoded[start:].decode("utf-8")
 
