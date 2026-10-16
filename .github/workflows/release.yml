@@ -1,0 +1,185 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, release/next]
+
+# Serialize both lines and retries. Do not interrupt an upload with a newer merge.
+concurrency:
+  group: quackframe-publication
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    permissions:
+      contents: read
+      pull-requests: read
+    if: >-
+      vars.QUACKFRAME_RELEASES_ENABLED == 'true' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      decision: ${{ steps.plan.outputs.decision }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    env:
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      QUACKFRAME_RELEASES_ENABLED: ${{ vars.QUACKFRAME_RELEASES_ENABLED }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install trusted locked release tools
+        run: |
+          python -m pip install poetry==2.2.1
+          poetry -C tooling install --no-root --no-interaction
+      - name: Calculate the release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" --repository "$GITHUB_WORKSPACE/source" release_workflow plan --decision "$GITHUB_WORKSPACE/release-plan.json"
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.release == 'true'
+        with:
+          name: release-decision
+          path: release-plan.json
+          if-no-files-found: error
+
+  package:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    # Candidate build hooks and installed wheels run only in this read-only job.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install trusted locked build tools
+        run: |
+          python -m pip install poetry==2.2.1
+          poetry -C tooling install --no-root --no-interaction
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-decision
+          path: decision
+      - name: Select exact build source
+        run: git -C source checkout -B "$BRANCH" "$SOURCE"
+      - name: Stamp, build and check distributions
+        run: |
+          poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" --repository "$GITHUB_WORKSPACE/source" release_workflow prepare --decision "$GITHUB_WORKSPACE/decision/release-plan.json" --bundle "$GITHUB_WORKSPACE/release-bundle"
+          poetry -C tooling run python -I -m build --no-isolation --outdir "$GITHUB_WORKSPACE/release-bundle" "$GITHUB_WORKSPACE/source"
+          poetry -C tooling run python -I -m twine check "$GITHUB_WORKSPACE"/release-bundle/*.whl "$GITHUB_WORKSPACE"/release-bundle/*.tar.gz
+          python -I tooling/scripts/release_entrypoint.py release_artifacts verify-local --source "$SOURCE" --tag "$TAG"
+      - name: Test the wheel outside the source checkout
+        run: poetry -C tooling run python -I "$GITHUB_WORKSPACE/tooling/scripts/release_entrypoint.py" package_smoke "$GITHUB_WORKSPACE"/release-bundle/*.whl "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle/
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: [plan, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle
+      - name: Stage only verified missing distributions
+        run: python -I scripts/release_entrypoint.py release_workflow stage
+      - name: Publish using PyPI Trusted Publishing
+        if: hashFiles('publish-dist/*') != ''
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: publish-dist/
+      - name: Verify uploaded hashes
+        run: python -I scripts/release_entrypoint.py release_workflow verify
+
+  finalize:
+    needs: [plan, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    env:
+      PLANNED_RELEASE: ${{ needs.plan.outputs.decision }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE: ${{ github.event.workflow_run.head_sha }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release-bundle
+      - name: Create repository release token
+        id: release-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.QUACKFRAME_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.QUACKFRAME_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Publish the verified GitHub release
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: python -I scripts/release_entrypoint.py release_workflow finalize

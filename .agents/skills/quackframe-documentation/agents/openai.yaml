@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quackframe Documentation"
+  short_description: "Maintain Quackframe docs, epics, agent guidance, diagrams, and knowledge-graph links."
+  default_prompt: "Use the Quackframe documentation skill to update the architecture docs."
