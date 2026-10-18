@@ -37,7 +37,10 @@ def prefect_logs(
 ) -> Iterator[tuple[io.StringIO, list[dict[str, Any]]]]:
     terminal = io.StringIO()
     outgoing: list[dict[str, Any]] = []
-    monkeypatch.setattr(handlers, "emit_api_log", outgoing.append)
+    # Intercept the worker boundary shared by Prefect 3.2 and later versions;
+    # keep the real API handler's filtering and payload preparation in use.
+    worker = Mock(send=outgoing.append)
+    monkeypatch.setattr(handlers.APILogWorker, "instance", Mock(return_value=worker))
     logger = logging.getLogger("prefect.task_runs")
     monkeypatch.setattr(
         logger,

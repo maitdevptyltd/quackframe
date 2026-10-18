@@ -1,7 +1,7 @@
 # PR 2 — Maitland review checklist
 
 Status: **Open**
-Last updated: 2026-10-16
+Last updated: 2026-10-19
 Review: 2026-10-08, commit `a7ab17974d25a5c9289fbacef22db4a9144e9324`
 
 [Pull request](https://github.com/maitdevptyltd/quackframe/pull/2) · [Maitland's overview](https://github.com/maitdevptyltd/quackframe/pull/2#pullrequestreview-5449915627) · [Documentation index](../docs/README.md)
@@ -71,6 +71,15 @@ this documentation reconciliation.
 
 ### Branch and verification handover
 
+- The Prefect 3.2.0 job in [CI run 38867742697](https://github.com/maitdevptyltd/quackframe/actions/runs/38867742697)
+  failed because the error-destination fixture intercepted `emit_api_log`, which
+  that version does not provide. The fixture now intercepts `APILogWorker.instance`
+  instead, retaining the real handler's filtering and payload preparation. All
+  11 error-destination tests pass on Prefect 3.2.0 and locked Prefect 3.8.6,
+  including local-only defaults and explicitly allowed external diagnostics.
+  Changed-file Ruff, formatting, Pyright and diff checks pass. This is a test-only
+  fix; production logging and dependency declarations are unchanged. Hosted
+  confirmation and the separate Linux SFTP failures remain outstanding.
 - Follow-up [CI run 38864749194](https://github.com/maitdevptyltd/quackframe/actions/runs/38864749194)
   passed formatting in all seven jobs and passed the package job after `d42f69a`.
   Windows core jobs then reported four stale tests: two test doubles lacked new
