@@ -71,6 +71,22 @@ this documentation reconciliation.
 
 ### Branch and verification handover
 
+- Linux SFTP follow-up (2026-10-19): the loopback test server now enables
+  `TCP_NODELAY` on accepted sockets before constructing the Paramiko transport.
+  Investigation reproduced progressing reads exceeding the 60-second limit;
+  disabling Nagle buffering reduced median traced READ latency from 43.83 ms to
+  0.90 ms. Production code, datasets, assertions and timeouts are unchanged.
+  Ubuntu/Python 3.12.3, DuckDB 1.5.5, fsspec 2026.7.0 and Paramiko 4.0.0:
+  **21 targeted checks passed in 411.47 seconds**, without the diagnostic plugin.
+  Coverage: four CSV-count cases; traced one/four-thread DuckDB diagnostics;
+  ten production-registration repeats (five traced, five untraced); two runtime
+  cleanup cases; two prompt-failure cases; and bounded stalled-server cleanup.
+  Changed-file Ruff lint/format and Linux Pyright passed; documentation links
+  and diff checks passed. The initial Windows Pyright invocation could not resolve
+  test dependencies; the Linux check explicitly selected the populated interpreter.
+  Logs are retained at `/tmp/quackframe-sftp-investigation/verified.log` in Ubuntu.
+  No full suite or opt-in upstream controls were run. Hosted matrix confirmation
+  remains pending; this does not establish that all 26 CI failures are resolved.
 - The Prefect 3.2.0 job in [CI run 38867742697](https://github.com/maitdevptyltd/quackframe/actions/runs/38867742697)
   failed because the error-destination fixture intercepted `emit_api_log`, which
   that version does not provide. The fixture now intercepts `APILogWorker.instance`

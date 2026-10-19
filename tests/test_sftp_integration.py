@@ -196,6 +196,8 @@ class LoopbackServer:
                     break
                 raise
             try:
+                # Avoid Nagle/delayed-ACK stalls between small loopback SFTP packets.
+                client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 transport = Transport(client)
                 self.transports.append(transport)
                 transport.add_server_key(self.host_key)
