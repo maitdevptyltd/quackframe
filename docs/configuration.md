@@ -1,0 +1,287 @@
+# Configuration
+
+Quackframe configuration is owned by a typed `QuackframeConfig` model.
+`pyproject.toml`, one optional runtime-root `.env`, environment variables,
+native integration settings, CLI arguments, and direct Python values are
+inputs to that model; they are not independent sources of runtime truth.
+
+## Configuration Boundary
+
+Use this decision rule:
+
+| Value | Authoritative input |
+| --- | --- |
+| Stable behaviour every clone should inherit | `pyproject.toml` |
+| Machine-, deployment-, identity-, or environment-specific value | Runtime-root `.env`, environment, or native integration profile |
+| Credential or sensitive metadata | Native secure mechanism or injected environment |
+| Deliberate exception for one invocation | CLI or direct Python value |
+
+Checked-in configuration describes project intent. It must not contain secret
+values, private keys, individual identities, machine-specific absolute paths,
+or sensitive endpoints that the project does not intend to disclose.
+
+## Canonical Model
+
+The implemented MVP shape is:
+
+```text
+QuackframeConfig
+  root
+  runtime
+  project_name (loaded metadata when available)
+  log_setting
+  allow_external_result_logging
+  allow_external_error_logging
+  database
+    mode
+    path
+  functions
+    enabled
+  duckdb
+    settings
+    extensions
+```
+
+Function packages may define their own namespaced configuration without forcing
+unrelated functions to adopt a shared thematic model.
+
+Runtime values are validated against the public names in the runtime registry.
+The CLI uses the same registry for `--runtime` choices, so configuration,
+selection, and command-line help cannot drift into separate hardcoded lists.
+
+When configuration comes from a `pyproject.toml` containing `[project].name`,
+Quackframe retains that non-sensitive metadata for optional runtime display.
+The Prefect adapter uses it as the flow-run name; it does not affect core
+execution or database behaviour.
+`project_name` is not accepted in `[tool.quackframe]`; use `[project].name`.
+
+## Repository Configuration
+
+An explicit persistent example is:
+
+```toml
+[tool.quackframe]
+runtime = "direct"
+
+[tool.quackframe.database]
+mode = "persistent"
+path = ".quackframe/example.duckdb"
+
+[tool.quackframe.functions]
+enabled = []
+```
+
+`functions.enabled` is the checked-in allowlist of Quackframe SQL functions for
+the project. Examples include it even when empty so function exposure is visible
+during review. Omitting the section resolves to the same empty allowlist; it
+does not enable every installed function.
+
+Each configured name must resolve to an available built-in or an explicitly
+allowed external definition. Unknown functions and functions whose optional
+dependencies are unavailable fail configuration validation before project SQL
+executes. Installing Quackframe or an extra never changes the enabled list.
+
+`pyproject.toml` is the default project input because a downstream Python
+project already uses it for dependencies and tool configuration. Hydra or
+another composition system may be supported later as an adapter that produces
+the same `QuackframeConfig` model.
+
+Do not use `pyproject.toml` as a workflow-definition file. SQL file order remains
+an invocation concern until a separate job-manifest contract is deliberately
+designed.
+
+## Runtime Root And Relative Paths
+
+The runtime root uses an explicit `root`, then `QUACKFRAME_ROOT`, and otherwise
+defaults to `Path.cwd()`.
+The root is established before configuration files are read. `root` is not
+accepted in `[tool.quackframe]`; use Python `root`, CLI `--root`, or the
+`QUACKFRAME_ROOT` environment variable.
+Relative persistent database and configuration paths resolve from the runtime
+root. For example, `load_config(root="E:/jobs/example", config_path="settings.toml")`
+loads `E:/jobs/example/settings.toml`. Absolute configuration paths stay absolute;
+omitting `config_path` loads `<runtime-root>/pyproject.toml` when it exists.
+
+For VS Code F5:
+
+```json
+"cwd": "${workspaceFolder}"
+```
+
+makes the workspace folder the predictable default root. A scheduler should set
+its working directory explicitly or provide a root override.
+
+## Database Defaults And Lifecycle
+
+The default database mode is `memory`; no database file is created. Temporary
+mode creates a unique file below `.quackframe/tmp/` under the runtime root and
+removes that file and its WAL after the connection closes, including after a
+failed run. Temporary filenames are always generated automatically;
+`database.path` is rejected with temporary mode. Use persistent mode when you
+need to select a database path.
+
+Quackframe creates the database parent directory when necessary. Failure to
+prepare it raises `ConfigurationError` (CLI exit code `2`). A terminated
+process can leave temporary database/WAL files behind for manual removal.
+
+If temporary-file removal fails while a run is already failing, Quackframe
+preserves the original exception and adds a safe cleanup
+note. SQL failures retain their file, statement number, and CLI exit code `1`.
+If the run otherwise succeeded, cleanup failure raises `ConfigurationError`
+(CLI exit code `2`). Failed cleanup can leave files requiring manual removal.
+
+Persistent mode requires `database.path`. Quackframe expands a leading `~` to
+the user's home directory before resolving relative paths from the runtime root.
+For example, `~/example.duckdb` selects a database in the user's home directory.
+Quackframe creates its parent directory when necessary and never deletes the
+database implicitly.
+
+Passing `database_path` to `load_config()` without `database_mode` selects
+persistent mode, overriding lower-precedence database settings just like a
+path-only CLI or environment input. An explicitly supplied `database_mode`
+still applies: pairing a path with `memory` or `temporary` is rejected.
+
+## Environment Inputs
+
+Quackframe-owned settings may have `QUACKFRAME_` environment equivalents where
+deployment overrides are useful, for example:
+
+```text
+QUACKFRAME_ROOT
+QUACKFRAME_RUNTIME
+QUACKFRAME_DATABASE_MODE
+QUACKFRAME_DATABASE_PATH
+QUACKFRAME_LOG_SETTING
+QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING
+QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING
+DUCKDB_TEMP_DIRECTORY
+```
+
+Quackframe reads exactly `<runtime-root>/.env` as UTF-8 when `load_config()` is
+used. It does not search parent directories or load variant filenames such as
+`.env.local`. A missing file is a silent no-op. Values are parsed with
+`python-dotenv`, so quoted values, comments, interpolation, and multiline
+values use its supported syntax.
+
+The runtime root is resolved before dotenv loading from an explicit `root`,
+`QUACKFRAME_ROOT` in the supplied or current process environment, or the
+current working directory. `QUACKFRAME_ROOT` inside `.env` is ignored: it does
+not relocate the root or trigger a second dotenv search.
+
+Only the names listed above are consumed from `.env`. Quackframe does not copy
+dotenv values into `os.environ`, and it leaves `PREFECT_*` settings, Prefect
+profiles, and Prefect's native dotenv behaviour to Prefect. Exclude
+secret-bearing `.env` files from Git even though Quackframe itself does not
+treat dotenv as a credential store.
+
+`QUACKFRAME_LOG_SETTING` accepts `annotations-only`, `none`, or `all`.
+`QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING` permits selected query results in an
+external runtime such as Prefect. Independently,
+`QUACKFRAME_ALLOW_EXTERNAL_ERROR_LOGGING` permits full error details externally.
+Both Boolean permissions default to false. Their Python settings are
+`allow_external_result_logging` and `allow_external_error_logging`. Enabling
+selected results does not disclose full errors; enabling full errors does not
+grant permission to log results.
+
+| Destination | Error permission | Error details |
+| --- | --- | --- |
+| Terminal (direct or Prefect) | Either value | Full original backend message |
+| External logs and failure state | false | Useful safe diagnostics, with available location |
+| External logs and failure state | true | Full original backend message |
+
+Errors are always reported. With Prefect, full diagnostics always reach its
+console handler. When permission is false, those records use `send_to_api=false`
+and the raised exception contains only the safe diagnostic. This also works when
+Prefect captures `print` output. Full messages can contain SQL literals, row values,
+credentials or upstream messages. Result selection still follows `log_setting`
+and annotations; enabling result permission does not itself select query results.
+
+Logging selection and both external permissions are deliberately excluded
+from `[tool.quackframe]`: a checked-in repository cannot grant permission to
+retain returned values or full error details. They come from environment,
+explicit CLI arguments, or direct Python configuration. The CLI can override
+environment values with
+`--log-setting`, `--allow-external-result-logging`, and
+`--deny-external-result-logging`. Error permission has its own
+`--allow-external-error-logging` and `--deny-external-error-logging` flags.
+
+Quackframe should not create aliases for every setting owned by another
+product. Optional adapters should first respect that product's native
+environment and profile model.
+
+## Prefect Settings
+
+A project may choose the Prefect runtime without checking in connection details:
+
+```toml
+[tool.quackframe]
+runtime = "prefect"
+```
+
+The Prefect integration respects native settings such as:
+
+```text
+PREFECT_API_URL
+PREFECT_API_KEY
+```
+
+An API URL is not necessarily a credential, but it may disclose private
+hostnames, network topology, environment names, or tenant information. Public
+examples should therefore prefer Prefect environment variables or profiles.
+
+Post-MVP, Quackframe may support a checked-in shared default:
+
+```toml
+[tool.quackframe.integrations.prefect]
+api_url = "https://prefect.example.com/api"
+```
+
+only when the repository intentionally shares that endpoint. API keys and
+credential values are never valid checked-in configuration.
+
+The MVP does not interpret this table. It relies on Prefect's native environment
+and profile resolution for both the runtime and Prefect-backed function
+providers.
+
+## Precedence
+
+```mermaid
+flowchart TD
+  Direct[1 Direct Python or CLI] --> Model[QuackframeConfig]
+  Environment[2 Supplied or process environment] --> Model
+  Dotenv[3 Runtime-root .env] --> Model
+  TOML[4 pyproject.toml] --> Model
+  Defaults[5 Quackframe defaults] --> Model
+  Model --> Runtime[Resolved Runtime Configuration]
+```
+
+Higher-numbered sources supply values only when a higher-precedence source does
+not. Every source is validated through the same typed model.
+
+## DuckDB Settings
+
+Connection settings accept strings, integers, floats, and booleans. The typed
+model preserves strings and converts numbers and booleans to DuckDB-compatible
+strings (`true` or `false` for booleans). Arrays, tables, and other value types
+are rejected.
+
+```toml
+[tool.quackframe.duckdb.settings]
+threads = 4
+memory_limit = "1GB"
+preserve_insertion_order = false
+```
+
+An explicit extension list is accepted under `[tool.quackframe.duckdb]`.
+Extension names are validated before their generated `INSTALL` and `LOAD`
+statements execute.
+
+The implicit root is exactly the invocation working directory. Quackframe does
+not search parent directories for configuration.
+
+## Related Docs
+
+- [Overview](overview.md): the framework-independent product stance.
+- [Developer API](developer-api.md): CLI and Python overrides.
+- [Execution Lifecycle](execution-lifecycle.md): when configuration is applied.
+- [Runtime Adapters](runtime-adapters.md): integration-specific settings.

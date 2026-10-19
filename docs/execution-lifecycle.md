@@ -1,0 +1,166 @@
+# Execution Lifecycle
+
+Every supported entry point delegates to the same Quackframe execution
+lifecycle. Runtime adapters may observe and represent that lifecycle, but they
+must not redefine it silently.
+
+## Lifecycle
+
+```mermaid
+sequenceDiagram
+  participant Caller
+  participant Runtime as Runtime Adapter
+  participant Engine as Quackframe Engine
+  participant DuckDB
+
+  Caller->>Runtime: Submit ordered SQL files
+  Runtime->>Engine: Begin execution
+  Engine->>Engine: Resolve and validate configuration
+  Engine->>DuckDB: Open one session
+  Engine->>DuckDB: Install enabled functions
+  loop Files in caller order
+    Engine->>DuckDB: Execute next SQL file
+    DuckDB-->>Engine: Statement outcomes
+  end
+  Engine->>DuckDB: Close session
+  Engine-->>Runtime: Return result or safe failure
+  Runtime-->>Caller: Report outcome
+```
+
+The happy path is:
+
+1. Accept a non-empty, ordered list of SQL files.
+2. Resolve `QuackframeConfig` from defaults, repository configuration,
+   environment, and explicit overrides.
+3. Validate paths, parse and classify each source statement, and validate runtime
+   result-log policy before executing SQL.
+4. Ask the selected runtime adapter to represent the invocation.
+5. Open one DuckDB session owned by the invocation.
+6. If functions are enabled, create the reserved `quackframe` SQL schema and
+   install their macros over private Python UDFs. An empty allowlist (including
+   omitted function configuration) skips installation entirely: no schema
+   creation or installer transaction, so ordinary read-only queries can run.
+7. Execute each SQL file in caller-supplied order without closing the session.
+8. Stop on the first failure and attach safe file and statement context.
+9. Clean up extension resources, close the session and apply the configured
+   database lifecycle.
+10. Return a typed result or raise a typed execution error.
+
+Successful file and run results expose elapsed durations as `timedelta` values
+measured with `time.perf_counter()`, so wall-clock adjustments do not affect them.
+The run duration includes session setup and cleanup; each file duration includes
+statement execution and selected result rendering and delivery.
+
+## Session Invariants
+
+- One invocation owns one DuckDB session.
+- Files execute serially in the supplied order.
+- Session state created by an earlier file is visible to later files.
+- F5 supplies one active file and receives the same lifecycle.
+- No runtime adapter may move a file to a different process or session unless a
+  future contract explicitly changes the shared-session invariant.
+- Function installation completes before project SQL begins.
+- The runner delegates installation through one function-neutral registrar and
+  never branches on concrete function names or function-specific request types.
+- Quackframe releases owned extension resources and closes the session even
+  when execution fails. Resource cleanup precedes root connection closure and
+  temporary database deletion.
+
+## SQL-file Behaviour
+
+The engine validates that each input exists and is an SQL file. Empty files
+fail clearly. Each file is separated into DuckDB statements using DuckDB's own
+parser rather than string splitting. The prepared file retains those statements
+and their resolved result-selection metadata, so policy validation, adapter
+warnings, and execution all consume the same analysis.
+
+Execution reports each file and source statement starting, completing, or
+failing. Statement numbers are one-based within each file. Completion and failure
+messages include elapsed seconds measured with `perf_counter()`; statement time
+includes selected result rendering and delivery. A failure reports both the
+failed statement and file, then stops subsequent work.
+
+Progress contains paths, statement numbers and durations, without SQL text,
+returned values or exception details. It is independent of `log_setting` and
+both external logging permissions, so `--log-setting none` still shows progress.
+Selected statement results and error diagnostics retain their separate policies.
+Preparation and session setup failures retain their existing diagnostics without
+reporting file or statement execution that never started.
+
+Diagnostics must not include credentials, bound secret values, full SQL text,
+or unselected returned query data. Selected results use DuckDB's native
+relation rendering after the complete query executes exactly once into a
+temporary DuckDB result table. Rendering reads a bounded preview of that table;
+errors beyond the preview still fail the statement. The temporary result is
+removed after rendering, and rows are not fetched into Python for display.
+A runtime whose registry policy declares an external result-log destination
+must receive explicit permission
+before project SQL when the selection would emit values.
+
+## Failure Contract
+
+A SQL failure stops subsequent files. The failure should identify:
+
+- the SQL file;
+- the one-based statement number when known;
+- the original one-based line and column when DuckDB supplies a position;
+- the backend error category and details allowed by the runtime policy;
+- the overall failed outcome and non-zero CLI exit code.
+
+Runtime adapters may enrich the failure with their own run identifier, but the
+core exception remains framework-independent. Direct execution reports full
+original backend messages regardless of external permission. Prefect also emits
+full diagnostics to its terminal handler. Its API logs and failure states
+use safe diagnostics unless `allow_external_error_logging=true`. Selected results
+require the independent `allow_external_result_logging` permission. The exception
+retains file/statement and available source positions in both modes. Original
+exceptions do not retain the original backend exception; the selected message is the only backend error exposed to normal
+traceback rendering.
+
+For safe diagnostics, Quackframe requests structured
+DuckDB errors at connection creation (including locked configurations) and
+constructs diagnostics from supported fields and observed
+message forms, rather than forwarding complete backend messages. Missing object
+names, conversion target types, constraint columns and CSV input file/line/column
+remain useful; rejected values, CSV rows and SQL excerpts are omitted. URL
+userinfo, query parameters and fragments are removed from supported path errors.
+Ordinary identifiers and filenames are retained. Candidate suggestions are omitted
+because PIVOT can generate them from table values.
+
+`ExecutionError.line` and `.column` refer to the original UTF-8 SQL file, not
+DuckDB's internal statements. Dynamic PIVOT counts as one source statement.
+Locations remain `None` when unavailable: notably some relation-binding failures
+supply only text even with JSON errors enabled. Unknown formats retain their
+category and available location. Suppressed exception chains do not reintroduce
+omitted messages. This is not general secret detection in caller-authored names
+or messages. Full-detail output bypasses this diagnostic filtering.
+
+See the [diagnostic implementation phase](epics/02-result-logging/02-useful-error-diagnostics.md)
+for coverage and limitations.
+
+Extension resource cleanup attempts every registered callback. A cleanup failure
+on an otherwise successful run raises `QuackframeError`, which the CLI reports
+concisely with exit status `1`. If execution already failed, cleanup adds a safe
+note and preserves the original exception.
+
+## Database Lifecycle
+
+The intended configuration distinguishes three concepts:
+
+- `memory`: one in-memory database for the invocation;
+- `temporary`: a Quackframe-managed file removed according to an explicit,
+  safe lifecycle;
+- `persistent`: a caller-owned or project-owned file that Quackframe never
+  deletes implicitly.
+
+The runtime root defaults to the current working directory. Memory is the
+default mode. Temporary databases use unique paths below `.quackframe/tmp/`
+and are removed after connection closure; persistent files are caller-owned and
+are never deleted implicitly.
+
+## Related Docs
+
+- [Developer API](developer-api.md): how callers start this lifecycle.
+- [Configuration](configuration.md): how paths, modes, and adapters resolve.
+- [Runtime Adapters](runtime-adapters.md): how external systems observe runs.
+- [SQL Function Extensions](python-extensions.md): what is installed before SQL.
