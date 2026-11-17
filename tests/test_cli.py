@@ -282,3 +282,31 @@ def test_cli_external_error_flags_override_in_both_directions(
 
     assert arguments.allow_external_error_logging is expected
     assert arguments.allow_external_result_logging is None
+
+
+def test_cli_flow_name_uses_runtime_from_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.quackframe]\nruntime = "prefect"\n',
+        encoding="utf-8",
+    )
+    runner = Mock(return_value=Mock(files=(), statement_count=0, runtime="prefect"))
+    monkeypatch.setattr(cli, "run", runner)
+    assert (
+        main(["run", "--root", str(tmp_path), "--flow-name", "members", "a.sql"]) == 0
+    )
+    assert runner.call_args.kwargs["config"].flow_name == "members"
+
+
+def test_cli_rejects_flow_name_for_direct_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = Mock()
+    monkeypatch.setattr(cli, "run", runner)
+    assert (
+        main(["run", "--root", str(tmp_path), "--flow-name", "members", "a.sql"]) == 2
+    )
+    runner.assert_not_called()

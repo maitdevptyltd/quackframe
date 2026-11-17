@@ -125,7 +125,9 @@ def test_prefect_flow_run_uses_project_name(tmp_path: Path) -> None:
     ) as with_options:
         prefect_runtime.execute_with_prefect((), config)
 
-    with_options.assert_called_once_with(flow_run_name="analytics-workflows")
+    with_options.assert_called_once_with(
+        name="quackframe-run", flow_run_name="analytics-workflows"
+    )
 
 
 def test_prefect_file_task_logs_selected_result(
@@ -452,3 +454,26 @@ def test_prefect_configuration_failure_retains_cli_status(
     assert capsys.readouterr().err == (
         "Configuration error: Invalid database configuration\n"
     )
+
+
+def test_prefect_flow_name_override_keeps_run_name_separate(tmp_path: Path) -> None:
+    configured = Mock()
+    config = QuackframeConfig(
+        root=tmp_path,
+        runtime="prefect",
+        flow_name="members",
+        project_name="project",
+    )
+    with patch.object(
+        prefect_runtime.execute_plan_flow, "with_options", return_value=configured
+    ) as options:
+        prefect_runtime.execute_with_prefect((), config)
+    options.assert_called_once_with(name="members", flow_run_name="project")
+
+
+def test_invalid_prefect_flow_name_is_a_handled_framework_error() -> None:
+    with pytest.raises(QuackframeError, match="Prefect runtime failed"):
+        prefect_runtime.execute_with_prefect(
+            (),
+            QuackframeConfig(runtime="prefect", flow_name="invalid/name"),
+        )

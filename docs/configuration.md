@@ -29,6 +29,7 @@ QuackframeConfig
   root
   runtime
   project_name (loaded metadata when available)
+  flow_name (optional, Prefect runtime only)
   log_setting
   allow_external_result_logging
   allow_external_error_logging
@@ -285,3 +286,12 @@ not search parent directories for configuration.
 - [Developer API](developer-api.md): CLI and Python overrides.
 - [Execution Lifecycle](execution-lifecycle.md): when configuration is applied.
 - [Runtime Adapters](runtime-adapters.md): integration-specific settings.
+
+## Prefect Flow Identity
+
+Set `[tool.quackframe].flow_name` for a stable integration name. Override it with
+`QUACKFRAME_FLOW_NAME` or `--flow-name`; explicit invocation values win. Python
+callers can use `load_config(flow_name="example-members", runtime="prefect")`
+or the corresponding `QuackframeConfig` field. Blank names and use with any
+other effective runtime are rejected. Omitting the setting retains
+`quackframe-run`. The flow run name remains independent and project-derived.

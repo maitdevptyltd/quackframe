@@ -88,8 +88,10 @@ def execute_plan_flow(sql_files, config):
     return execute_plan(sql_files, config, execute_file=_execute_named_file_task)
 ```
 
-The Prefect flow has the fixed name `quackframe-run` because it represents the
-stable Quackframe execution process. When Quackframe loads a downstream
+The Prefect flow defaults to `quackframe-run`. Set `--flow-name` (or the
+`flow_name` configuration field) to give an integration its own stable flow
+identity. This setting is valid only with the Prefect runtime.
+When Quackframe loads a downstream
 `[project].name` from `pyproject.toml`, it uses that value as the Prefect flow
 run name. If no project name is available, Quackframe leaves the run name unset
 and lets Prefect generate it.

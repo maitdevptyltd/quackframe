@@ -74,19 +74,19 @@ def execute_with_prefect(
     sql_files: tuple[PreparedSqlFile, ...],
     config: QuackframeConfig,
 ) -> ExecutionResult:
-    """Run Quackframe with an optional project name in Prefect.
+    """Apply the configured Prefect flow and run names.
 
-    The flow name remains ``quackframe-run`` for every invocation. When the
-    downstream ``pyproject.toml`` supplied a project name, Prefect uses it for
-    the individual flow run instead.
+    A flow name groups an integration's history. The project name continues to
+    label individual runs independently of that grouping.
     """
 
-    configured_flow = execute_plan_flow
-    if config.project_name is not None:
-        configured_flow = execute_plan_flow.with_options(
-            flow_run_name=config.project_name,
-        )
     try:
+        configured_flow = execute_plan_flow
+        if config.flow_name is not None or config.project_name is not None:
+            configured_flow = execute_plan_flow.with_options(
+                name=config.flow_name or "quackframe-run",
+                flow_run_name=config.project_name,
+            )
         return configured_flow(sql_files, config)
     except QuackframeError:
         raise

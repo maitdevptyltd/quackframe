@@ -788,3 +788,34 @@ def test_error_permission_environment_overrides_synthetic_dotenv(
         ).allow_external_error_logging
         is False
     )
+
+
+def test_flow_name_obeys_configuration_precedence(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.quackframe]\nruntime = "prefect"\nflow_name = "project"\n',
+        encoding="utf-8",
+    )
+    assert load_config(root=tmp_path, environ={}).flow_name == "project"
+    assert (
+        load_config(
+            root=tmp_path,
+            environ={"QUACKFRAME_FLOW_NAME": "environment"},
+        ).flow_name
+        == "environment"
+    )
+    assert (
+        load_config(
+            root=tmp_path,
+            environ={"QUACKFRAME_FLOW_NAME": "environment"},
+            flow_name="cli",
+        ).flow_name
+        == "cli"
+    )
+    with pytest.raises(ConfigurationError, match="requires the prefect runtime"):
+        load_config(root=tmp_path, runtime="direct", environ={})
+
+
+@pytest.mark.parametrize("name", ["", "   "])
+def test_blank_flow_name_is_rejected(tmp_path: Path, name: str) -> None:
+    with pytest.raises(ConfigurationError, match="must not be blank"):
+        load_config(root=tmp_path, runtime="prefect", flow_name=name, environ={})
