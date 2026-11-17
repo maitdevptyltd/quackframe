@@ -477,3 +477,20 @@ def test_invalid_prefect_flow_name_is_a_handled_framework_error() -> None:
             (),
             QuackframeConfig(runtime="prefect", flow_name="invalid/name"),
         )
+
+
+def test_prefect_interface_tag_is_active_only_during_execution() -> None:
+    from prefect.context import TagsContext
+
+    observed: list[set[str]] = []
+
+    def capture(*args: object) -> None:
+        observed.append(set(TagsContext.get().current_tags))
+
+    with prefect.tags("caller-tag"):
+        with patch.object(prefect_runtime, "execute_plan_flow", side_effect=capture):
+            prefect_runtime.execute_with_prefect(
+                (), QuackframeConfig(runtime="prefect")
+            )
+        assert TagsContext.get().current_tags == {"caller-tag"}
+    assert observed == [{"caller-tag", "interface:quackframe"}]

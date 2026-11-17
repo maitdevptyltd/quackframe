@@ -1,7 +1,7 @@
 """Prefect wrappers around Quackframe's existing execution functions."""
 
 from duckdb import DuckDBPyConnection
-from prefect import flow, get_run_logger, task
+from prefect import flow, get_run_logger, tags, task
 from prefect.cache_policies import NO_CACHE
 
 from quackframe.config import QuackframeConfig
@@ -74,7 +74,7 @@ def execute_with_prefect(
     sql_files: tuple[PreparedSqlFile, ...],
     config: QuackframeConfig,
 ) -> ExecutionResult:
-    """Apply the configured Prefect flow and run names.
+    """Apply integration identity and tag every Quackframe parent run.
 
     A flow name groups an integration's history. The project name continues to
     label individual runs independently of that grouping.
@@ -87,7 +87,8 @@ def execute_with_prefect(
                 name=config.flow_name or "quackframe-run",
                 flow_run_name=config.project_name,
             )
-        return configured_flow(sql_files, config)
+        with tags("interface:quackframe"):
+            return configured_flow(sql_files, config)
     except QuackframeError:
         raise
     except Exception as error:

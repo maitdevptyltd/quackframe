@@ -44,7 +44,8 @@ quackframe run --config ./alternate.toml sql/example.sql
 
 `--flow-name` overrides the Prefect flow's grouping name, independently of its
 project-derived flow run name. It requires the effective runtime to be `prefect`,
-whether selected by CLI or configuration.
+whether selected by CLI or configuration. Prefect runs automatically receive
+`interface:quackframe`; there is no `--tags` argument.
 
 `--memory` and `--temporary` select managed lifecycle modes;
 `--database-path` selects a caller-owned persistent database.

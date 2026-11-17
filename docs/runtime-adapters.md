@@ -90,7 +90,8 @@ def execute_plan_flow(sql_files, config):
 
 The Prefect flow defaults to `quackframe-run`. Set `--flow-name` (or the
 `flow_name` configuration field) to give an integration its own stable flow
-identity. This setting is valid only with the Prefect runtime.
+identity. This setting is valid only with the Prefect runtime. Every parent run
+receives the `interface:quackframe` tag; no custom tag CLI option is provided.
 When Quackframe loads a downstream
 `[project].name` from `pyproject.toml`, it uses that value as the Prefect flow
 run name. If no project name is available, Quackframe leaves the run name unset

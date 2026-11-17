@@ -295,3 +295,6 @@ callers can use `load_config(flow_name="example-members", runtime="prefect")`
 or the corresponding `QuackframeConfig` field. Blank names and use with any
 other effective runtime are rejected. Omitting the setting retains
 `quackframe-run`. The flow run name remains independent and project-derived.
+
+The adapter adds `interface:quackframe` automatically. Additional tag arguments
+are deferred.
