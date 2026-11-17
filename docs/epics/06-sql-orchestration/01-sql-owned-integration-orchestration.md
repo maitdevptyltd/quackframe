@@ -1,6 +1,6 @@
 # SQL-Owned Integration Orchestration
 
-Status: **Planned**
+Status: **Complete**
 Last updated: 2026-11-17
 Epic: 06 SQL Orchestration
 Phase: 01
@@ -15,9 +15,9 @@ author can refresh source data, reconcile records, build outbound requests, and
 then invoke the deployment that sends them. Each step must finish successfully
 before the next starts.
 
-This document proposes a SQL function, Prefect naming and metadata controls,
-and subsequent source-history and failure-reporting work. None of these additions
-is implemented by this documentation change. Quackframe remains independent of
+The initial SQL function, Prefect flow-name override and automatic interface tag
+are implemented and reviewed for the initial delivery. Source history, custom tag
+arguments and failure-reporting work remain future scope. Quackframe remains independent of
 Prefect in its core; Prefect capabilities belong to optional integrations.
 
 The intended ownership is straightforward:
@@ -48,26 +48,44 @@ The existing command shape is:
 quackframe run --runtime prefect 01_refresh.sql 02_reconcile.sql 03_build_requests.sql 04_send.sql
 ```
 
-The command exists today; the proposed deployment calls inside its first and last
-files do not. Calling the files in one invocation preserves shared session state.
+Both the ordered-file command and deployment calls inside its first and last
+files are now implemented. Calling the files in one invocation preserves shared session state.
 Running four separate commands would create separate sessions and runs.
 
-## Proposed SQL API
+## SQL API
 
 Preserve the public `quackframe` namespace and identify Prefect explicitly:
 
 ```sql
--- Proposed API: run once as a standalone statement, then wait for success.
+-- Run once as a standalone statement, then wait for success.
 SELECT quackframe.prefect_run_deployment(
-    deployment_id := '00000000-0000-0000-0000-000000000001',
-    timeout_seconds := 300
+    deployment_id := '00000000-0000-0000-0000-000000000001'
 );
 ```
 
-The UUID is illustrative. Resolve deployments by their ID on the configured
-Prefect server, so callers need not depend on customer naming conventions or
-repeated deployment names. Credentials and server configuration stay outside SQL
-through the existing native integration configuration boundary.
+Alternatively, select by Prefect's flow/deployment name:
+
+```sql
+SELECT quackframe.prefect_run_deployment(
+    deployment_entrypoint := 'members-refresh/prod'
+);
+```
+
+The UUID and names are illustrative. Named SQL options use `:=`. Supply exactly
+one selector: `deployment_id` must be a UUID; `deployment_entrypoint` must contain
+exactly one slash with a nonblank flow name and deployment name. The entrypoint
+is the native Prefect flow/deployment name, not a Python module entry point.
+The unused selector can be omitted or NULL; supplying both or neither fails
+before launch. There is no completion timeout option.
+
+The existing macro framework uses None defaults to expose named options and
+also accepts positional arguments; this change does not add keyword-only
+execution machinery. The function returns the successful run UUID as VARCHAR.
+The native Prefect call uses `timeout=None` and waits through queued and running
+states until a final outcome. Individual API requests still use native Prefect
+connection timing settings.
+Credentials and server configuration stay outside SQL through the existing
+native integration configuration boundary.
 
 The function belongs in the explicit SQL-function registry and must be enabled
 through the consuming project's function allowlist. Installing a Prefect extra
@@ -77,20 +95,26 @@ is one standalone call per intended deployment run, not a SELECT over table rows
 
 ### Completion And Failure Contract
 
-- Validate the deployment ID and a finite positive timeout before launch.
+- Validate exactly one deployment selector before launch.
 - Start one deployment run and wait for its final outcome. Submission alone is
   not success, and a polling return value alone is not proof of completion.
 - Return successfully only when the deployment run completes successfully.
-  The proposed result is its flow run ID; final SQL return typing remains open.
-- Failed, crashed or cancelled runs must raise a SQL-visible error. A timeout,
-  launch failure, or inability to establish the outcome must also fail the call.
+  The result is its flow run ID as VARCHAR.
+- Failed, crashed or cancelled runs must raise a SQL-visible error. A launch
+  failure or inability to establish the outcome must also fail the call.
+- Queued and running states keep waiting without a completion deadline. An
+  unexpected return without a final state is a defensive error, not a timeout.
 - Preserve safe context: deployment ID, child run ID when known, final state,
   and an actionable error. Do not expose credentials or arbitrary result data.
+- Installed callbacks copy their installation context for each invocation so
+  DuckDB worker threads retain settings and parent flow identity. Installation
+  precedes SQL-file tasks, so child linkage and safe logs attach to the parent
+  flow rather than guaranteeing attachment to the current SQL-file task.
 - The error must fail the current SQL script, stop later statements and files,
   fail the parent Prefect run when using that runtime, and produce a nonzero
   CLI exit status. Do not catch the error and continue to the outbound step.
-- A timeout stops waiting; it does not prove that the remote run was cancelled.
-  Report that uncertainty. Cancellation policy must be settled separately.
+- An API failure does not prove that the remote run was cancelled. Report that
+  uncertainty. The function does not request cancellation.
 - Do not automatically launch a replacement after an ambiguous network failure.
   Retry and idempotency behaviour need an explicit design so a retry cannot
   silently duplicate a remote write.
@@ -136,7 +160,7 @@ Many scheduled integrations can share one Prefect server. Give each integration
 a stable flow identity rather than requiring every job to appear under
 `quackframe-run`.
 
-Proposed CLI:
+CLI:
 
 ```shell
 quackframe run --runtime prefect --flow-name example-members 01_refresh.sql 02_reconcile.sql 03_build_requests.sql 04_send.sql
@@ -151,14 +175,14 @@ Accept `--flow-name` only when the effective runtime is Prefect, including when
 that runtime comes from configuration. Reject it clearly for other runtimes;
 do not silently ignore it. The CLI help must explain this restriction. Config
 and Python API parity should follow the existing typed configuration design;
-exact keys and any separate run-name override remain review decisions.
+`flow_name`, `QUACKFRAME_FLOW_NAME` and `load_config(flow_name=...)` share the
+same validation. Any separate run-name override remains future work.
 
-Apply structured tags to the parent run, including `interface:quackframe`, with
-optional consuming-project values such as `customer:example`,
-`integration:members`, and `environment:prod`. A bare `quackframe` tag does not
-express the intended metadata convention. Final tag configuration syntax remains
-open. Decide explicitly which tags propagate to child deployment runs and retain
-parent/child correlation without assuming automatic Prefect inheritance.
+Apply `interface:quackframe` automatically to the parent run. Customer,
+integration and environment naming can be expressed in the flow name. There is
+no custom `--tags` argument in this scope; caller-supplied tags are deferred.
+Native Prefect subflow linkage connects deployments to the calling context.
+
 
 ## Editing SQL With Change History
 
@@ -211,22 +235,21 @@ logging contracts rather than copying full SQL or returned data into email.
 
 ## Delivery And Acceptance
 
-Initial implementation should prove the deployment function and error propagation,
-then add configurable flow identity and structured tags. Source provenance and
-email reporting can follow separately. No implementation is authorised by the
-status of this document alone.
+The initial delivery covers the deployment function, error propagation,
+configurable flow identity and the automatic interface tag. Source provenance,
+custom tag arguments and email reporting remain separate follow-on work.
 
-- [ ] A SQL call starts the specified deployment once and waits for completion.
-- [ ] Synthetic success, failure, crash, cancellation, timeout and API-error cases
+- [x] A SQL call starts the specified deployment once and waits for completion.
+- [x] Synthetic success, failure, crash, cancellation and API-error cases
   prove the completion contract without contacting customer systems.
-- [ ] Failure in the refresh prevents reconciliation, request creation and sending.
-- [ ] Failure in a later deployment fails the script and parent run and exits nonzero.
-- [ ] Both single-file and ordered multi-file layouts retain shared-session and
+- [x] Failure in the refresh prevents reconciliation, request creation and sending.
+- [x] Failure in a later deployment fails the script and parent run and exits nonzero.
+- [x] Both single-file and ordered multi-file layouts retain shared-session and
   fail-fast behaviour without implicit retries or caching.
-- [ ] Flow-name overrides produce distinct stable Prefect flow identities;
+- [x] Flow-name overrides produce distinct stable Prefect flow identities;
   direct-runtime misuse is rejected and the existing default still works.
-- [ ] Parent runs carry `interface:quackframe` and agreed integration metadata.
-- [ ] Base Quackframe still installs and executes without Prefect; the deployment
+- [x] Parent runs carry `interface:quackframe`; no custom tag argument is exposed.
+- [x] Base Quackframe still installs and executes without Prefect; the deployment
   function remains explicitly allowlisted and its dependency errors are clear.
 - [ ] Later provenance work identifies the actual revision executed, including a
   clear policy for uncommitted edits.
@@ -235,13 +258,14 @@ status of this document alone.
 
 ## Open Design Decisions
 
-- Exact return type, timeout default and polling interval for the SQL function.
+- Future configurable polling intervals; completion has no imposed deadline.
 - Whether deployment parameters are needed in the first version and their typed
   SQL representation; no arbitrary parameter JSON is required by this proposal.
-- Cancellation, retry/idempotency and parent-child correlation behaviour.
-- Whether the function is supported with the direct runtime plus optional Prefect
-  dependencies, independently of Prefect observation of the parent execution.
-- Configuration keys for names/tags and the required failure metadata fields.
+- Optional cancellation and SQL-level retry policy; initial calls use native
+  subflow linkage and a fresh idempotency key for each submission.
+- Future deployment parameter support beyond deployment defaults; direct runtime
+  use with the Prefect extra is supported by the initial implementation.
+- Future custom tag arguments and the required reporting metadata fields.
 - Consuming-repository edit policies, revision selection and launcher ownership.
 - Notification transport, recipients and deployment result-signalling prerequisites.
 
@@ -253,3 +277,17 @@ status of this document alone.
 - [Configuration](../../configuration.md): typed settings and overrides.
 - [Useful Error Diagnostics](../02-result-logging/02-useful-error-diagnostics.md): safe actionable errors.
 - [Epics](../README.md): phase tracking.
+
+## Initial Delivery Validation
+
+Focused deployment, CLI, configuration and runtime checks passed (174 tests).
+The real Prefect API-log regression also passed in the broader run. Ruff,
+Pyright, local documentation links and whitespace checks passed. The independent
+reviewer verified real Prefect synchronous dispatch against a mocked client and
+checked compatibility with the supported Prefect 3.2 API.
+
+The broad suite was stopped during unrelated release checks and is not claimed
+as a full pass. Three subprocess tests initially lacked relative fixture paths
+because the runner used an isolated temporary working directory; all three
+passed when their required test files were supplied there. Tests used synthetic
+configuration and no live customer or deployment calls.

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from pathlib import Path
+from threading import Barrier
+from typing import cast
+from unittest.mock import Mock
 
 import duckdb
 import pytest
@@ -228,3 +234,42 @@ def test_installation_failure_rolls_back_owned_transaction(
         assert connection.execute("SELECT _quackframe_echo('original')").fetchone() == (
             "original",
         )
+
+
+def test_worker_callbacks_keep_isolated_installation_contexts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    label = ContextVar("installation_label", default="outside")
+    overlap = Barrier(2)
+
+    def read_label() -> str:
+        original = label.get()
+        label.set("changed inside callback")
+        overlap.wait(timeout=5)
+        return original
+
+    monkeypatch.setattr(
+        registry,
+        "BUILTIN_FUNCTIONS",
+        (SqlFunction(name="read_label", callable=read_label),),
+    )
+    callbacks: list[Callable[[], str]] = []
+    for value in ("first run", "second run"):
+        connection = Mock(spec=DuckDBPyConnection)
+        token = label.set(value)
+        try:
+            install_functions(connection, ("read_label",))
+        finally:
+            label.reset(token)
+        callbacks.append(
+            cast(Callable[[], str], connection.create_function.call_args.args[1])
+        )
+
+    # Run the same registration concurrently, then a different registration.
+    # Neither a worker's previous call nor another run can supply its context.
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        first = [workers.submit(callbacks[0]) for _ in range(2)]
+        assert [future.result(timeout=10) for future in first] == ["first run"] * 2
+        second = [workers.submit(callbacks[1]) for _ in range(2)]
+        assert [future.result(timeout=10) for future in second] == ["second run"] * 2
+    assert label.get() == "outside"

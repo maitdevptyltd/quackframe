@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import types
+from collections.abc import Callable
+from contextvars import copy_context
+from functools import wraps
 from logging import Logger, LoggerAdapter
 from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
@@ -71,7 +74,7 @@ def install_functions(
             # Bind the invocation-owned context outside the SQL signature.
             connection.create_function(  # pyright: ignore[reportUnknownMemberType]
                 definition.private_name,
-                definition.bind(connection, resources),
+                _with_installation_context(definition.bind(connection, resources)),
                 parameters=parameter_types,
                 return_type=return_type,
                 side_effects=definition.side_effects,
@@ -90,6 +93,22 @@ def install_functions(
 
     if failure is not None:
         raise failure from None
+
+
+def _with_installation_context(
+    function: Callable[..., object],
+) -> Callable[..., object]:
+    """Keep caller settings and run identity when DuckDB uses a worker thread."""
+
+    context = copy_context()
+
+    @wraps(function)
+    def call(*args: object, **kwargs: object) -> object:
+        # A Context cannot be entered concurrently. Copy it for every call so
+        # worker threads and changes made by one function call stay isolated.
+        return context.copy().run(function, *args, **kwargs)
+
+    return call
 
 
 def _duckdb_signature(

@@ -297,4 +297,5 @@ other effective runtime are rejected. Omitting the setting retains
 `quackframe-run`. The flow run name remains independent and project-derived.
 
 The adapter adds `interface:quackframe` automatically. Additional tag arguments
-are deferred.
+are deferred. Deployment calls use native Prefect server and authentication
+configuration, independently of the selected Quackframe runtime.

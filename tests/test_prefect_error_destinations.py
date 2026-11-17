@@ -164,3 +164,44 @@ def test_preparation_diagnostic_bypasses_print_capture(
     assert MARKER not in str(prefect_logs[1])
     assert MARKER not in str(captured.value)
     assert captured.value.__context__ is None
+
+
+def test_deployment_failure_keeps_safe_run_context_in_api_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prefect_logs: tuple[io.StringIO, list[dict[str, Any]]],
+) -> None:
+    from prefect import deployments
+    from prefect.client.schemas.objects import FlowRun
+    from prefect.settings import PREFECT_API_URL
+    from prefect.states import Failed
+
+    from quackframe.sql_functions.installer import install_functions
+
+    deployment_id = uuid4()
+    child_run = FlowRun(flow_id=uuid4(), state=Failed(message=MARKER))
+    monkeypatch.setattr(
+        PREFECT_API_URL, "value", lambda: "http://prefect.example.test/api"
+    )
+    monkeypatch.setattr(deployments, "run_deployment", Mock(return_value=child_run))
+    path = tmp_path / "refresh.sql"
+    path.write_text(
+        f"SELECT quackframe.prefect_run_deployment(deployment_id := '{deployment_id}')",
+        encoding="utf-8",
+    )
+    prepared = prepare_sql_files(
+        [path],
+        root=tmp_path,
+        log_setting="none",
+        include_error_details=False,
+    )
+    with duckdb.connect(config={"errors_as_json": "true"}) as connection:
+        install_functions(connection, ("prefect_run_deployment",))
+        with pytest.raises(QuackframeError) as captured:
+            runtime.execute_sql_file_task.fn(connection, prepared[0])
+    api_output = str(prefect_logs[1])
+    assert str(deployment_id) in api_output
+    assert str(child_run.id) in api_output
+    assert "FAILED" in api_output
+    assert MARKER not in api_output
+    assert MARKER not in str(captured.value)
