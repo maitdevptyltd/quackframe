@@ -83,3 +83,7 @@ decision or implementation work in front of you.
 The MVP contract is implemented in `src/quackframe`. The phase documents record
 the initial implementation and its validation boundaries; the roadmap now
 separates delivered MVP behaviour from post-MVP work.
+
+## Proposed SQL Orchestration
+
+- [SQL-Owned Integration Orchestration](epics/06-sql-orchestration/01-sql-owned-integration-orchestration.md): proposed Prefect deployment SQL function, failure propagation, flow naming, tags, source history and later failure emails.
