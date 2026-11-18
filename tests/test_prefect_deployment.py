@@ -1,8 +1,10 @@
 """Deployment execution tests use mocked Prefect requests and synthetic run states."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import Mock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import UUID, uuid4
 
 import duckdb
@@ -10,13 +12,17 @@ import pytest
 
 pytest.importorskip("prefect")
 from prefect import deployments
+from prefect.client import utilities as client_utilities
 from prefect.client.schemas.objects import FlowRun, State
+from prefect.context import FlowRunContext
+from prefect.deployments import flow_runs
 from prefect.settings import PREFECT_API_URL
 from prefect.states import Cancelled, Completed, Crashed, Failed, Running
 
 from quackframe import FunctionsConfig, QuackframeConfig, run
 from quackframe.cli import main
 from quackframe.errors import ExecutionError
+from quackframe.integrations.prefect.runtime import execute_plan_flow
 from quackframe.sql_functions.installer import install_functions
 from quackframe.sql_functions.prefect_run_deployment.function import (
     prefect_run_deployment,
@@ -321,3 +327,81 @@ def test_sql_has_no_completion_timeout_option(launch: Mock) -> None:
                 "deployment_entrypoint := 'flow/prod', timeout_seconds := 30)"
             )
     launch.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        f"deployment_id := '{DEPLOYMENT_ID}'",
+        "deployment_entrypoint := 'refresh/prod'",
+    ],
+)
+def test_native_deployment_keeps_parent_linkage_from_duckdb_worker(
+    selector: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = FlowRun(flow_id=uuid4(), name="synthetic-parent")
+    child = FlowRun(flow_id=uuid4(), deployment_id=DEPLOYMENT_ID, state=Completed())
+    parent_task_id = uuid4()
+    client = MagicMock()
+    client.__enter__.return_value = client
+    deployment = SimpleNamespace(
+        id=DEPLOYMENT_ID, flow_id=child.flow_id, name="prod", version="test"
+    )
+    client.read_deployment.return_value = deployment
+    client.read_deployment_by_name.return_value = deployment
+    client.read_flow.return_value = SimpleNamespace(name="refresh")
+    client.create_task_run.return_value = SimpleNamespace(id=parent_task_id)
+    client.create_flow_run_from_deployment.return_value = child
+    client.read_flow_run.return_value = child
+
+    # Keep native run_deployment intact, intercepting only its client operations.
+    # Older supported Prefect versions use an injected async client internally.
+    async_client = AsyncMock()
+    for method in (
+        "read_deployment",
+        "read_deployment_by_name",
+        "read_flow",
+        "create_task_run",
+        "create_flow_run_from_deployment",
+        "read_flow_run",
+    ):
+        getattr(async_client, method).side_effect = getattr(client, method)
+    monkeypatch.setattr(
+        flow_runs, "get_client", Mock(return_value=client), raising=False
+    )
+    monkeypatch.setattr(
+        client_utilities,
+        "get_or_create_client",
+        Mock(return_value=(async_client, True)),
+    )
+    monkeypatch.setattr(
+        PREFECT_API_URL, "value", lambda: "http://prefect.example.test/api"
+    )
+    parent_context = FlowRunContext.model_construct(
+        flow=execute_plan_flow, flow_run=parent
+    )
+
+    with duckdb.connect() as connection:
+        with parent_context:
+            install_functions(connection, ("prefect_run_deployment",))
+        assert FlowRunContext.get() is None
+
+        # A separate thread has no parent context unless registration preserved it.
+        def execute_in_worker() -> object:
+            assert FlowRunContext.get() is None
+            return connection.execute(
+                f"SELECT quackframe.prefect_run_deployment({selector})"
+            ).fetchone()
+
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            result = worker.submit(execute_in_worker).result(timeout=10)
+
+    assert result == (str(child.id),)
+    client.create_task_run.assert_called_once()
+    assert client.create_task_run.call_args.kwargs["flow_run_id"] == parent.id
+    client.create_flow_run_from_deployment.assert_called_once()
+    assert (
+        client.create_flow_run_from_deployment.call_args.kwargs["parent_task_run_id"]
+        == parent_task_id
+    )
+    assert FlowRunContext.get() is None
