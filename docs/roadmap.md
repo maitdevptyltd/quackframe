@@ -117,3 +117,12 @@ the repository owner completes the [release setup](releases.md#repository-owner-
 - [Configuration](configuration.md): unresolved database defaults.
 - [SQL Function Extensions](python-extensions.md): extension architecture.
 - [Epics](epics/README.md): phase-level implementation tracking.
+
+## Proposed SQL-Owned Integrations
+
+[Epic 06: SQL-Owned Integration Orchestration](epics/06-sql-orchestration/01-sql-owned-integration-orchestration.md)
+proposes an allowlisted `quackframe.prefect_run_deployment` SQL function that waits
+for success and propagates failure, Prefect-specific flow naming, structured tags,
+and subsequent source provenance and failure reporting. External schedulers retain
+schedule ownership and SQL authors retain integration sequence ownership. This is
+planned work; the existing ordered-file CLI is its foundation.

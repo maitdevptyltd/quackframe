@@ -21,6 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="run ordered SQL files")
     run_parser.add_argument("sql_files", nargs="+")
     run_parser.add_argument("--runtime", choices=runtime_names())
+    run_parser.add_argument(
+        "--flow-name", help="Prefect flow name (requires the prefect runtime)"
+    )
     run_parser.add_argument("--log-setting", choices=LOG_SETTINGS)
     run_parser.add_argument("--config", type=Path)
     run_parser.add_argument("--root", type=Path)
@@ -81,6 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             config_path=arguments.config,
             root=arguments.root,
             runtime=arguments.runtime,
+            flow_name=arguments.flow_name,
             log_setting=arguments.log_setting,
             allow_external_result_logging=arguments.allow_external_result_logging,
             allow_external_error_logging=arguments.allow_external_error_logging,

@@ -117,6 +117,7 @@ class QuackframeConfig(BaseModel):
     root: Path = Field(default_factory=Path.cwd)
     runtime: RuntimeName = "direct"
     project_name: str | None = Field(default=None, exclude=True, repr=False)
+    flow_name: str | None = None
     log_setting: LogSetting = "annotations-only"
     allow_external_result_logging: bool = False
     allow_external_error_logging: bool = False
@@ -133,6 +134,25 @@ class QuackframeConfig(BaseModel):
             available = ", ".join(runtime_names())
             raise ValueError(f"runtime must be one of: {available}")
         return value
+
+    @field_validator("flow_name")
+    @classmethod
+    def flow_name_must_be_nonempty(cls, value: str | None) -> str | None:
+        """Reject a blank integration identity before reaching Prefect."""
+
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("flow_name must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_flow_name_runtime(self) -> QuackframeConfig:
+        """Validate against the resolved runtime, regardless of configuration source."""
+
+        if self.flow_name is not None and self.runtime != "prefect":
+            raise ValueError("flow_name (--flow-name) requires the prefect runtime")
+        return self
 
     @model_validator(mode="after")
     def resolve_paths(self) -> QuackframeConfig:
@@ -151,6 +171,7 @@ def load_config(
     config_path: str | Path | None = None,
     root: str | Path | None = None,
     runtime: RuntimeName | None = None,
+    flow_name: str | None = None,
     log_setting: LogSetting | None = None,
     allow_external_result_logging: bool | None = None,
     allow_external_error_logging: bool | None = None,
@@ -191,6 +212,7 @@ def load_config(
         _explicit_config(
             root=root,
             runtime=runtime,
+            flow_name=flow_name,
             log_setting=log_setting,
             allow_external_result_logging=allow_external_result_logging,
             allow_external_error_logging=allow_external_error_logging,
@@ -276,6 +298,8 @@ def _environment_config(environment: Mapping[str, str]) -> dict[str, Any]:
         values["root"] = value
     if value := environment.get("QUACKFRAME_RUNTIME"):
         values["runtime"] = value
+    if "QUACKFRAME_FLOW_NAME" in environment:
+        values["flow_name"] = environment["QUACKFRAME_FLOW_NAME"]
     if value := environment.get("QUACKFRAME_LOG_SETTING"):
         values["log_setting"] = value
     if value := environment.get("QUACKFRAME_ALLOW_EXTERNAL_RESULT_LOGGING"):
@@ -301,6 +325,7 @@ def _explicit_config(
     *,
     root: str | Path | None,
     runtime: RuntimeName | None,
+    flow_name: str | None,
     log_setting: LogSetting | None,
     allow_external_result_logging: bool | None,
     allow_external_error_logging: bool | None,
@@ -314,6 +339,8 @@ def _explicit_config(
         values["root"] = str(root)
     if runtime is not None:
         values["runtime"] = runtime
+    if flow_name is not None:
+        values["flow_name"] = flow_name
     if log_setting is not None:
         values["log_setting"] = log_setting
     if allow_external_result_logging is not None:

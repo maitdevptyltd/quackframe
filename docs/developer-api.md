@@ -36,11 +36,16 @@ One-run overrides include:
 
 ```powershell
 quackframe run --runtime direct sql/example.sql
-quackframe run --runtime prefect sql/example.sql
+quackframe run --runtime prefect --flow-name example-members sql/example.sql
 quackframe run --memory sql/example.sql
 quackframe run --database-path ./scratch.duckdb sql/example.sql
 quackframe run --config ./alternate.toml sql/example.sql
 ```
+
+`--flow-name` overrides the Prefect flow's grouping name, independently of its
+project-derived flow run name. It requires the effective runtime to be `prefect`,
+whether selected by CLI or configuration. Prefect runs automatically receive
+`interface:quackframe`; there is no `--tags` argument.
 
 `--memory` and `--temporary` select managed lifecycle modes;
 `--database-path` selects a caller-owned persistent database.

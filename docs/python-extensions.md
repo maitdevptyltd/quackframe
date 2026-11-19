@@ -5,7 +5,7 @@ is an independent unit of work that conforms to a small installation contract
 without being forced into shared thematic implementation.
 
 The base installation includes NumPy for DuckDB's Python UDF registration;
-SQL functions do not require the Prefect extra unless using a Prefect provider.
+SQL functions require the Prefect extra only when using a Prefect capability.
 
 ## Public Naming
 
@@ -215,3 +215,61 @@ replaced on the next enabled run.
 - [Credential Providers](credential-providers.md): shared model and loading contracts.
 - [Filesystems](filesystems.md): standard filesystem registration and ownership.
 - [Configuration](configuration.md): function enablement and optional settings.
+
+## Running A Prefect Deployment
+
+Install `quackframe[prefect]` and explicitly enable the function:
+
+```toml
+[tool.quackframe.functions]
+enabled = ["prefect_run_deployment"]
+```
+
+Call it as a standalone statement before dependent SQL:
+
+```sql
+SELECT quackframe.prefect_run_deployment(
+    deployment_id := '00000000-0000-0000-0000-000000000001'
+);
+```
+
+Alternatively, select the deployment by its Prefect flow/deployment name:
+
+```sql
+SELECT quackframe.prefect_run_deployment(
+    deployment_entrypoint := 'members-refresh/prod'
+);
+```
+
+Use named SQL options with `:=`. Supply exactly one of `deployment_id` (a UUID)
+or `deployment_entrypoint` (a flow name and deployment name separated by one
+slash). Both name components must be nonblank. Names resolve on the configured Prefect server; the entrypoint is not
+a Python module path or just a deployment name.
+
+Successful completion returns the run UUID as VARCHAR. Failed, crashed,
+cancelled or unfinished runs raise an error and stop subsequent SQL. Missing,
+NULL or conflicting required options fail before a deployment is launched.
+The unused selector may be omitted or NULL. The existing DuckDB macro machinery
+also accepts positional arguments; named options keep the choice explicit.
+
+Native `PREFECT_API_URL` and Prefect authentication settings select the server;
+a missing URL is rejected rather than starting an ephemeral server. The function
+works with direct or Prefect runtime, independently of the secret provider. An
+existing worker or runner must be available to execute the deployment.
+
+There is no completion timeout option. The function passes `timeout=None` to
+Prefect and waits while the run is queued or running, until it reaches a final
+state. Native API request timeouts still apply; a request failure stops the SQL
+sequence because the outcome cannot be established. It does not cancel the remote
+run. Check its state before rerunning the SQL. Each invocation passes a fresh
+idempotency key to protect its create request against transport retries; separate
+SQL invocations intentionally create separate runs.
+
+Installed Python callbacks retain a copy of the context from function installation,
+including settings and parent run identity, even on DuckDB worker threads. Each
+call receives its own copy. Under the Prefect runtime this is the parent flow
+context, because installation happens before SQL-file tasks start. Child deployment
+linkage and safe diagnostics therefore refer to that flow, not necessarily the
+individual SQL-file task. The function uses Prefect's native subflow linkage and
+emits safe deployment/run UUID and failure state through that captured run logger. Raw API errors and state messages are omitted. Deployments must
+signal business failures as failed states; a Completed state is treated as success.

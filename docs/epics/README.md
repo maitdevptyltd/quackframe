@@ -46,3 +46,7 @@ developer documentation, and applicable checks are complete.
 
 - [Roadmap](../roadmap.md): overall sequencing and acceptance criteria.
 - [Documentation Index](../README.md): developer-facing knowledge map.
+
+## Epic 06: SQL Orchestration
+
+- [01 SQL-Owned Integration Orchestration](06-sql-orchestration/01-sql-owned-integration-orchestration.md): planned SQL-controlled deployment sequencing and operational visibility.
