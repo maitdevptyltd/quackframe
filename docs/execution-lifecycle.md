@@ -4,6 +4,12 @@ Every supported entry point delegates to the same Quackframe execution
 lifecycle. Runtime adapters may observe and represent that lifecycle, but they
 must not redefine it silently.
 
+Quackframe uses DuckDB 2.0.1 or a later 2.0 patch release. Every statement runs
+to completion before success is reported or the next statement begins, including
+queries whose results are not logged. Result logging keeps its complete result
+in a temporary DuckDB table and preserves the original SQL error positions when
+DuckDB provides them.
+
 ## Lifecycle
 
 ```mermaid

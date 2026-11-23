@@ -207,8 +207,8 @@ class LoopbackServer:
                 # A rejected host key can close the socket before start_server
                 # returns. This is an expected unauthenticated disconnect.
                 client.close()
-            except ConnectionResetError as error:
-                # Windows may report a reset instead of EOF when the client
+            except (ConnectionResetError, ConnectionAbortedError) as error:
+                # Windows may report a reset or abort instead of EOF when the client
                 # deliberately rejects the host key before authentication.
                 if not self.expect_host_key_rejection or self.authentication_attempts:
                     self.errors.append(error)

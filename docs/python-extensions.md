@@ -190,7 +190,7 @@ manually must supply an explicit owner and keep its root connection alive.
 Filesystem registration retains root-derived duplicate handles until cleanup,
 then unregisters backends and closes their clients and handles. The core runner
 has no deferred-operation queue or function-specific branch. Compatibility has
-been tested against DuckDB 1.5.5; the allowed dependency range is `>=1.5.5,<1.6`.
+been tested against DuckDB 2.0.1; the allowed dependency range is `>=2.0.1,<2.1`.
 
 ## Persistent Database Consideration
 

@@ -45,15 +45,15 @@ def test_additional_results_execute_once_to_completion(
 
         execute_sql_file(connection, prepared, emit_result=output.append)
 
-        assert connection.execute("SELECT currval('calls')").fetchone() == (29999,)
+        assert connection.execute("SELECT currval('calls')").fetchall() == [(29999,)]
         if statement.startswith("EXPLAIN"):
             assert connection.execute(
                 "SELECT count(*), min(value), max(value) FROM events"
-            ).fetchone() == (30000, 0, 29999)
+            ).fetchall() == [(30000, 0, 29999)]
         elif statement.startswith("MERGE"):
             assert connection.execute(
                 "SELECT count(*), min(value), max(value) FROM events"
-            ).fetchone() == (30000, 30000, 59999)
+            ).fetchall() == [(30000, 30000, 59999)]
 
         if log_setting == "none":
             assert output == []

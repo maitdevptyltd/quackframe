@@ -106,3 +106,46 @@ def test_only_unawaited_close_status_is_classified_as_benign(
     result = summarize_trace(tmp_path)
     assert len(result["async_close_replies"]) == (0 if has_waiter else 1)
     assert len(result["unexplained_response_mismatches"]) == (1 if has_waiter else 0)
+
+
+@pytest.mark.parametrize(
+    ("packet_name", "operation", "has_waiter", "needs_response"),
+    [
+        ("close", None, False, False),
+        ("close", None, True, True),
+        ("close", "close", False, True),
+        ("read", None, False, True),
+    ],
+)
+def test_only_unawaited_destructor_closes_allow_missing_shutdown_responses(
+    tmp_path: Path,
+    packet_name: str,
+    operation: str | None,
+    has_waiter: bool,
+    needs_response: bool,
+) -> None:
+    packet = {"request_id": 10, "packet_name": packet_name}
+    client = [
+        {
+            "event": "_send_packet.end",
+            "thread": 1,
+            "client": 1,
+            "waitfor": None,
+            "operation": operation,
+            **packet,
+        }
+    ]
+    if has_waiter:
+        client.append(
+            {"event": "_read_response.begin", "thread": 1, "client": 1, "waitfor": 10}
+        )
+    server = [{"event": "_read_packet.end", **packet}]
+    for name, records in [("client", client), ("server", server)]:
+        (tmp_path / f"{name}-trace.jsonl").write_text(
+            "\n".join(json.dumps(record) for record in records), encoding="utf-8"
+        )
+    result = summarize_trace(tmp_path)
+    assert result["received_without_server_response"] == (
+        [10] if needs_response else []
+    )
+    assert result["unanswered_async_closes"] == ([] if needs_response else [10])

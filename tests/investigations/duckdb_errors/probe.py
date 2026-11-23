@@ -223,12 +223,6 @@ SCENARIOS = (
         ),
     ),
     Scenario(
-        "not_implemented",
-        "identifier",
-        "ALTER TABLE t ADD CONSTRAINT FAKE_IDENTIFIER_PRIVATE UNIQUE(i)",
-        ("CREATE TABLE t(i INT)",),
-    ),
-    Scenario(
         "sequence",
         "identifier",
         "SELECT nextval('FAKE_IDENTIFIER_PRIVATE')",

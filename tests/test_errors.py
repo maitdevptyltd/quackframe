@@ -117,6 +117,14 @@ def test_unsupported_structured_errors_fall_back(text: str) -> None:
             "missing",
         ),
         ("SELECT CAST('private-data' AS INTEGER)", 1, 1, 8, "INT32"),
+        (
+            "  \n-- é 日\n SELECT CAST('private-data' AS INTEGER); -- tail",
+            1,
+            3,
+            9,
+            "INT32",
+        ),
+        ("SELECT CAST('private-data' AS INTEGER);", 1, 1, 8, "INT32"),
     ],
 )
 @pytest.mark.parametrize("log_setting", ["none", "all"])
