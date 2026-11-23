@@ -1,0 +1,109 @@
+"""Prefect wrappers around Quackframe's existing execution functions."""
+
+from duckdb import DuckDBPyConnection
+from prefect import flow, get_run_logger, tags, task
+from prefect.cache_policies import NO_CACHE
+
+from quackframe.config import QuackframeConfig
+from quackframe.engine import execute_plan
+from quackframe.errors import QuackframeError, report_error_reason
+from quackframe.models import ExecutionResult, SqlFileResult
+from quackframe.sql import (
+    PreparedSqlFile,
+    execute_sql_file,
+    result_logging_can_emit,
+)
+
+_RETENTION_WARNING = (
+    "Quackframe result logging is enabled; returned values may be retained "
+    "by the destination logging system."
+)
+
+
+@task(cache_policy=NO_CACHE, retries=0, persist_result=False)
+def execute_sql_file_task(
+    connection: DuckDBPyConnection,
+    sql_file: PreparedSqlFile,
+) -> SqlFileResult:
+    """Show one SQL file as a non-cached Prefect task.
+
+    The task receives the existing live DuckDB connection, preserving the
+    same database session across the ordered file list.
+    """
+
+    logger = get_run_logger()
+    return execute_sql_file(
+        connection,
+        sql_file,
+        emit_result=lambda rendered_result: logger.info("\n%s", rendered_result),
+        progress_logger=logger,
+        error_logger=logger,
+    )
+
+
+@flow(name="quackframe-run", retries=0, persist_result=False)
+def execute_plan_flow(
+    sql_files: tuple[PreparedSqlFile, ...],
+    config: QuackframeConfig,
+) -> ExecutionResult:
+    """Represent the stable Quackframe execution process as a Prefect flow."""
+
+    if config.allow_external_result_logging and result_logging_can_emit(sql_files):
+        get_run_logger().warning(_RETENTION_WARNING)
+    try:
+        return execute_plan(
+            sql_files,
+            config,
+            execute_file=_execute_named_file_task,
+            error_logger=get_run_logger(),
+        )
+    except QuackframeError:
+        raise
+    except Exception as error:
+        # Convert unexpected core failures before Prefect records the flow error.
+        reason = report_error_reason(
+            error,
+            include_details=config.allow_external_error_logging,
+            error_logger=get_run_logger(),
+        )
+        failure = QuackframeError(f"Execution setup failed: {reason}")
+    raise failure from None
+
+
+def execute_with_prefect(
+    sql_files: tuple[PreparedSqlFile, ...],
+    config: QuackframeConfig,
+) -> ExecutionResult:
+    """Apply integration identity and tag every Quackframe parent run.
+
+    A flow name groups an integration's history. The project name continues to
+    label individual runs independently of that grouping.
+    """
+
+    try:
+        configured_flow = execute_plan_flow
+        if config.flow_name is not None or config.project_name is not None:
+            configured_flow = execute_plan_flow.with_options(
+                name=config.flow_name or "quackframe-run",
+                flow_run_name=config.project_name,
+            )
+        with tags("interface:quackframe"):
+            return configured_flow(sql_files, config)
+    except QuackframeError:
+        raise
+    except Exception as error:
+        reason = report_error_reason(
+            error, include_details=config.allow_external_error_logging
+        )
+        failure = QuackframeError(f"Prefect runtime failed: {reason}")
+    raise failure from None
+
+
+def _execute_named_file_task(
+    connection: DuckDBPyConnection,
+    sql_file: PreparedSqlFile,
+) -> SqlFileResult:
+    """Name one Prefect task from its SQL path stem and execute it in order."""
+
+    named_task = execute_sql_file_task.with_options(name=sql_file.path.stem)
+    return named_task(connection, sql_file)
