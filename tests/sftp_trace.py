@@ -195,17 +195,23 @@ def summarize_trace(root: Path) -> dict[str, Any]:
         r["request_id"]: r for r in client if r["event"] == "_send_packet.end"
     }
     waited_ids = {r["waitfor"] for r in client if r["event"] == "_read_response.begin"}
+    # File destructors send CLOSE without waiting. At shutdown the transport can
+    # close before its STATUS arrives; no query or synchronous caller needs it.
+    async_closes = {
+        request_id
+        for request_id, request in sent_requests.items()
+        if request.get("packet_name") == "close"
+        and request.get("operation") is None
+        and request_id not in waited_ids
+    }
     async_close_replies: list[dict[str, Any]] = []
     unexplained: list[dict[str, Any]] = []
     for reply in mismatches:
-        request = sent_requests.get(reply["request_id"], {})
         signature = (reply["request_id"], reply["packet_type"], reply["packet_bytes"])
         # Paramiko file destructors queue CLOSE without waiting. A later caller
         # may safely drain that STATUS, but never another synchronous reply.
         if (
-            request.get("packet_name") == "close"
-            and request.get("operation") is None
-            and reply["request_id"] not in waited_ids
+            reply["request_id"] in async_closes
             and reply["packet_name"] == "status"
             and signature in server_packets
         ):
@@ -242,7 +248,8 @@ def summarize_trace(root: Path) -> dict[str, Any]:
         "server_requests_received": len(received),
         "server_responses_sent": len(replied),
         "sent_not_seen_by_server": sorted(sent - received),
-        "received_without_server_response": sorted(received - replied),
+        "received_without_server_response": sorted(received - replied - async_closes),
+        "unanswered_async_closes": sorted((received - replied) & async_closes),
         "overlapping_packet_reads": overlaps,
         "response_id_different_from_waiter": mismatches,
         "responses_consumed_by_other_pending_waiters": stranded,

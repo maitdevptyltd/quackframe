@@ -1,7 +1,7 @@
 # SQL Result Logging
 
 Status: **In Progress**
-Last updated: 2026-10-16
+Last updated: 2026-11-23
 Epic: 02 Result Logging
 Phase: 01
 Related docs: [Developer API](../../developer-api.md), [Execution Lifecycle](../../execution-lifecycle.md), [Runtime Adapters](../../runtime-adapters.md)
@@ -66,7 +66,7 @@ DuckDB owns the table layout, displayed row and column limits, truncation
 message, and value rendering. Quackframe does not fetch rows into a Python
 collection or implement a second table renderer. Native rendering behaviour is
 therefore depends on the installed DuckDB version and may vary across allowed
-patch releases (`>=1.5.5,<1.6`).
+patch releases (`>=2.0.1,<2.1`).
 
 ## Runtime Behaviour
 
@@ -244,3 +244,22 @@ passing and a clean whitespace check. R08 remains outside this change.
 - Prove SQL errors still fail fast and close the shared session.
 - Prove standard diagnostic paths do not emit full SQL text or credential
   values.
+
+## DuckDB 2.0.1 compatibility — 2026-11-23
+
+The migration completes unlogged execution before advancing, ignores comment
+tokens when locating trailing result annotations, and materializes logged
+results using public relation SQL with an explicit temporary-table statement.
+The generated prefix is accounted for when reporting original source positions,
+including leading Unicode comments and terminal semicolons. CALL, EXPLAIN and
+RETURNING keep their existing execution-once behavior.
+
+The 127 focused execution, result, error and progress tests passed before the
+additional source-location cases; independent review passed all 14 location
+cases afterward. The broader runtime run passed 647 tests, with three remaining
+SFTP trace-completeness assertions and one loopback teardown error. Review
+identified unawaited destructor CLOSE responses and an intentional host-key
+rejection reported as a Windows abort. Narrow test-only corrections passed all
+14 targeted checks, including the stalled READ control; production SFTP remains
+unchanged. Ruff, Pyright, documentation links and whitespace checks passed.
+This migration does not close the phase's other outstanding criteria.

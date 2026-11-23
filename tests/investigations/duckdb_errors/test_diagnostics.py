@@ -52,6 +52,6 @@ def test_diagnostic_probe(
     assert completed.returncode == 0, completed.stderr
     record = json.loads(completed.stdout)
     observations.append(record)
-    assert record["runtime"]["duckdb"] == "1.5.5", "Reassess findings for a new version"
+    assert record["runtime"]["duckdb"] == "2.0.1", "Reassess findings for a new version"
     assert record["status"] == "error_observed", record
     assert record["exception"]["message"]

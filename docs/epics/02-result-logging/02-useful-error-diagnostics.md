@@ -1,7 +1,7 @@
 # Useful Error Diagnostics
 
 Status: **Complete**
-Last updated: 2026-10-16
+Last updated: 2026-11-23
 Epic: 02 Result Logging
 Phase: 02
 Related docs: [Investigation](../../duckdb-error-investigation.md)
@@ -204,3 +204,13 @@ CLI and mocked Prefect regressions passed (41 unrelated cases deselected).
 Manual verification against the user's configured Prefect environment remains
 for the user; [developer API](../../developer-api.md#check-error-destinations)
 contains the synthetic SQL and the two acceptance commands.
+
+## DuckDB 2.0.1 evidence refresh — 2026-11-23
+
+Fresh local probes recorded 82 expected errors across text and JSON modes.
+The former `not_implemented` scenario now succeeds: DuckDB supports its
+`ALTER TABLE ... ADD CONSTRAINT ... UNIQUE` operation. That obsolete error
+probe was removed; the checked-in observations and version guard now describe
+2.0.1. The refreshed probes and safe-error tests passed together (127 tests).
+Original-location regression coverage includes leading whitespace, Unicode
+comments and terminal semicolons around logged SQL.
