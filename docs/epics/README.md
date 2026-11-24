@@ -50,3 +50,5 @@ developer documentation, and applicable checks are complete.
 ## Epic 06: SQL Orchestration
 
 - [01 SQL-Owned Integration Orchestration](06-sql-orchestration/01-sql-owned-integration-orchestration.md): planned SQL-controlled deployment sequencing and operational visibility.
+
+- [02 SQL Agent Job Runner](06-sql-orchestration/02-mssql-run-job.md): one submission, completion monitoring and visible step outcomes on DuckDB 2.0.

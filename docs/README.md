@@ -87,3 +87,5 @@ separates delivered MVP behaviour from post-MVP work.
 ## Proposed SQL Orchestration
 
 - [SQL-Owned Integration Orchestration](epics/06-sql-orchestration/01-sql-owned-integration-orchestration.md): proposed Prefect deployment SQL function, failure propagation, flow naming, tags, source history and later failure emails.
+
+- [SQL Agent Jobs](epics/06-sql-orchestration/02-mssql-run-job.md): execute once, await completion and report recorded step outcomes through an existing MSSQL attachment.

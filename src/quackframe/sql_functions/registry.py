@@ -2,6 +2,7 @@
 
 from quackframe.errors import ConfigurationError
 from quackframe.sql_functions.definition import SqlFunction
+from quackframe.sql_functions.mssql_run_job import mssql_run_job_function
 from quackframe.sql_functions.prefect_run_deployment import (
     prefect_run_deployment_function,
 )
@@ -10,6 +11,7 @@ from quackframe.sql_functions.register_secret import register_secret_function
 
 BUILTIN_FUNCTIONS: tuple[SqlFunction, ...] = (
     register_secret_function,
+    mssql_run_job_function,
     register_filesystem_function,
     prefect_run_deployment_function,
 )

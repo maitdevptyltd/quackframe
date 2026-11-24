@@ -44,7 +44,11 @@ def execute_plan(
     # each file separately, but every file must keep using this connection.
     with (
         open_duckdb_session(config, error_logger=error_logger) as connection,
-        SessionResources(connection) as resources,
+        SessionResources(
+            connection,
+            include_error_details=allows_error_details(config),
+            error_logger=error_logger,
+        ) as resources,
     ):
         install_functions(
             connection,

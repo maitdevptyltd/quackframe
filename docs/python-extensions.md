@@ -273,3 +273,65 @@ linkage and safe diagnostics therefore refer to that flow, not necessarily the
 individual SQL-file task. The function uses Prefect's native subflow linkage and
 emits safe deployment/run UUID and failure state through that captured run logger. Raw API errors and state messages are omitted. Deployments must
 signal business failures as failed states; a Completed state is treated as success.
+
+## SQL Server Agent Jobs
+
+Enable `mssql_run_job` in `[tool.quackframe.functions].enabled`, alongside
+`register_secret` when SQL also registers credentials. Register the MSSQL secret
+and attach its database using the existing credential-provider workflow. Then:
+
+```sql
+SELECT quackframe.mssql_run_job(
+    database := 'integration_server',
+    job_name := 'Refresh reports',
+    timeout_seconds := 3600,
+    poll_interval_seconds := 5
+);
+```
+
+Alternatively supply `job_id := '12345678-1234-1234-1234-123456789abc'` instead of
+`job_name`. Exactly one selector is required. Use one standalone call per intended
+run; selecting this side-effecting function over rows intentionally starts a job
+per invocation. EXPLAIN without ANALYZE does not start the job.
+
+The function waits and returns a JSON report containing the job identity, Agent
+session, history IDs, each recorded step attempt, status, duration, SQL error
+number/severity and message. Human-readable lines also report successful and
+failed steps. Detailed logs follow `allow_external_error_logging`; logging the
+returned JSON through SQL result logging separately follows
+`allow_external_result_logging`. SQL Agent messages can contain application data.
+
+To retain a successful report without rerunning the job:
+
+```sql
+CREATE TABLE job_report AS
+SELECT quackframe.mssql_run_job(
+    database := 'integration_server',
+    job_name := 'Refresh reports'
+) AS report;
+
+SELECT report::JSON FROM job_report;
+```
+
+Failure, cancellation, failed final step attempts, and unknown outcomes raise and
+stop later statements/files. Failure reports remain in diagnostic logs; the
+failed statement does not return a success value or persist its result table.
+Native Agent retries are reported; Quackframe does not retry or resubmit.
+
+There is no completion deadline when `timeout_seconds` is omitted or NULL.
+An explicit timeout is checked between polls; `poll_interval_seconds` defaults
+to 5 seconds when omitted or NULL. Supplied values must be finite and positive. Native
+connection/query timeouts still govern individual remote calls. Timeout or
+interruption does not stop the remote job: check SQL Agent before rerunning.
+
+The login must be able to start the selected job and read its `msdb` job, step,
+activity, session and history records. SQL Agent must retain step history during
+observation. Steps with no records are listed as `not_recorded` (skipped or history
+unavailable), not silently marked successful. Reports reflect SQL Agent evidence;
+they cannot recover truncated messages or detect business errors swallowed by a
+job step. Avoid simultaneous external starts or history purges during observation.
+
+This function uses DuckDB 2.0 and MSSQL extension 0.3.0 or newer. Its remote
+queries and job submission bind values through `mssql_scan_params` and
+`mssql_exec_params`; the existing attachment owns authentication. See the
+[implementation phase](epics/06-sql-orchestration/02-mssql-run-job.md).

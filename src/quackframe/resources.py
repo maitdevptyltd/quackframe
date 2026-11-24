@@ -1,6 +1,7 @@
 """Explicit lifetime for resources acquired by connection-aware extensions."""
 
 from collections.abc import Callable
+from logging import Logger, LoggerAdapter
 from threading import RLock
 from types import TracebackType
 from typing import Self
@@ -13,8 +14,16 @@ from quackframe.errors import QuackframeError
 class SessionResources:
     """Keep extension resources alive until their caller finishes all SQL work."""
 
-    def __init__(self, connection: DuckDBPyConnection) -> None:
+    def __init__(
+        self,
+        connection: DuckDBPyConnection,
+        *,
+        include_error_details: bool = True,
+        error_logger: Logger | LoggerAdapter[Logger] | None = None,
+    ) -> None:
         self.connection = connection
+        self.include_error_details = include_error_details
+        self.error_logger = error_logger
         self.lock = RLock()
         self._callbacks: list[Callable[[], None]] = []
         self._names: set[str] = set()
