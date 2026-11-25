@@ -1,7 +1,7 @@
 # Credential Function Example
 
 Status: **Complete**
-Last updated: 2026-09-24
+Last updated: 2026-11-25
 Epic: 01 MVP
 Phase: 07
 Related docs: [Credential Providers](../../credential-providers.md)
@@ -32,6 +32,9 @@ connection-string and managed-identity registration.
 - Register Azure connection strings as scoped `TYPE azure`, `PROVIDER config`
   DuckDB secrets.
 - Register temporary DuckDB secrets through bound values.
+- Carry the MSSQL block's `trust_server_certificate` setting through the shared
+  credential model into the bound DuckDB secret. Default to `false`; preserve
+  encryption defaults and keep certificate trust outside SQL overrides.
 - Return only a non-sensitive outcome.
 
 ## Validation
@@ -51,6 +54,13 @@ connection-string and managed-identity registration.
 - Test the Prefect runtime with and without credential registration.
 - Verify credentials are absent from SQL results, logs, exceptions, arguments,
   and persistent Quackframe metadata.
+
+Certificate-trust addition (2026-11-25): implemented with a secure default for
+existing blocks, explicit Prefect-to-model mapping, parameter binding and rejection
+of SQL overrides. Validation: 59 secret/model tests and 14 Prefect provider tests
+passed with synthetic credentials; scoped Ruff and Pyright, documentation links,
+and whitespace checks passed. No live server, saved block or customer credentials
+were accessed. Live TLS negotiation remains environment-specific validation.
 
 ## Open Decisions
 

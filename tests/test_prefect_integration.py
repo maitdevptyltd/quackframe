@@ -216,6 +216,27 @@ def test_prefect_provider_translates_mssql_block() -> None:
     assert isinstance(credentials, MssqlSecret)
     assert credentials.database is None
     assert credentials.password.get_secret_value() == "sensitive"
+    assert credentials.trust_server_certificate is False
+    assert credentials.use_encrypt is True
+
+
+@pytest.mark.parametrize("trust_server_certificate", [False, True])
+def test_prefect_mssql_block_passes_certificate_trust_to_secret(
+    trust_server_certificate: bool,
+) -> None:
+    block = MssqlCredentials(
+        host="sql.example.test",
+        user=SecretStr("reader"),
+        password=SecretStr("sensitive"),
+        database="Reporting",
+        trust_server_certificate=trust_server_certificate,
+    )
+
+    with patch.object(MssqlCredentials, "load", return_value=block):
+        credentials = PrefectCredentialProvider().resolve("shared-login", MssqlSecret)
+
+    assert credentials.trust_server_certificate is trust_server_certificate
+    assert credentials.use_encrypt is True
 
 
 def test_prefect_provider_translates_azure_block() -> None:

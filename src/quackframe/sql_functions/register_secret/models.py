@@ -47,7 +47,8 @@ class MssqlSecret(credentials.MssqlCredentials, DuckDBSecret):
                 database ?,
                 user ?,
                 password ?,
-                use_encrypt ?
+                use_encrypt ?,
+                trust_server_certificate ?
             )
             ''',
             [
@@ -57,6 +58,7 @@ class MssqlSecret(credentials.MssqlCredentials, DuckDBSecret):
                 self.user.get_secret_value(),
                 self.password.get_secret_value(),
                 self.use_encrypt,
+                self.trust_server_certificate,
             ],
         )
 

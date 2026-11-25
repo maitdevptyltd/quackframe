@@ -290,6 +290,7 @@ class MssqlCredentials(Block):
     database: str | None = None
     port: int = 1433
     use_encrypt: bool = True
+    trust_server_certificate: bool = False
 
 
 class AzureConnectionStringCredentials(Block):
@@ -309,6 +310,20 @@ class SshPrivateKeyCredentials(Block):
     port: int = 22
     scope: str
 ```
+
+The MSSQL `trust_server_certificate` field defaults to `false`, including when
+an existing saved block omits it. Set it to `true` only when deliberately accepting
+a server certificate without chain or hostname verification, such as an approved
+self-signed server. It does not disable encryption: keep `use_encrypt=true`.
+Quackframe passes both settings as bound values to the temporary DuckDB secret,
+so consuming SQL can keep using `ATTACH '' ... (TYPE mssql, SECRET ...)` without
+embedding TLS settings. Certificate trust stays in the credential document and
+cannot be changed through `register_secret` SQL overrides. A certificate trusted
+by the client is preferable to disabling certificate verification.
+
+After upgrading Quackframe, register the updated block schema with the command
+below to expose the new field in Prefect, then edit the relevant saved block.
+Registering the schema does not enable certificate trust on existing blocks.
 
 Quackframe stores no block documents or credential values. Prefect stores the
 registered block types and saved documents; consuming SQL stores only document

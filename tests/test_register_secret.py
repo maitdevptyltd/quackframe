@@ -202,7 +202,52 @@ def test_mssql_override_values_are_typed_and_bound() -> None:
         "reader",
         "sensitive",
         False,
+        False,
     ]
+
+
+@pytest.mark.parametrize("trust_server_certificate", [False, True])
+def test_mssql_certificate_trust_is_bound_without_disabling_encryption(
+    trust_server_certificate: bool,
+) -> None:
+    connection = RecordingConnection()
+    credentials = MssqlSecret(
+        host="sql.example.test",
+        user=SecretStr("reader"),
+        password=SecretStr("sensitive"),
+        database="Reporting",
+        trust_server_certificate=trust_server_certificate,
+    )
+
+    resolved = credentials.resolve_overrides({"database": "Warehouse"})
+    resolved.register_duckdb_secret(cast(DuckDBPyConnection, connection), "reporting")
+
+    query, parameters = connection.queries[-1]
+    assert "trust_server_certificate ?" in query
+    assert "sensitive" not in query
+    assert parameters == [
+        "sql.example.test",
+        1433,
+        "Warehouse",
+        "reader",
+        "sensitive",
+        True,
+        trust_server_certificate,
+    ]
+    assert credentials.database == "Reporting"
+
+
+def test_mssql_certificate_trust_cannot_be_overridden_by_sql() -> None:
+    credentials = MssqlSecret(
+        host="sql.example.test",
+        database="Reporting",
+        user=SecretStr("reader"),
+        password=SecretStr("sensitive"),
+    )
+
+    assert credentials.trust_server_certificate is False
+    with pytest.raises(ValueError, match="Unsupported mssql override"):
+        credentials.resolve_overrides({"trust_server_certificate": "true"})
 
 
 def test_mssql_rejects_an_invalid_encryption_override() -> None:

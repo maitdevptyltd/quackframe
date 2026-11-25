@@ -24,6 +24,13 @@ class MssqlCredentials(Block):
     database: str | None = None
     port: int = Field(default=1433, ge=1, le=65535)
     use_encrypt: bool = True
+    trust_server_certificate: bool = Field(
+        default=False,
+        description=(
+            "Accept the server certificate without verifying its chain or hostname. "
+            "Encryption remains controlled by use_encrypt."
+        ),
+    )
 
     def to_credentials(self, model_type: type[T]) -> T:
         """Construct a compatible strategy directly from this Block's fields."""
@@ -37,4 +44,5 @@ class MssqlCredentials(Block):
             database=self.database,
             port=self.port,
             use_encrypt=self.use_encrypt,
+            trust_server_certificate=self.trust_server_certificate,
         )

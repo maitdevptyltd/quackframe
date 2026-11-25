@@ -59,6 +59,7 @@ class MssqlCredentials(CredentialModel):
     database: str | None = None
     port: int = Field(default=1433, ge=1, le=65535)
     use_encrypt: bool = True
+    trust_server_certificate: bool = False
 
     def resolve_overrides(self, overrides: Mapping[str, str]) -> Self:
         """Parse MSSQL overrides and require a database after merging."""
